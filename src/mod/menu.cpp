@@ -540,6 +540,15 @@ void VisualsTab()
             tint.FogOverridden = true;
             dvars::TintChanged();
         }
+        if (tint.FogOverridden) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Map's own##fog")) {
+                tint.FogOverridden = false;
+                dvars::TintChanged();
+            }
+        }
+        ImGui::Checkbox("Hide the map's mist and drifting particles with it", &effects::Config().FogHidesMist);
+        Help("The map's mist is made of particles, which fog settings don't reach. This hides them while a fog colour is on. Hit sparks stay.");
     }
 
     if (Group("Sun and sky")) {

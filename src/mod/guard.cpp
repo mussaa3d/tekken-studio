@@ -187,7 +187,10 @@ int WSAAPI DetourWsaIoctl(SOCKET s, DWORD code, LPVOID in, DWORD inSize, LPVOID 
 void TurnOff(const std::string& reason)
 {
     mod::Log("Online guard: %s. Turning the mod off.", reason.c_str());
-    game::RunOnGameThread([] { ue::SetGlobalTimeDilation(1.0f); });
+    game::RunOnGameThread([] {
+        ue::SetGlobalTimeDilation(1.0f);
+        ue::ConsoleCommand(L"p.ClothPhysics 1");
+    });
     Sleep(250); // let the game thread put time dilation back
     g_tripped = true;
     Sleep(250); // every detour now passes straight through

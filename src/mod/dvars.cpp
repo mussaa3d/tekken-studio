@@ -248,10 +248,84 @@ void RestoreStage(const Slider& slider)
     });
 }
 
+// The plain fog's own colours, and how much of the sky it takes in, which is where the map's blue haze comes from. Volumetric fog stops
+// at 60 m, so past that these are the only fog there is. No setters exist for all of them, so they're written and then a setter
+// makes the engine read them.
+struct PlainFogColours {
+    LinearColor Colour, Luminance, Directional, DirectionalLuminance, SkyScale;
+    void* Cubemap;
+};
+std::map<void*, PlainFogColours> g_plainFog;
+
+struct PlainFogFields {
+    int Colour, Luminance, Directional, DirectionalLuminance, SkyScale, Cubemap, Density;
+    bool Valid() const { return Colour >= 0 && Luminance >= 0 && Directional >= 0 && DirectionalLuminance >= 0 && SkyScale >= 0 && Cubemap >= 0 && Density >= 0; }
+};
+
+PlainFogFields FindPlainFogFields()
+{
+    void* cls = ue::FindClass("ExponentialHeightFogComponent");
+    if (!cls)
+        return { -1, -1, -1, -1, -1, -1, -1 };
+    return { ue::PropertyOffset(cls, "FogInscatteringColor"), ue::PropertyOffset(cls, "FogInscatteringLuminance"), ue::PropertyOffset(cls, "DirectionalInscatteringColor"),
+             ue::PropertyOffset(cls, "DirectionalInscatteringLuminance"), ue::PropertyOffset(cls, "SkyAtmosphereAmbientContributionColorScale"), ue::PropertyOffset(cls, "InscatteringColorCubemap"),
+             ue::PropertyOffset(cls, "FogDensity") };
+}
+
+void RefreshFog(void* fog, const PlainFogFields& fields)
+{
+    static ue::FunctionRef density { "ExponentialHeightFogComponent", "SetFogDensity" };
+    // The engine ignores a setter that changes nothing, so this goes by way of another value.
+    const float value = ue::Field<float>(fog, fields.Density);
+    CallFloat(fog, density, value + 0.0001f);
+    CallFloat(fog, density, value);
+}
+
+void SetPlainFogColour(const float* colour)
+{
+    const PlainFogFields fields = FindPlainFogFields();
+    if (!fields.Valid())
+        return;
+    const LinearColor chosen { colour[0], colour[1], colour[2], 1 };
+    const LinearColor none { 0, 0, 0, 1 };
+    ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
+        if (!g_plainFog.count(fog))
+            g_plainFog[fog] = { ue::Field<LinearColor>(fog, fields.Colour), ue::Field<LinearColor>(fog, fields.Luminance), ue::Field<LinearColor>(fog, fields.Directional),
+                                ue::Field<LinearColor>(fog, fields.DirectionalLuminance), ue::Field<LinearColor>(fog, fields.SkyScale), ue::Field<void*>(fog, fields.Cubemap) };
+        ue::Field<LinearColor>(fog, fields.Colour) = chosen;
+        ue::Field<LinearColor>(fog, fields.Luminance) = chosen;
+        ue::Field<LinearColor>(fog, fields.Directional) = none;
+        ue::Field<LinearColor>(fog, fields.DirectionalLuminance) = none;
+        ue::Field<LinearColor>(fog, fields.SkyScale) = none;
+        ue::Field<void*>(fog, fields.Cubemap) = nullptr;
+        RefreshFog(fog, fields);
+    });
+}
+
+void RestorePlainFogColour()
+{
+    const PlainFogFields fields = FindPlainFogFields();
+    if (fields.Valid())
+        ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
+            const auto it = g_plainFog.find(fog);
+            if (it == g_plainFog.end())
+                return;
+            ue::Field<LinearColor>(fog, fields.Colour) = it->second.Colour;
+            ue::Field<LinearColor>(fog, fields.Luminance) = it->second.Luminance;
+            ue::Field<LinearColor>(fog, fields.Directional) = it->second.Directional;
+            ue::Field<LinearColor>(fog, fields.DirectionalLuminance) = it->second.DirectionalLuminance;
+            ue::Field<LinearColor>(fog, fields.SkyScale) = it->second.SkyScale;
+            ue::Field<void*>(fog, fields.Cubemap) = it->second.Cubemap;
+            RefreshFog(fog, fields);
+        });
+    g_plainFog.clear();
+}
+
 void ApplyTint()
 {
     static ue::FunctionRef sunColor { "LightComponent", "SetLightColor" };
     if (g_colors.FogOverridden) {
+        SetPlainFogColour(g_colors.Fog);
         TurnFogOn();
         float density = 0.02f;
         for (const Slider& slider : All())
@@ -263,6 +337,7 @@ void ApplyTint()
     } else if (g_fogTinted) {
         // Back to fog lit by the stage.
         g_fogTinted = false;
+        RestorePlainFogColour();
         static ue::FunctionRef albedo { "ExponentialHeightFogComponent", "SetVolumetricFogAlbedo" };
         static ue::FunctionRef emissive { "ExponentialHeightFogComponent", "SetVolumetricFogEmissive" };
         uint32_t white = 0xFFFFFFFFu;

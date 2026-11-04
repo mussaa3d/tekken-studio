@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -233,6 +234,9 @@ void Run(const std::string& line)
         in >> out[0] >> out[1] >> out[2];
         (command == "fogcolor" ? dvars::Tint().FogOverridden : dvars::Tint().SunOverridden) = true;
         dvars::TintChanged();
+    } else if (command == "fogreset") {
+        dvars::Tint().FogOverridden = false;
+        dvars::TintChanged();
     } else if (command == "light") {
         lights::Light light;
         int on = 0, spot = 0, follow = 0;
@@ -453,6 +457,78 @@ void Run(const std::string& line)
         recorder::RecordRange(camera::Keys().front().Time, camera::Keys().back().Time);
     } else if (command == "console") {
         effects::RunCommand(Rest(in));
+    } else if (command == "callall") {
+        // callall <Class> <Function> n | b <0|1> | f <float> | c <r g b a> | l <object name substring> <0|1>: calls a function on every object of a class
+        std::string name, function, kind;
+        in >> name >> function >> kind;
+        ue::FunctionRef ref { name.c_str(), function.c_str() };
+        float values[4] = {};
+        if (kind == "b") {
+            in >> n;
+            *reinterpret_cast<bool*>(values) = n != 0;
+        } else if (kind == "f") {
+            in >> values[0];
+        } else if (kind == "c") {
+            in >> values[0] >> values[1] >> values[2] >> values[3];
+        }
+        int count = 0;
+        for (void* object : ue::AllObjectsOf(ue::FindClass(name))) {
+            float params[16] = {};
+            std::memcpy(params, values, sizeof(values));
+            if (ue::Call(object, ref, params))
+                ++count;
+        }
+        mod::Log("[test] called %s.%s on %d objects", name.c_str(), function.c_str(), count);
+    } else if (command == "census") {
+        // What's on this stage that moves or tints the picture, grouped by who owns it.
+        static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };
+        const auto ownerOf = [](void* component) {
+            struct {
+                void* ReturnValue;
+            } params { nullptr };
+            ue::Call(component, getOwner, &params);
+            return params.ReturnValue;
+        };
+        for (const char* className : { "SkeletalMeshComponent", "NiagaraComponent", "ParticleSystemComponent", "ExponentialHeightFogComponent", "SkyAtmosphereComponent", "SkyLightComponent",
+                                       "VolumetricCloudComponent", "LevelSequencePlayer", "MediaPlayer", "ChaosClothAsset", "ClothingSimulationInteractor", "AnimInstance" }) {
+            void* cls = ue::FindClass(className);
+            if (!cls) {
+                mod::Log("[census] %s: no such class", className);
+                continue;
+            }
+            const auto objects = ue::AllObjectsOf(cls);
+            mod::Log("[census] %s: %zu", className, objects.size());
+            std::map<std::string, int> groups;
+            const bool component = ue::IsChildOf(cls, ue::FindClass("ActorComponent"));
+            const int scaleAt = ue::PropertyOffset(cls, "GlobalAnimRateScale");
+            const int clothAt = ue::PropertyOffset(cls, "ClothingInteractor");
+            for (void* object : objects) {
+                if (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+                    continue;
+                void* owner = component ? ownerOf(object) : nullptr;
+                std::string key = ue::ClassNameOf(object);
+                if (owner) {
+                    key += " on " + ue::ClassNameOf(owner) + " custom " + std::to_string(ue::Field<float>(owner, ue::PropertyOffset(ue::FindClass("Actor"), "CustomTimeDilation")));
+                    if (owner == game::Fighter(0) || owner == game::Fighter(1))
+                        key += " FIGHTER";
+                }
+                if (scaleAt >= 0)
+                    key += " rate " + std::to_string(ue::Field<float>(object, scaleAt));
+                if (clothAt >= 0)
+                    key += ue::Field<void*>(object, clothAt) ? " CLOTH" : "";
+                ++groups[key];
+            }
+            for (const auto& [key, count] : groups)
+                mod::Log("[census]   %d x %s", count, key.c_str());
+        }
+        void* fogClass = ue::FindClass("ExponentialHeightFogComponent");
+        for (const std::string& property : ue::PropertyNames(fogClass))
+            mod::Log("[census] fog property %s", property.c_str());
+        void* meshClass = ue::FindClass("SkeletalMeshComponent");
+        for (const char* function : { "SuspendClothingSimulation", "ResumeClothingSimulation", "IsClothingSimulationSuspended", "ResetClothTeleportMode", "ForceClothNextUpdateTeleport" })
+            mod::Log("[census] mesh function %s: %p", function, ue::FindFunction(meshClass, function));
+        for (const char* function : { "SetFogInscatteringColor", "SetDirectionalInscatteringColor", "SetInscatteringColorCubemap", "SetVolumetricFogDistance", "SetFogDensity" })
+            mod::Log("[census] fog function %s: %p", function, ue::FindFunction(fogClass, function));
     } else if (command == "dump") {
         effects::RequestDump();
     } else {

@@ -62,6 +62,7 @@ void WriteLook(Ini& ini)
     const effects::Settings& e = effects::Config();
     ini.SetBool("fx.hide_hud", e.HideHud);
     ini.SetBool("fx.no_hit", e.NoHitEffects);
+    ini.SetBool("fx.fog_hides_mist", e.FogHidesMist);
     ini.SetBool("fx.no_drama", e.NoDramaManager);
     ini.SetBool("fx.no_bloom", e.NoBloom);
     ini.SetBool("fx.no_blur", e.NoMotionBlur);
@@ -131,6 +132,7 @@ void ReadLook(const Ini& ini)
     effects::Settings& e = effects::Config();
     e.HideHud = ini.GetBool("fx.hide_hud", e.HideHud);
     e.NoHitEffects = ini.GetBool("fx.no_hit", e.NoHitEffects);
+    e.FogHidesMist = ini.GetBool("fx.fog_hides_mist", e.FogHidesMist);
     e.NoDramaManager = ini.GetBool("fx.no_drama", e.NoDramaManager);
     e.NoBloom = ini.GetBool("fx.no_bloom", e.NoBloom);
     e.NoMotionBlur = ini.GetBool("fx.no_blur", e.NoMotionBlur);

@@ -19,11 +19,11 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
 - **Attached camera:** fix the camera to a bone, orbit it, or watch it from wherever you fly.
-- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps.
+- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people and the stage slow and stop along with the fight.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.
 - **Rage art and heat smash camera:** keep the normal fight camera through cinematics and big-hit zooms, or use a fixed classic 2D camera all fight.
 - **Effects:** hide hit sparks and glows, cancel rage art screen effects, hide the HUD (and the game's FPS counter).
-- **Visuals:** Filmtweaks-style colour, depth of field with autofocus, lens effects, fog with a colour you pick, sun and sky, your own lighting rig, and sliders for engine settings. Add your own in `tekken8mvm\dvars.ini`.
+- **Visuals:** Filmtweaks-style colour, depth of field with autofocus, lens effects, fog in a colour you pick that covers the map's own haze and mist, sun and sky, your own lighting rig, and sliders for engine settings. Add your own in `tekken8mvm\dvars.ini`.
 - **Recording:** frame-locked video through ffmpeg (H.264, H.265, ProRes or PNG). Smooth however slowly it renders.
 - **Motion blur:** real blur from averaging 2 to 64 renders per frame, with a shutter angle.
 - **Audio pass:** captures only the game's sound to a WAV at 1x, since frame-locked video has none.
@@ -72,6 +72,8 @@ The game keeps every replay decoded in fixed slots in memory, so sharing copies 
 - **Windows Volume Mixer:** the audio pass captures the game after its slider. If the game is at zero there, the recording is silent, and the editor tells you.
 - **The greenscreen and depth come from the game's depth buffer.** Anything that doesn't write depth, like sparks and glows, is painted over in the greenscreen and doesn't show in the depth. If the buffer can't be read, the editor says so, and the greenscreen video falls back on keying the dark background.
 - **Rewinding changes the picture slightly compared to the first playthrough:** by less than 3 cm on a fighter's position, right after a jump. It's the same every time.
+- **Clothes in very slow motion:** cloth only moves when the fight takes a step, so below about 0.1x you may see it update in small hops.
+- **Plants still sway while paused** on maps with foliage. That wind isn't tied to the game's clock.
 - **The first seconds of a replay can't be rewound to.** The game's first saved point lands about 4.5 s in, just after the first round's intro. Round buttons land just after each round's intro in the same way.
 
 ## Not verified

@@ -378,6 +378,62 @@ bool FightersStillAlive()
     return StillAlive(g_fighters[0], g_fighterIndex[0]) && StillAlive(g_fighters[1], g_fighterIndex[1]);
 }
 
+// A cloth solver straightens the cloth out once per simulated frame, however small the time step, so in slow motion or while paused it
+// keeps moving at full speed long after the fight has stopped. So when things are slowed, cloth only gets a frame when the fight took a
+// step. With the switch off, cloth holds its last pose rather than dropping back to the bare mesh.
+constexpr double ClothFollowsStepsBelow = 0.75;
+
+std::vector<std::pair<void*, uint32_t>> g_fighterMeshes;
+int g_fighterMeshesFight = -1;
+
+void FindFighterMeshes()
+{
+    g_fighterMeshes.clear();
+    g_fighterMeshesFight = g_fightCount;
+    static FunctionRef getOwner { "ActorComponent", "GetOwner" };
+    void* cls = FindClass("SkeletalMeshComponent");
+    if (!cls)
+        return;
+    for (void* mesh : AllObjectsOf(cls)) {
+        if (Field<uint32_t>(mesh, off::ObjectFlags) & off::RF_ClassDefaultObject)
+            continue;
+        struct {
+            void* ReturnValue;
+        } owner { nullptr };
+        Call(mesh, getOwner, &owner);
+        if (owner.ReturnValue && (owner.ReturnValue == g_fighters[0] || owner.ReturnValue == g_fighters[1]))
+            g_fighterMeshes.emplace_back(mesh, Field<uint32_t>(mesh, off::InternalIndex));
+    }
+}
+
+void KeepClothWithTheFight()
+{
+    static uint64_t seenSteps = 0;
+    static bool clothOn = true, wasSeeking = false;
+
+    const uint64_t steps = g_steps.load(std::memory_order_relaxed);
+    const bool stepped = steps != seenSteps;
+    seenSteps = steps;
+    const bool seeking = Seeking();
+    const bool slowed = g_time.ScaleEffects && g_fightersValid && (g_time.Paused || g_time.Speed < ClothFollowsStepsBelow || g_recording);
+
+    const bool wanted = !slowed || stepped || seeking;
+    if (wanted != clothOn) {
+        clothOn = wanted;
+        ConsoleCommand(wanted ? L"p.ClothPhysics 1" : L"p.ClothPhysics 0");
+    }
+    // After a jump the cloth is somewhere else entirely. Starting it again from the pose means a moment looks the same however you got there.
+    if (wasSeeking && !seeking && g_fightersValid) {
+        if (g_fighterMeshesFight != g_fightCount)
+            FindFighterMeshes();
+        static FunctionRef teleport { "SkeletalMeshComponent", "ForceClothNextUpdateTeleportAndReset" };
+        for (const auto& [mesh, index] : g_fighterMeshes)
+            if (StillAlive(mesh, index))
+                Call(mesh, teleport, nullptr);
+    }
+    wasSeeking = seeking;
+}
+
 // Applies time dilation and the FPS cap on the game thread once per frame.
 void ApplyEngineTime()
 {
@@ -449,6 +505,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     }
 
     ApplyEngineTime();
+    KeepClothWithTheFight();
     effects::OnGameTick();
     dvars::OnGameTick();
     lights::OnGameTick();

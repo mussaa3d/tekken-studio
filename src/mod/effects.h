@@ -7,6 +7,7 @@ namespace effects {
 struct Settings {
     bool HideHud = false;
     bool NoHitEffects = false;   // hides hit sparks and the glows of rage arts and heat
+    bool FogHidesMist = true;    // choosing a fog colour also hides the map's own mist and drifting particles
     bool NoDramaManager = false; // cancels the screen effects a rage art or heat smash puts over the picture
     bool NoBloom = false;
     bool NoMotionBlur = false;

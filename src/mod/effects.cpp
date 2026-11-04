@@ -233,6 +233,46 @@ void UpdateHitEffects()
     std::erase_if(g_hiddenEffects, [](const HiddenEffect& e) { return !ue::StillAlive(e.Object, e.Index); });
 }
 
+// The map's mist is particles, which no fog setting reaches. So with a fog colour chosen, the stage's own particles go.
+std::vector<HiddenEffect> g_hiddenMist;
+int g_mistRescan = 0;
+
+void UpdateMapMist()
+{
+    if (!g_settings.FogHidesMist || !dvars::Tint().FogOverridden) {
+        for (const HiddenEffect& effect : g_hiddenMist)
+            if (ue::StillAlive(effect.Object, effect.Index))
+                SetEffectHidden(effect.Object, false);
+        g_hiddenMist.clear();
+        g_mistRescan = 0;
+        return;
+    }
+    if (--g_mistRescan > 0)
+        return;
+    g_mistRescan = 30;
+    void* cls = ue::FindClass("NiagaraComponent");
+    if (!cls)
+        return;
+    static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };
+    for (void* component : ue::AllObjectsOf(cls)) {
+        struct {
+            void* ReturnValue;
+        } owner { nullptr };
+        ue::Call(component, getOwner, &owner);
+        if (!owner.ReturnValue)
+            continue;
+        const std::string ownerClass = Lower(ue::ClassNameOf(owner.ReturnValue));
+        // Fight effects, UI and breaking walls are part of what's happening, and those particles stay.
+        if (ownerClass != "niagaraactor" && ownerClass != "polarisniagaraactor")
+            continue;
+        const uint32_t index = ue::Field<uint32_t>(component, ue::off::InternalIndex);
+        if (std::any_of(g_hiddenMist.begin(), g_hiddenMist.end(), [&](const HiddenEffect& e) { return e.Object == component && e.Index == index; }))
+            continue;
+        SetEffectHidden(component, true);
+        g_hiddenMist.push_back({ component, index });
+    }
+}
+
 // Shipping builds strip the ShowFlag console commands, so these write the viewport's bitfield directly.
 // The original bit is remembered when an option turns on and put back when it turns off.
 struct ShowFlag {
@@ -456,6 +496,7 @@ void OnGameTick()
     g_refresh.exchange(false);
     UpdateDrama();
     UpdateHitEffects();
+    UpdateMapMist();
     ApplyFlags();
     {
         std::vector<std::wstring> commands;

@@ -46,6 +46,14 @@ Engine patterns, offsets, the 60 Hz accumulator idea and the HUD word lists come
 - **The stage kept moving while paused.** Restoring a saved point puts global time dilation back to 1, and the mod only wrote it on a change. It's now written every tick unless it's meant to be 1. Llamas, the crowd and cloth then freeze.
 - A saved point's transition moves the fight on by up to about 7 frames, and a round start's by about 177 (its intro). A seek inside those would overshoot, so seeks use a point at least 17 frames back and skip round starts. Round buttons use the round start and land after the intro.
 
+- **Cloth ran at full speed while the fight was slowed or stopped.** Its solver settles once per simulated frame, whatever the time step. `SuspendClothingSimulation` on each mesh didn't stop it on every costume, and neither did `GlobalAnimRateScale`. `p.ClothPhysics 0` does, and cloth then holds its last pose. It's switched on only for frames where the fight took a step, below 0.75x, while paused and while recording. `p.RigidBodyNode.EnableSimulation` made no visible difference.
+- Plant wind keeps moving while paused, even with the world's time dilation at 0.0001. Not fixed.
+
+## Fog (measured)
+- Past 60 m (`VolumetricFogDistance` 6000) only the plain height fog applies, and its `SkyAtmosphereAmbientContributionColorScale` of 1 feeds the sky's blue into it. That's the haze. Black needs that at 0 as well as `FogInscatteringColor`, `FogInscatteringLuminance`, the directional colours and the cubemap. No setter was found for the scale, so these are written directly and `SetFogDensity` to a different value and back makes the engine read them.
+- `SetFogInscatteringColor` only changes the luminance field here; the older colour field stayed at 0.447.
+- The white mist is Niagara particles on `NiagaraActor` and `PolarisNiagaraActor`. Those are what a fog colour hides.
+
 ## Replays in the game
 - Offline, the only way into a replay is My Replays & Tips or Downloaded Replays, both with the tips UI. Tips pause the replay until set to Hide in its menu (B).
 - Replays made on an older game version don't play at all.
