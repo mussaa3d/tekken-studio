@@ -28,6 +28,7 @@
 #include "mod/postfx.h"
 #include "mod/presets.h"
 #include "mod/recorder.h"
+#include "mod/replay.h"
 
 namespace menu {
 
@@ -677,6 +678,22 @@ void Timeline(ImVec2 position, ImVec2 size)
     if (ImGui::SmallButton("+ Camera key (K)"))
         camera::AddKeyAtCurrentView();
     ImGui::SameLine();
+    {
+        const std::vector<cine::CameraKey> keys = camera::Keys();
+        ImGui::BeginDisabled(keys.size() < 2 || recorder::Active() || recorder::Finishing());
+        if (ImGui::SmallButton("Preview shot"))
+            camera::PlayShot();
+        Help("Goes to the first camera key, flies the path and stops on the last one. A click on the ruler goes anywhere else.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Record shot")) {
+            camera::PlayShot();
+            recorder::RecordRange(keys.front().Time, keys.back().Time);
+            Notice("Going to the first key to record from there");
+        }
+        Help("The same, recording from the first key's exact frame to the last key's, with the streams set up in the RECORD tab.");
+        ImGui::EndDisabled();
+    }
+    ImGui::SameLine();
     if (ImGui::SmallButton("Clear camera"))
         camera::ClearKeys();
     ImGui::SameLine();
@@ -900,15 +917,29 @@ void Timeline(ImVec2 position, ImVec2 size)
         }
     }
 
-    // Clicking the ruler runs the fight ahead to that point.
+    // Clicking the ruler takes the fight to that point, either way.
     if (hovered && inLanes && mouse.y < cameraTop && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const double target = XToTime(mouse.x, left, width);
-        if (target > clock) {
+        if (target > clock || replay::CanJump()) {
             game::SeekTo(target);
-            Notice("Running ahead...");
+            Notice(target > clock ? "Going ahead..." : "Rewinding...");
         } else {
-            Notice("A replay can't step back yet. Restart it from the game's menu.");
+            Notice("Rewinding works in a replay. Practice mode only goes forward.");
         }
+    }
+
+    // Where the replay's rounds start and where it ends.
+    for (const replay::SavedPoint& point : replay::SavedPoints()) {
+        if (point.Type != replay::TypeRoundStart && point.Type != replay::TypeMatchEnd)
+            continue;
+        const float x = TimeToX(point.Frame * game::StepSeconds - game::ClockZero(), left, width);
+        draw->AddLine({ x, rulerTop }, { x, bottom }, IM_COL32(150, 110, 60, 255));
+        char label[16];
+        if (point.Type == replay::TypeRoundStart)
+            snprintf(label, sizeof(label), "R%d", point.Round);
+        else
+            snprintf(label, sizeof(label), "End");
+        draw->AddText({ x + 3, rulerTop }, IM_COL32(220, 170, 100, 255), label);
     }
 
     // Playhead

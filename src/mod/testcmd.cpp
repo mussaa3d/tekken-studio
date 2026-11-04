@@ -20,6 +20,8 @@
 #include "mod/postfx.h"
 #include "mod/presets.h"
 #include "mod/recorder.h"
+#include "mod/replay.h"
+#include "mod/savetrace.h"
 #include "mod/ue.h"
 
 namespace testcmd {
@@ -64,6 +66,10 @@ void WriteState()
     out << "steam " << guard::SteamState() << " connections " << guard::LastConnectionCount() << " tripped " << guard::Tripped() << " blocked " << guard::BlockedAttempts() << "\n";
     out << "postfx checked " << postfx::Checked() << " available " << postfx::Available() << "\n";
     out << "world " << ue::NameOf(ue::World()) << "\n";
+    int round = -1;
+    uint32_t frame = 0;
+    const bool inFight = replay::Position(round, frame);
+    out << "position " << inFight << " round " << round << " frame " << frame << " canjump " << replay::CanJump() << " seeking " << game::Seeking() << "\n";
     out.close();
     std::error_code ignored;
     std::filesystem::rename(mod::DataDir() / "state.tmp", mod::DataDir() / "state.txt", ignored);
@@ -280,6 +286,14 @@ void Run(const std::string& line)
     } else if (command == "orbit") {
         camera::AttachSettings& at = camera::Attach();
         in >> at.OrbitDistance >> at.OrbitYaw >> at.OrbitPitch >> at.Smooth;
+    } else if (command == "events") {
+        in >> n;
+        savetrace::TraceEvents(n != 0);
+    } else if (command == "preview") {
+        camera::PlayShot();
+    } else if (command == "recordshot") {
+        camera::PlayShot();
+        recorder::RecordRange(camera::Keys().front().Time, camera::Keys().back().Time);
     } else if (command == "console") {
         effects::RunCommand(Rest(in));
     } else if (command == "dump") {

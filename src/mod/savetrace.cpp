@@ -11,12 +11,14 @@
 #include <MinHook.h>
 
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
 
 #include "mod/log.h"
 #include "mod/scan.h"
+#include "mod/ue.h"
 
 namespace savetrace {
 
@@ -113,6 +115,51 @@ NTSTATUS WINAPI DetourDecrypt(BCRYPT_KEY_HANDLE key, PUCHAR input, ULONG inputSi
     return status;
 }
 
+using ProcessEventFn = void (*)(void*, void*, void*);
+ProcessEventFn oProcessEvent = nullptr;
+std::atomic<bool> g_eventsOn { false };
+std::atomic<int> g_eventLines { 0 };
+
+// Which engine events a game action fires, and the native call path that fired them. Only the interesting names get a stack.
+void DetourProcessEvent(void* object, void* function, void* params)
+{
+    if (g_eventsOn.load(std::memory_order_relaxed)) {
+        static std::mutex mutex;
+        static std::map<void*, bool> known;
+        bool interesting = false, first = false;
+        {
+            std::lock_guard lock(mutex);
+            const auto found = known.find(function);
+            if (found != known.end()) {
+                interesting = found->second;
+            } else {
+                const std::string name = ue::NameOf(function);
+                interesting = name.find("Rewind") != std::string::npos || name.find("Jump") != std::string::npos || name.find("Replay") != std::string::npos;
+                known[function] = interesting;
+                first = true;
+            }
+        }
+        if (first && g_eventLines++ < 4000)
+            mod::Log("[events] new %s on %s", ue::NameOf(function).c_str(), ue::ClassNameOf(object).c_str());
+        if (interesting && g_eventLines++ < 4000) {
+            void* frames[28];
+            const USHORT count = RtlCaptureStackBackTrace(1, 28, frames, nullptr);
+            const scan::Module module = scan::MainModule();
+            std::string path;
+            char text[24];
+            for (USHORT i = 0; i < count; ++i) {
+                const uintptr_t address = reinterpret_cast<uintptr_t>(frames[i]);
+                if (address >= module.Base && address < module.Base + module.Size) {
+                    snprintf(text, sizeof(text), " %llX", static_cast<unsigned long long>(address - module.Base));
+                    path += text;
+                }
+            }
+            mod::Log("[events] %s on %s:%s", ue::NameOf(function).c_str(), ue::ClassNameOf(object).c_str(), path.c_str());
+        }
+    }
+    oProcessEvent(object, function, params);
+}
+
 template <typename T>
 bool Hook(const wchar_t* module, const char* name, void* detour, T& original)
 {
@@ -137,6 +184,23 @@ void Start()
         && Hook(L"kernelbase.dll", "WriteFile", reinterpret_cast<void*>(&DetourWriteFile), oWriteFile);
     const bool crypto = Hook(L"bcrypt.dll", "BCryptDecrypt", reinterpret_cast<void*>(&DetourDecrypt), oDecrypt);
     mod::Log("Save tracer: file hooks %d, BCrypt hook %d", files, crypto);
+}
+
+void TraceEvents(bool on)
+{
+    if (on && !oProcessEvent) {
+        void* anyObject = ue::FindClass("Object");
+        if (!anyObject)
+            return;
+        void** vtable = *static_cast<void***>(anyObject);
+        void* target = vtable[ue::off::ProcessEventIndex];
+        if (MH_CreateHook(target, reinterpret_cast<void*>(&DetourProcessEvent), reinterpret_cast<void**>(&oProcessEvent)) != MH_OK || MH_EnableHook(target) != MH_OK) {
+            mod::Log("Event tracer: hook failed");
+            return;
+        }
+    }
+    g_eventsOn = on;
+    mod::Log("Event tracer %s", on ? "on" : "off");
 }
 
 } // namespace savetrace

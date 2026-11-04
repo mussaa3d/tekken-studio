@@ -93,6 +93,7 @@ bool IsChildOf(const void* cls, const void* base);
 void* FindClass(const std::string& name);
 std::vector<void*> AllObjectsOf(const void* cls);
 void* FindFunction(const void* cls, const std::string& name);
+bool ClassChainIsSound(const void* object);
 void ForEachObject(const std::function<bool(void*)>& visitor);
 
 // Byte offset of a reflected property (FProperty), walking up the parents. -1 if not found. Lets the mod read

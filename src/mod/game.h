@@ -34,12 +34,15 @@ void StepOneFrame();
 std::vector<cine::SpeedKey> SpeedKeys();
 void SetSpeedKeys(std::vector<cine::SpeedKey> keys);
 
-// Gameplay time in seconds since the last ZeroClock(). Only moves when the fight moves.
+// Where the fight is, in seconds since the last ZeroClock(). This is the timeline: it follows the game's own frame count for the
+// match, so it only moves when the fight moves and goes back when a replay goes back.
 double Clock();
 void ZeroClock();
+double ClockZero();
 uint64_t StepCount();
 
-// Runs the fight ahead to this point on the clock, as fast as it can. Only goes forward.
+// Takes the fight to this point on the clock, as fast as it can. Going backwards needs a replay, with its saved points to jump to;
+// anywhere else it only goes forward.
 void SeekTo(double seconds);
 bool Seeking();
 

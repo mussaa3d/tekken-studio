@@ -96,7 +96,7 @@ void UpdateHud()
             g_scanCursor = 0;
         const uint32_t index = g_scanCursor++;
         void* object = ue::ObjectAt(index);
-        if (!object || (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject))
+        if (!object || !ue::ClassChainIsSound(object) || (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject))
             continue;
         void* cls = ue::Field<void*>(object, ue::off::ClassPrivate);
         if (!cls || !IsHudClass(cls, userWidget))

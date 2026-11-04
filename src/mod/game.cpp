@@ -20,6 +20,7 @@
 #include "mod/log.h"
 #include "mod/overlay.h"
 #include "mod/recorder.h"
+#include "mod/replay.h"
 #include "mod/scan.h"
 #include "mod/testcmd.h"
 #include "mod/ue.h"
@@ -67,8 +68,14 @@ double g_recordingFps = 60;
 double g_accumulator = 0;
 std::atomic<double> g_alpha { 0 };
 std::atomic<uint64_t> g_steps { 0 };
+std::atomic<int64_t> g_position { 0 };
+std::atomic<bool> g_positionMoved { true };
 std::atomic<double> g_clockZero { 0 };
 std::atomic<double> g_seekTarget { -1.0 };
+constexpr int SettleAfterSeek = 4;
+std::atomic<int> g_settleFrames { 0 };
+int g_seekWaits = 0;
+bool g_seekJumped = false;
 double g_lastRealDt = StepSeconds;
 double g_lastAdvance = StepSeconds;
 
@@ -158,15 +165,102 @@ void BlendBone(const BoneTransform& a, const BoneTransform& b, double alpha, Bon
     out.Scale[3] = a.Scale[3];
 }
 
+// The replay jumped, so there's nothing to blend from.
+void ForgetMotion()
+{
+    camera::OnFightJump();
+    for (Track& track : g_actorTracks)
+        track = {};
+    for (BoneTrack& track : g_boneTracks) {
+        std::lock_guard lock(track.Lock);
+        track.NewStep = false;
+        track.Previous.clear();
+        track.Target.clear();
+    }
+}
+
+// The timeline is the game's own frame count for the match, so a moment in a replay is always at the same place on the timeline,
+// whatever was watched before it, and goes back when the replay goes back.
+void FollowFight()
+{
+    const int64_t before = g_position.load(std::memory_order_relaxed);
+    int round = 0;
+    uint32_t frame = 0;
+    const int64_t now = replay::Position(round, frame) ? static_cast<int64_t>(frame) : before + 1;
+    g_position.store(now, std::memory_order_relaxed);
+    g_positionMoved.store(now != before, std::memory_order_relaxed);
+    if (now < before || now > before + 1)
+        ForgetMotion();
+}
+
 void RunStep()
 {
     oTick(StepSeconds);
     g_steps.fetch_add(1, std::memory_order_relaxed);
+    FollowFight();
     camera::MarkNewStep();
     for (Track& track : g_actorTracks)
         track.NewStep = true;
     for (BoneTrack& track : g_boneTracks)
         track.NewStep = true;
+}
+
+void EndSeek()
+{
+    g_seekTarget = -1.0;
+    replay::CancelJump();
+    g_settleFrames = SettleAfterSeek;
+}
+
+// Going to a moment from anywhere: one jump to the last saved point before it, then running the fight up to the exact frame.
+void RunSeek(double target)
+{
+    g_accumulator = 0;
+    g_alpha.store(0, std::memory_order_relaxed);
+    g_lastAdvance = 32 * StepSeconds;
+
+    const int64_t wanted = std::llround((target + g_clockZero.load(std::memory_order_relaxed)) / StepSeconds);
+    if (g_position.load(std::memory_order_relaxed) == wanted) {
+        EndSeek();
+        return;
+    }
+
+    // Waiting for the replay's input code to take the jump. It runs inside the game's step.
+    if (replay::JumpPending()) {
+        if (++g_seekWaits > 120) {
+            mod::Log("Seek: the replay isn't taking jumps");
+            EndSeek();
+            return;
+        }
+        RunStep();
+        return;
+    }
+
+    const int64_t position = g_position.load(std::memory_order_relaxed);
+    if (replay::CanJump() && !g_seekJumped && wanted >= 0 && (position > wanted || wanted - position > 240)) {
+        g_seekJumped = true;
+        g_seekWaits = 0;
+        replay::RequestJump(static_cast<uint32_t>(wanted));
+        RunStep();
+        return;
+    }
+
+    if (position > wanted) {
+        mod::Log("Seek: can't go further back than %lld (wanted %lld)", static_cast<long long>(position), static_cast<long long>(wanted));
+        EndSeek();
+        return;
+    }
+    for (int i = 0; i < 32 && g_position.load(std::memory_order_relaxed) < wanted; ++i)
+        RunStep();
+    // The game's own pause, or the end of the fight: the position stops moving.
+    if (g_position.load(std::memory_order_relaxed) == position) {
+        if (++g_seekWaits > 8) {
+            mod::Log("Seek: the fight isn't moving, stopping at %lld", static_cast<long long>(position));
+            EndSeek();
+        }
+    } else {
+        g_seekWaits = 0;
+    }
 }
 
 // The game only ever advances in fixed 60 Hz steps, so slow motion, pausing and frame-locked recording
@@ -190,19 +284,18 @@ void DetourTick(double dt)
             g_time.Speed = std::clamp(cine::SampleSpeed(g_speedKeys, Clock()), 0.01, 4.0);
     }
 
-    // Seeking overrides everything: the fight runs ahead as fast as frames allow.
+    // Seeking overrides everything.
     const double seekTarget = g_seekTarget.load(std::memory_order_relaxed);
     if (seekTarget >= 0) {
-        if (Clock() >= seekTarget) {
-            g_seekTarget = -1.0;
-        } else {
-            for (int i = 0; i < 32 && Clock() < seekTarget; ++i)
-                RunStep();
-            g_accumulator = 0;
-            g_alpha.store(0, std::memory_order_relaxed);
-            g_lastAdvance = 32 * StepSeconds;
-            return;
-        }
+        RunSeek(seekTarget);
+        return;
+    }
+    // The picture on screen lags the game by a frame or two. Holding still after a seek means whatever comes next, like the
+    // first frame of a recording, shows the moment we landed on and not the way there.
+    if (g_settleFrames > 0) {
+        --g_settleFrames;
+        g_lastAdvance = 0;
+        return;
     }
 
     double advance = 0;
@@ -431,7 +524,8 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
 
 struct Addresses {
     uintptr_t GEngine = 0, FpsVariable = 0, GObjects = 0, AppendString = 0, GameModeTick = 0, TekkenTick = 0, FightStart = 0,
-              DoUpdateCamera = 0, SetActorLocationAndRotation = 0, PerformAnimationProcessing = 0, CalculateProjection = 0;
+              DoUpdateCamera = 0, SetActorLocationAndRotation = 0, PerformAnimationProcessing = 0, CalculateProjection = 0, ReplayInput = 0, ReplayRewindSite = 0,
+              BattleRoundRead = 0;
 };
 
 // Rip-relative statics carry the operand offset; functions match at their first byte. Any entry can be
@@ -457,6 +551,9 @@ const Entry kEntries[] = {
     { "SetActorLocationAndRotation", "48 81 EC 68 01 00 00 48 8B 89 A0 01 00 00 48 85 C9 74 71", 0, false, false, &Addresses::SetActorLocationAndRotation },
     { "PerformAnimationProcessing", "48 85 D2 0F 84 49 07", 0, false, false, &Addresses::PerformAnimationProcessing },
     { "CalculateProjection", "48 8B C4 48 89 58 ?? 57 48 81 EC ?? ?? ?? ?? F6 41", 0, false, false, &Addresses::CalculateProjection },
+    { "ReplayInput", "48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 50 48 8B F9 48 8B 2D ?? ?? ?? ?? 48 85 ED 0F 84", 0, false, false, &Addresses::ReplayInput },
+    { "ReplayRewindSite", "E8 ?? ?? ?? ?? 45 33 C0 33 D2 48 8B C8 E8 ?? ?? ?? ?? 8B D8 4C 8B 0F 45 33 C0 8B D0 48 8B CF 41 FF 91 ?? ?? ?? ?? 85 DB 74 2D", 0, false, false, &Addresses::ReplayRewindSite },
+    { "BattleRoundRead", "E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 8B 88 ?? ?? ?? ?? 89 4D 24", 0, false, false, &Addresses::BattleRoundRead },
 };
 
 template <typename T>
@@ -517,6 +614,11 @@ bool Initialize()
         mod::Log("MinHook failed to start: %s", MH_StatusToString(status));
         return false;
     }
+    replay::Code replayCode;
+    replayCode.InputHandler = addresses.ReplayInput;
+    replayCode.RewindSite = addresses.ReplayRewindSite;
+    replayCode.RoundRead = addresses.BattleRoundRead;
+    replay::Setup(replayCode);
     g_hooks.GameMode = Install(addresses.GameModeTick, reinterpret_cast<void*>(&DetourGameModeTick), oGameModeTick, "GameModeTick");
     g_hooks.Tick = Install(addresses.TekkenTick, reinterpret_cast<void*>(&DetourTick), oTick, "TekkenTick");
     g_hooks.FightStart = Install(addresses.FightStart, reinterpret_cast<void*>(&DetourFightStart), oFightStart, "FightStart");
@@ -553,14 +655,20 @@ void StepOneFrame()
 
 double Clock()
 {
-    const double raw = (static_cast<double>(g_steps.load(std::memory_order_relaxed)) + g_alpha.load(std::memory_order_relaxed)) * StepSeconds;
-    return raw - g_clockZero.load(std::memory_order_relaxed);
+    // When the game itself is paused its steps still run but go nowhere, so there's nothing to blend towards.
+    const double alpha = g_positionMoved.load(std::memory_order_relaxed) ? g_alpha.load(std::memory_order_relaxed) : 0.0;
+    return (static_cast<double>(g_position.load(std::memory_order_relaxed)) + alpha) * StepSeconds - g_clockZero.load(std::memory_order_relaxed);
 }
 
 void ZeroClock()
 {
-    g_clockZero.store((static_cast<double>(g_steps.load(std::memory_order_relaxed)) + g_alpha.load(std::memory_order_relaxed)) * StepSeconds,
+    g_clockZero.store((static_cast<double>(g_position.load(std::memory_order_relaxed)) + g_alpha.load(std::memory_order_relaxed)) * StepSeconds,
                       std::memory_order_relaxed);
+}
+
+double ClockZero()
+{
+    return g_clockZero.load(std::memory_order_relaxed);
 }
 
 uint64_t StepCount()
@@ -583,12 +691,14 @@ void SetSpeedKeys(std::vector<cine::SpeedKey> keys)
 
 void SeekTo(double seconds)
 {
+    g_seekWaits = 0;
+    g_seekJumped = false;
     g_seekTarget = seconds;
 }
 
 bool Seeking()
 {
-    return g_seekTarget.load(std::memory_order_relaxed) >= 0;
+    return g_seekTarget.load(std::memory_order_relaxed) >= 0 || g_settleFrames.load(std::memory_order_relaxed) > 0;
 }
 
 void CountRenderedFrame()

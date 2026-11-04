@@ -38,11 +38,29 @@ bool StillAlive(void* object, uint32_t index)
     return object && ObjectAt(index) == object;
 }
 
+// While a level loads or unloads, a slot can hold an object whose class pointer is already garbage. Reading that would take
+// the game down, so the class chain is walked under an exception guard first.
+bool ClassChainIsSound(const void* object)
+{
+    __try {
+        const void* cls = Field<void*>(object, ClassPrivate);
+        if (!cls || !(Field<uint64_t>(Field<void*>(cls, ClassPrivate), ClassCastFlags) & CASTCLASS_UClass))
+            return false;
+        int depth = 0;
+        for (; cls; cls = Field<void*>(cls, SuperStruct))
+            if (++depth > 64)
+                return false;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void ForEachObject(const std::function<bool(void*)>& visitor)
 {
     const uint32_t count = ObjectCount();
     for (uint32_t i = 0; i < count; ++i)
-        if (void* object = ObjectAt(i); object && !visitor(object))
+        if (void* object = ObjectAt(i); object && ClassChainIsSound(object) && !visitor(object))
             return;
 }
 

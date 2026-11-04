@@ -56,6 +56,7 @@ float ProjectionFov(float gameFov);
 void OnCameraUpdate(void* cameraManager);
 void MarkNewStep();
 void OnFightFound();
+void OnFightJump(); // a replay jumped: the camera mustn't blend or read a cut across it
 
 void ToggleFree();
 void ToggleDolly();
@@ -84,6 +85,10 @@ bool LoadPath(const std::string& name);
 std::vector<std::string> SavedPaths();
 double PathClock();
 void RestartPathClock();
+
+// The whole cinematic from its first key, right now: goes there, flies the path and stops on the last key.
+void PlayShot();
+bool PlayingShot();
 
 // Writes the path as an HLAE CamIO file so it can be taken into After Effects or Blender.
 bool ExportCamIo(const std::string& name, double fps);

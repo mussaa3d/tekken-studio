@@ -72,6 +72,9 @@ bool TakeAdvance();
 Pass ActivePass();
 int EnabledStreams();
 
+// Records exactly this stretch of the timeline once, starting when the clock gets to the start. The caller takes the fight there.
+void RecordRange(double in, double out);
+
 // Game thread: starts and stops at the timeline range, when that's on.
 void OnGameTick(double clockSeconds);
 

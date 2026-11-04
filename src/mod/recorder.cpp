@@ -24,6 +24,8 @@ namespace {
 constexpr size_t MaxQueuedFrames = 4;
 
 Settings g_settings;
+bool g_rangeFired = false;
+bool g_rangeOnce = false;
 std::atomic<bool> g_startRequested { false };
 std::atomic<bool> g_stopRequested { false };
 std::atomic<bool> g_active { false };
@@ -623,21 +625,36 @@ int EnabledStreams()
     return static_cast<int>(EnabledStreamIndices().size());
 }
 
+void RecordRange(double in, double out)
+{
+    g_settings.RangeIn = in;
+    g_settings.RangeOut = out;
+    g_settings.UseRange = true;
+    g_rangeFired = false;
+    g_rangeOnce = true;
+}
+
 void OnGameTick(double clock)
 {
-    static bool fired = false;
-    const Settings& s = g_settings;
+    Settings& s = g_settings;
     if (!s.UseRange) {
-        fired = false;
+        g_rangeFired = false;
         return;
     }
+    // On the way somewhere, the clock passes through places that don't count.
+    if (game::Seeking())
+        return;
     if (clock < s.RangeIn)
-        fired = false;
-    if (!fired && !Active() && !Finishing() && clock >= s.RangeIn && clock < s.RangeOut) {
-        fired = true;
+        g_rangeFired = false;
+    if (!g_rangeFired && !Active() && !Finishing() && clock >= s.RangeIn && clock < s.RangeOut) {
+        g_rangeFired = true;
         RequestStart();
     } else if (g_active && clock >= s.RangeOut) {
         RequestStop();
+        if (g_rangeOnce) {
+            g_rangeOnce = false;
+            s.UseRange = false;
+        }
     }
 }
 

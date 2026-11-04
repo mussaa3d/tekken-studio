@@ -158,6 +158,9 @@ void FlyInput()
         s.FlySpeed = std::clamp(s.FlySpeed * std::pow(1.15, wheel), 10.0, 5000.0);
 }
 
+double g_shotEnd = 0;
+bool g_playingShot = false;
+
 AttachSettings g_attach;
 std::vector<std::string> g_boneNames[2];
 std::mutex g_bonesMutex;
@@ -354,6 +357,13 @@ float ProjectionFov(float gameFov)
     return wanted > 0 ? wanted : gameFov;
 }
 
+void OnFightJump()
+{
+    g_gameCamera = {};
+    g_filter.Holding = false;
+    g_filter.QuietFrames = 30;
+}
+
 void OnFightFound()
 {
     g_gameCamera = {};
@@ -418,6 +428,11 @@ void OnCameraUpdate(void* manager)
     }
 
     ApplyFilter(location, rotation, fov);
+
+    if (g_playingShot && !game::Seeking() && game::Clock() >= g_shotEnd) {
+        g_playingShot = false;
+        game::Time().Paused = true;
+    }
 
     Settings& s = g_settings;
     if (s.Mode == Mode::Free) {
@@ -633,6 +648,24 @@ double PathClock()
 void RestartPathClock()
 {
     g_pathRealStart = RealSeconds();
+}
+
+void PlayShot()
+{
+    const std::vector<CameraKey> keys = Keys();
+    if (keys.empty())
+        return;
+    RestartPathClock();
+    g_settings.Mode = Mode::Dolly;
+    game::SeekTo(keys.front().Time);
+    game::Time().Paused = false;
+    g_shotEnd = keys.back().Time;
+    g_playingShot = true;
+}
+
+bool PlayingShot()
+{
+    return g_playingShot;
 }
 
 bool ExportCamIo(const std::string& name, double fps)
