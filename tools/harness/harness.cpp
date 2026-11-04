@@ -1,7 +1,7 @@
 // Stands in for the game: a D3D12 window with the real mod DLL loaded.
 //
-// With no arguments this is T8CinePreview: the editor running on a top-down fake scene, for trying the tool with no game.
-// With arguments it's the automated test: t8cine_harness <path to dinput8.dll> <frames>
+// With no arguments this is tekken8mvm_preview: the editor running on a top-down fake scene, for trying the tool with no game.
+// With arguments it's the automated test: tekken8mvm_harness <path to dinput8.dll> <frames>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <windows.h>
@@ -38,19 +38,19 @@ int wmain(int argc, wchar_t** argv)
     GetModuleFileNameW(nullptr, self, MAX_PATH);
     const std::filesystem::path dllPath = preview ? std::filesystem::path(self).parent_path() / "mod" / "dinput8.dll" : std::filesystem::path(argv[1]);
 
-    SetEnvironmentVariableW(L"T8CINE_HARNESS", L"1");
+    SetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS", L"1");
     if (preview)
-        SetEnvironmentVariableW(L"T8CINE_HARNESS_PREVIEW", L"1");
-    const bool livePicture = GetEnvironmentVariableW(L"T8CINE_HARNESS_PREVIEW", nullptr, 0) > 0;
+        SetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_PREVIEW", L"1");
+    const bool livePicture = GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_PREVIEW", nullptr, 0) > 0;
 
     HMODULE mod = LoadLibraryW(dllPath.c_str());
     if (!mod) {
-        MessageBoxW(nullptr, (L"Couldn't load " + dllPath.wstring()).c_str(), L"T8Cine preview", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, (L"Couldn't load " + dllPath.wstring()).c_str(), L"tekken8mvm preview", MB_OK | MB_ICONERROR);
         return 3;
     }
 
     // A steady tone for the audio pass test to capture, when it's asked for.
-    if (GetEnvironmentVariableW(L"T8CINE_HARNESS_AUDIO", nullptr, 0) > 0) {
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_AUDIO", nullptr, 0) > 0) {
         static std::vector<char> wav;
         const int rate = 48000, seconds = 8;
         const uint32_t dataBytes = rate * seconds * 2;
@@ -68,7 +68,7 @@ int wmain(int argc, wchar_t** argv)
 
     // The overlay installs its hooks on its own thread, and the frame counts below assume they are in.
     using ReadyFn = bool (*)();
-    const auto ready = reinterpret_cast<ReadyFn>(GetProcAddress(mod, "T8CineHarnessReady"));
+    const auto ready = reinterpret_cast<ReadyFn>(GetProcAddress(mod, "tekken8mvmHarnessReady"));
     for (int wait = 0; ready && !ready() && wait < 1000; ++wait)
         Sleep(10);
     const int frames = preview ? 0 : _wtoi(argv[2]);
@@ -77,21 +77,21 @@ int wmain(int argc, wchar_t** argv)
     windowClass.lpfnWndProc = WindowProc;
     windowClass.hInstance = GetModuleHandleW(nullptr);
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.lpszClassName = L"T8CineHarness";
+    windowClass.lpszClassName = L"tekken8mvmHarness";
     RegisterClassW(&windowClass);
     const UINT width = preview ? 1600 : 1920, height = preview ? 900 : 1080;
     const DWORD style = preview ? (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE) : (WS_OVERLAPPEDWINDOW | WS_VISIBLE);
     RECT outer { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
     if (preview)
         AdjustWindowRect(&outer, style, FALSE);
-    HWND window = CreateWindowW(windowClass.lpszClassName, preview ? L"T8Cine preview (no game: fake scene from above)" : L"T8Cine harness", style, 60, 40,
+    HWND window = CreateWindowW(windowClass.lpszClassName, preview ? L"tekken8mvm preview (no game: fake scene from above)" : L"tekken8mvm harness", style, 60, 40,
                                 outer.right - outer.left, outer.bottom - outer.top, nullptr, nullptr, windowClass.hInstance, nullptr);
 
     IDXGIFactory4* factory = nullptr;
     CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     ID3D12Device* device = nullptr;
     if (FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) {
-        MessageBoxW(nullptr, L"This PC has no D3D12 device.", L"T8Cine preview", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, L"This PC has no D3D12 device.", L"tekken8mvm preview", MB_OK | MB_ICONERROR);
         return 4;
     }
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -138,9 +138,9 @@ int wmain(int argc, wchar_t** argv)
 
     // Stopping a recording happens inside Present, so frames keep coming until it's done.
     using BusyFn = bool (*)();
-    const auto busy = reinterpret_cast<BusyFn>(GetProcAddress(mod, "T8CineHarnessBusy"));
+    const auto busy = reinterpret_cast<BusyFn>(GetProcAddress(mod, "tekken8mvmHarnessBusy"));
     using StateFn = void (*)(PreviewState*);
-    const auto readState = reinterpret_cast<StateFn>(GetProcAddress(mod, "T8CineHarnessState"));
+    const auto readState = reinterpret_cast<StateFn>(GetProcAddress(mod, "tekken8mvmHarnessState"));
     constexpr int HardLimit = 20000;
     bool running = true;
     for (int frame = 0; running && (preview || (frame < HardLimit && (frame < frames || (busy && busy())))); ++frame) {
@@ -213,7 +213,7 @@ int wmain(int argc, wchar_t** argv)
     }
 
     using WaitFn = void (*)();
-    if (auto wait = reinterpret_cast<WaitFn>(GetProcAddress(mod, "T8CineHarnessWait")))
+    if (auto wait = reinterpret_cast<WaitFn>(GetProcAddress(mod, "tekken8mvmHarnessWait")))
         wait();
     ExitProcess(0);
 }

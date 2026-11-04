@@ -44,6 +44,7 @@ uint64_t StepCount();
 // Takes the fight to this point on the clock, as fast as it can. Going backwards needs a replay, with its saved points to jump to;
 // anywhere else it only goes forward.
 void SeekTo(double seconds);
+void SeekToRound(uint32_t frame); // the saved point a round starts from, which is just after its intro
 bool Seeking();
 
 // How fast things are really going, measured over the last second.

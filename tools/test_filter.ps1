@@ -1,6 +1,6 @@
 # Test: plays a stretch of a replay and prints how far the camera is from the fighters, with the camera filter off and on.
 param([double]$From = 26, [double]$To = 40)
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 200 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

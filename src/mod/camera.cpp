@@ -143,7 +143,8 @@ void FlyInput()
         GetCursorPos(&cursor);
         if (looking) {
             const double scale = s.LookSpeed * (s.Fov / 45.0);
-            g_flyRotation.Yaw = cine::WrapAngle(g_flyRotation.Yaw + (cursor.x - anchor.x) * scale);
+            // Keeps counting past 180, so a key can remember which way round and how far the camera turned.
+            g_flyRotation.Yaw += (cursor.x - anchor.x) * scale;
             g_flyRotation.Pitch = std::clamp(g_flyRotation.Pitch - (cursor.y - anchor.y) * scale, -89.0, 89.0);
             SetCursorPos(anchor.x, anchor.y);
         } else {
@@ -418,8 +419,8 @@ void OnCameraUpdate(void* manager)
     }
 
     if (game::Time().Interpolate && !ue::IsGamePaused()) {
-        if (g_gameCamera.NewStep || !g_gameCamera.Valid) {
-            if (!g_gameCamera.Valid) {
+        if (g_gameCamera.NewStep || !g_gameCamera.Valid || game::Seeking()) {
+            if (!g_gameCamera.Valid || game::Seeking()) {
                 g_gameCamera.PreviousLocation = location;
                 g_gameCamera.PreviousRotation = rotation;
             } else {
@@ -452,7 +453,7 @@ void OnCameraUpdate(void* manager)
     } else if (s.Mode == Mode::Dolly) {
         std::lock_guard lock(g_keysMutex);
         if (!g_keys.empty()) {
-            const cine::CameraSample sample = s.LinearPath ? cine::SamplePathLinear(g_keys, PathClock()) : cine::SamplePath(g_keys, PathClock());
+            const cine::CameraSample sample = cine::SamplePathStyled(g_keys, PathClock(), s.PathStyle);
             location = sample.Location;
             rotation = sample.Rotation;
             fov = static_cast<float>(sample.Fov);
@@ -468,8 +469,12 @@ void OnCameraUpdate(void* manager)
     const bool ours = s.Mode != Mode::Game || s.FovOverride || g_filter.Holding || s.Filter == Filter::Classic;
     g_wantedFov.store(ours ? fov : -1.0f, std::memory_order_relaxed);
 
-    std::lock_guard lock(g_viewMutex);
-    g_view = { location, rotation, fov, true };
+    {
+        std::lock_guard lock(g_viewMutex);
+        g_view = { location, rotation, fov, true };
+    }
+    // The view keeps the full count of turns for new keys. The engine only needs to know where the camera points.
+    rotation.Yaw = cine::WrapAngle(rotation.Yaw);
 }
 
 void ToggleFree()
@@ -482,7 +487,7 @@ void ToggleFree()
     const View view = LastView();
     if (view.Valid) {
         g_flyLocation = view.Location;
-        g_flyRotation = { view.Rotation.Pitch, view.Rotation.Yaw, 0 };
+        g_flyRotation = { view.Rotation.Pitch, g_flyRotation.Yaw + cine::WrapAngle(view.Rotation.Yaw - g_flyRotation.Yaw), 0 };
         s.Roll = view.Rotation.Roll;
         s.Fov = view.Fov;
     }
@@ -539,6 +544,11 @@ void AddKeyAtCurrentView()
     CameraKey key { PathClock(), view.Location, view.Rotation, view.Fov };
     std::lock_guard lock(g_keysMutex);
     const auto at = std::lower_bound(g_keys.begin(), g_keys.end(), key.Time, [](const CameraKey& k, double t) { return k.Time < t; });
+    // The free camera's yaw is already counted. Any other camera's is the game's, so it takes the short way from its neighbour.
+    if (g_settings.Mode != Mode::Free && !g_keys.empty()) {
+        const double neighbour = at != g_keys.begin() ? (at - 1)->Rotation.Yaw : at->Rotation.Yaw;
+        key.Rotation.Yaw = neighbour + cine::WrapAngle(key.Rotation.Yaw - neighbour);
+    }
     if (at != g_keys.end() && std::fabs(at->Time - key.Time) < 0.001)
         *at = key;
     else
@@ -606,7 +616,7 @@ bool SavePath(const std::string& name)
     std::ofstream file(PathsDir() / (name + ".t8path"), std::ios::trunc);
     if (!file)
         return false;
-    file << "# time x y z pitch yaw roll fov\n";
+    file << "# time x y z pitch counted-yaw roll fov\n";
     file.precision(10);
     for (const CameraKey& key : Keys())
         file << key.Time << ' ' << key.Location.X << ' ' << key.Location.Y << ' ' << key.Location.Z << ' ' << key.Rotation.Pitch
@@ -621,7 +631,10 @@ bool LoadPath(const std::string& name)
         return false;
     std::vector<CameraKey> keys;
     std::string line;
+    bool counted = false;
     while (std::getline(file, line)) {
+        if (line.find("counted-yaw") != std::string::npos)
+            counted = true;
         if (line.empty() || line[0] == '#')
             continue;
         std::istringstream row(line);
@@ -631,6 +644,8 @@ bool LoadPath(const std::string& name)
             keys.push_back(key);
     }
     std::sort(keys.begin(), keys.end(), [](const CameraKey& a, const CameraKey& b) { return a.Time < b.Time; });
+    if (!counted)
+        cine::CountYaw(keys);
     std::lock_guard lock(g_keysMutex);
     g_keys = std::move(keys);
     return true;
@@ -689,7 +704,7 @@ bool ExportCamIo(const std::string& name, double fps)
     file.precision(8);
     const double start = keys.front().Time, end = keys.back().Time;
     for (double t = start; t <= end; t += 1.0 / fps) {
-        const cine::CameraSample sample = cine::SamplePath(keys, t);
+        const cine::CameraSample sample = cine::SamplePathStyled(keys, t, g_settings.PathStyle);
         // CamIO: xRotation = roll, yRotation = pitch, zRotation = yaw (Source convention, Y flipped from Unreal).
         file << (t - start) << ' ' << sample.Location.X << ' ' << -sample.Location.Y << ' ' << sample.Location.Z << ' '
              << sample.Rotation.Roll << ' ' << -sample.Rotation.Pitch << ' ' << -sample.Rotation.Yaw << ' ' << sample.Fov << '\n';

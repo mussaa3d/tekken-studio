@@ -1,6 +1,6 @@
 #pragma once
 // The sliders in the Visuals tab: engine settings (cvars) and the fog and lights of the current stage.
-// Extra cvar sliders can be added in T8Cine\dvars.ini, one per line: Label | r.SomeCvar | min | max | default
+// Extra cvar sliders can be added in tekken8mvm\dvars.ini, one per line: Label | r.SomeCvar | min | max | default
 #include <string>
 #include <vector>
 

@@ -1,7 +1,7 @@
 # Test: seeks a playing replay back and forward from the mod's command channel and checks where it lands. Also prints where the
 # fighters are, since a rewound replay has to play out exactly as the original did.
 param([double[]]$Targets = @(20, 25, 15, 5, 60, 45, 90, 3, 110))
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 100 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

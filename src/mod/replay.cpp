@@ -47,6 +47,11 @@ int g_pointSize = 0;
 InputFn oInput = nullptr;
 
 std::atomic<int64_t> g_pendingFrame { -1 };
+std::atomic<bool> g_pendingRoundStart { false };
+
+// The fight moves on by this many frames at most during the transition after a jump. Round starts run their whole intro instead,
+// so they're only used when that's where you asked to go.
+constexpr uint32_t TransitionFrames = 17;
 std::atomic<uint64_t> g_inputCalls { 0 };
 std::atomic<bool> g_haveList { false };
 
@@ -136,7 +141,7 @@ void RefreshList()
 }
 
 // What the game's own rewind does once it has picked a point: copy it, and restore from the copy.
-void RestoreLastPointBefore(void* controller, uint32_t frame)
+void RestoreLastPointBefore(void* controller, uint32_t frame, bool roundStart)
 {
     const uint8_t* begin = nullptr;
     size_t count = 0;
@@ -149,7 +154,8 @@ void RestoreLastPointBefore(void* controller, uint32_t frame)
     for (size_t i = 0; i < count; ++i) {
         if (!ReadPoint(begin + i * g_pointSize, point))
             return;
-        if (point.Frame <= frame) {
+        const bool usable = roundStart ? point.Frame <= frame : (point.Frame + TransitionFrames <= frame && point.Type != TypeRoundStart);
+        if (usable) {
             best = begin + i * g_pointSize;
             chosen = point;
         }
@@ -175,7 +181,7 @@ void DetourInput(void* controller)
         RefreshList();
     const int64_t frame = g_pendingFrame.exchange(-1);
     if (frame >= 0)
-        RestoreLastPointBefore(controller, static_cast<uint32_t>(frame));
+        RestoreLastPointBefore(controller, static_cast<uint32_t>(frame), g_pendingRoundStart.load());
     oInput(controller);
 }
 
@@ -243,8 +249,9 @@ bool CanJump()
     return oInput && g_haveList;
 }
 
-void RequestJump(uint32_t frame)
+void RequestJump(uint32_t frame, bool roundStart)
 {
+    g_pendingRoundStart = roundStart;
     g_pendingFrame = frame;
 }
 

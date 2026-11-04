@@ -50,6 +50,7 @@ void WriteLook(Ini& ini)
     ini.SetNumber("time.speed", t.Speed);
     ini.SetBool("time.effects", t.ScaleEffects);
     ini.SetBool("time.blend", t.Interpolate);
+    ini.SetNumber("camera.path_style", static_cast<double>(static_cast<int>(camera::Config().PathStyle)));
     ini.SetBool("time.ramp", t.UseSpeedRamp);
 
     const camera::Settings& c = camera::Config();
@@ -118,6 +119,7 @@ void ReadLook(const Ini& ini)
     t.Speed = std::clamp(ini.GetNumber("time.speed", t.Speed), 0.01, 4.0);
     t.ScaleEffects = ini.GetBool("time.effects", t.ScaleEffects);
     t.Interpolate = ini.GetBool("time.blend", t.Interpolate);
+    camera::Config().PathStyle = static_cast<cine::PathStyle>(std::clamp(static_cast<int>(ini.GetNumber("camera.path_style", static_cast<int>(camera::Config().PathStyle))), 0, 2));
     t.UseSpeedRamp = ini.GetBool("time.ramp", t.UseSpeedRamp);
 
     camera::Settings& c = camera::Config();
@@ -215,6 +217,7 @@ bool SaveShot(const std::string& name)
     WriteLook(ini);
     const auto keys = camera::Keys();
     ini.SetNumber("path.count", static_cast<double>(keys.size()));
+    ini.SetBool("path.counted_yaw", true);
     for (int i = 0; i < static_cast<int>(keys.size()); ++i) {
         char row[256];
         snprintf(row, sizeof(row), "%.6f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", keys[i].Time, keys[i].Location.X, keys[i].Location.Y, keys[i].Location.Z,
@@ -246,6 +249,8 @@ bool LoadShot(const std::string& name)
                      &key.Location.Z, &key.Rotation.Pitch, &key.Rotation.Yaw, &key.Rotation.Roll, &key.Fov) == 8)
             keys.push_back(key);
     }
+    if (!ini.GetBool("path.counted_yaw", false))
+        cine::CountYaw(keys);
     camera::SetKeys(std::move(keys));
 
     std::vector<cine::SpeedKey> speed;

@@ -13,7 +13,6 @@ struct Settings {
     bool NoDepthOfField = false;
     bool NoParticles = false;
     bool NoVignette = false;
-    float DepthDensity = 0.06f;      // how quickly the depth stream goes from black to white with distance
     char CustomCommand[256] = "";
 };
 Settings& Config();

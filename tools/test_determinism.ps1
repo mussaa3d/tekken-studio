@@ -1,7 +1,7 @@
 # Test: a rewound replay has to play out exactly as the original did. Plays forward to a moment and notes where the fighters are,
 # then rewinds to several earlier places and runs forward to the same moment. Each time they must be in the same place.
 param([double]$At = 40, [string]$From = "25,12,37,5,30,39")
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 200 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

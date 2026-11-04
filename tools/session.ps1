@@ -5,7 +5,7 @@ param([Parameter(Mandatory)][string]$Action, [int]$Lines = 40, [string]$Command 
 $root = Resolve-Path "$PSScriptRoot\.."
 $game = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8"
 $win64 = "$game\Polaris\Binaries\Win64"
-$data = "$win64\T8Cine"
+$data = "$win64\tekken8mvm"
 
 switch ($Action) {
     "start" {
@@ -13,10 +13,10 @@ switch ($Action) {
         New-Item -ItemType Directory -Force $data | Out-Null
         Copy-Item "$root\dist\mod\dinput8.dll" "$win64\dinput8.dll" -Force
         $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
-        Set-Content "$data\t8cine.ini" -Value "ffmpeg_path = $ffmpeg`nonline_guard = 1`ntest_commands = 1`ntrace_saves = 1`noutput_dir = $root\build\game_out`n" -Encoding ascii
+        Set-Content "$data\tekken8mvm.ini" -Value "ffmpeg_path = $ffmpeg`nonline_guard = 1`ntest_commands = 1`ntrace_saves = 1`noutput_dir = $root\build\game_out`n" -Encoding ascii
         Remove-Item "$data\commands.txt", "$data\state.txt" -ErrorAction SilentlyContinue
         Set-Content "$data\session.lock" -Value (Get-Date).ToString() -Encoding ascii
-        Remove-Item "$data\t8cine.log" -ErrorAction SilentlyContinue
+        Remove-Item "$data\tekken8mvm.log" -ErrorAction SilentlyContinue
         Start-Process "steam://rungameid/1778820"
         $deadline = (Get-Date).AddSeconds(60)
         while ((Get-Date) -lt $deadline -and -not (Get-Process Polaris-Win64-Shipping -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 2 }
@@ -46,6 +46,6 @@ switch ($Action) {
         }
     }
     "log" {
-        if (Test-Path "$data\t8cine.log") { Get-Content "$data\t8cine.log" -Tail $Lines | ForEach-Object { $_.Substring(0, [math]::Min(170, $_.Length)) } } else { "no log" }
+        if (Test-Path "$data\tekken8mvm.log") { Get-Content "$data\tekken8mvm.log" -Tail $Lines | ForEach-Object { $_.Substring(0, [math]::Min(170, $_.Length)) } } else { "no log" }
     }
 }

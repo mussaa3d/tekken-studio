@@ -321,7 +321,7 @@ void OnGameTick(double clock)
         const std::time_t now = std::time(nullptr);
         std::tm local {};
         localtime_s(&local, &now);
-        std::strftime(name, sizeof(name), "T8Cine_%Y%m%d_%H%M%S_audio.wav", &local);
+        std::strftime(name, sizeof(name), "tekken8mvm_%Y%m%d_%H%M%S_audio.wav", &local);
         Start(r.OutputDir / name);
     } else if (g_running && clock >= r.RangeOut) {
         Stop();

@@ -1,4 +1,4 @@
-// Checks that need no game: run t8cine_tests.exe; it prints failures and exits non-zero if any.
+// Checks that need no game: run tekken8mvm_tests.exe; it prints failures and exits non-zero if any.
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -156,6 +156,38 @@ static void TestSpeedRamp()
     CHECK(biggestStep < 0.01);
 }
 
+static void TestPathStyles()
+{
+    // A key can turn further than half a circle, and the path goes the way it was made.
+    const std::vector<CameraKey> turn = { { 0, {}, { 0, 0, 0 }, 45 }, { 1, {}, { 0, 270, 0 }, 45 } };
+    CHECK(Near(SamplePathLinear(turn, 0.5).Rotation.Yaw, 135));
+    double last = 0;
+    bool oneWay = true;
+    for (const PathStyle style : { PathStyle::Smooth, PathStyle::Linear, PathStyle::CoD }) {
+        last = 0;
+        for (int i = 0; i <= 100; ++i) {
+            const double t = i / 100.0;
+            const double yaw = SamplePathStyled(turn, t, style).Rotation.Yaw;
+            oneWay = oneWay && yaw >= last - 1e-6;
+            last = yaw;
+        }
+    }
+    CHECK(oneWay && Near(last, 270));
+
+    // The curve styles pass through every key. CoD ignores key spacing, Smooth keeps its speed through it.
+    const std::vector<CameraKey> keys = { { 0, { 0, 0, 0 }, {}, 45 }, { 1, { 100, 0, 0 }, {}, 45 }, { 5, { 200, 0, 0 }, {}, 45 }, { 6, { 300, 0, 0 }, {}, 45 } };
+    for (const CameraKey& key : keys) {
+        CHECK(Near(SamplePathStyled(keys, key.Time, PathStyle::CoD).Location.X, key.Location.X, 1e-6));
+        CHECK(Near(SamplePathStyled(keys, key.Time, PathStyle::Smooth).Location.X, key.Location.X, 1e-6));
+    }
+    CHECK(Near(SamplePathStyled(keys, 3, PathStyle::CoD).Location.X, 150, 1e-6));
+
+    // Old files stored yaw from -180 to 180. Loading them takes the short way across the seam.
+    std::vector<CameraKey> old = { { 0, {}, { 0, 170, 0 }, 45 }, { 1, {}, { 0, -170, 0 }, 45 } };
+    CountYaw(old);
+    CHECK(Near(old[1].Rotation.Yaw, 190));
+}
+
 static void TestLinearPath()
 {
     const auto keys = SampleKeys();
@@ -213,27 +245,24 @@ static void TestFrameMath()
             dark, bright, bright, bright, dark,
             dark, dark,   dark,   dark,   dark,
         };
-        PaintBackgroundGreen(reinterpret_cast<uint8_t*>(image), 5, 5, PixelFormat::Bgra8, 20, stack);
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(image), 5, 5, PixelFormat::Bgra8, 20, false, stack);
         CHECK(image[0] == green && image[4] == green && image[24] == green && image[10] == green);
         CHECK(image[12] == dark);
         CHECK(image[6] == bright && image[18] == bright);
 
         uint32_t image10[2 * 2] = { pack(20, 40, 44, 3), pack(20, 40, 44, 3), pack(500, 500, 500, 3), pack(20, 40, 44, 3) };
-        PaintBackgroundGreen(reinterpret_cast<uint8_t*>(image10), 2, 2, PixelFormat::X2Bgr10, 20, stack);
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(image10), 2, 2, PixelFormat::X2Bgr10, 20, false, stack);
         CHECK(image10[0] == pack(0, 1023, 0, 3) && image10[3] == pack(0, 1023, 0, 3));
         CHECK(image10[2] == pack(500, 500, 500, 3));
+
+        uint32_t blue10[1] = { pack(20, 40, 44, 3) };
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(blue10), 1, 1, PixelFormat::X2Bgr10, 20, true, stack);
+        CHECK(blue10[0] == pack(0, 0, 1023, 3));
+        uint32_t blue8[1] = { dark };
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(blue8), 1, 1, PixelFormat::Bgra8, 20, true, stack);
+        CHECK(blue8[0] == 0xFF0000FFu);
     }
 
-    // Depth: whatever the surface colour, white fog minus black fog gives the same grey for the same fog amount.
-    const auto fogged = [](double colour, double fog, double fogColour) { return static_cast<uint8_t>(colour * (1 - fog) + fogColour * fog + 0.5); };
-    for (const double fog : { 0.0, 0.25, 0.5, 0.75, 1.0 }) {
-        for (const double colour : { 0.0, 64.0, 200.0 }) {
-            const uint8_t w = fogged(colour, fog, 255), k = fogged(colour, fog, 0);
-            uint8_t white[4] = { w, w, w, 255 }, black[4] = { k, k, k, 255 };
-            FogDifference(white, black, 1, PixelFormat::Bgra8);
-            CHECK(std::abs(black[0] - fog * 255) <= 1.5 && black[0] == black[1] && black[1] == black[2] && black[3] == 255);
-        }
-    }
 }
 
 static void TestScanner()
@@ -276,7 +305,7 @@ static void TestGuard()
 
 static void TestIni()
 {
-    const fs::path path = fs::temp_directory_path() / "t8cine_test.ini";
+    const fs::path path = fs::temp_directory_path() / "tekken8mvm_test.ini";
     Ini out;
     out.Set("name", "hello world");
     out.SetNumber("speed", 0.25);
@@ -381,7 +410,7 @@ static void Touch(const fs::path& path, const std::string& contents)
 
 static void TestSessionFiles()
 {
-    const fs::path root = fs::temp_directory_path() / "t8cine_test_game";
+    const fs::path root = fs::temp_directory_path() / "tekken8mvm_test_game";
     fs::remove_all(root);
 
     files::GameInstall game;
@@ -392,7 +421,7 @@ static void TestSessionFiles()
     fs::create_directories(game.Win64);
 
     const fs::path built = root / "built" / "dinput8.dll";
-    Touch(built, "binary T8CINE-BUILD-MARKER binary");
+    Touch(built, "binary TEKKEN8MVM-BUILD-MARKER binary");
     const fs::path skinA = root / "skins" / "SkinA";
     Touch(skinA / "a_P.pak", "pak");
     Touch(skinA / "a_P.utoc", "toc");
@@ -401,14 +430,14 @@ static void TestSessionFiles()
     auto result = files::InstallMod(game, built, { skinA });
     CHECK(result.Ok);
     CHECK(fs::exists(game.Win64 / "dinput8.dll"));
-    CHECK(fs::exists(game.Win64 / "T8Cine" / "session.lock"));
-    CHECK(fs::exists(game.Paks / "~T8Cine" / "SkinA" / "a_P.pak"));
+    CHECK(fs::exists(game.Win64 / "tekken8mvm" / "session.lock"));
+    CHECK(fs::exists(game.Paks / "~tekken8mvm" / "SkinA" / "a_P.pak"));
     CHECK(files::ModFilesPresent(game));
     result = files::RemoveMod(game);
     CHECK(result.Ok);
     CHECK(!fs::exists(game.Win64 / "dinput8.dll"));
-    CHECK(!fs::exists(game.Win64 / "T8Cine" / "session.lock"));
-    CHECK(!fs::exists(game.Paks / "~T8Cine"));
+    CHECK(!fs::exists(game.Win64 / "tekken8mvm" / "session.lock"));
+    CHECK(!fs::exists(game.Paks / "~tekken8mvm"));
     CHECK(!files::ModFilesPresent(game));
 
     // Another mod's dinput8.dll is set aside and comes back byte for byte.
@@ -416,11 +445,11 @@ static void TestSessionFiles()
     result = files::InstallMod(game, built, {});
     CHECK(result.Ok);
     CHECK(files::IsOurDll(game.Win64 / "dinput8.dll"));
-    CHECK(fs::exists(game.Win64 / "dinput8.dll.t8cine-backup"));
+    CHECK(fs::exists(game.Win64 / "dinput8.dll.tekken8mvm-backup"));
     result = files::RemoveMod(game);
     CHECK(result.Ok);
     CHECK(files::ReadTextFile(game.Win64 / "dinput8.dll") == "someone else's mod");
-    CHECK(!fs::exists(game.Win64 / "dinput8.dll.t8cine-backup"));
+    CHECK(!fs::exists(game.Win64 / "dinput8.dll.tekken8mvm-backup"));
 
     // Removal leaves a foreign DLL alone.
     result = files::RemoveMod(game);
@@ -431,10 +460,19 @@ static void TestSessionFiles()
     Touch(game.Paks / "pakchunk0-Windows.pak", "game");
     Touch(game.Paks / "mods" / "Old HUD_P.pak", "pak");
     Touch(game.Paks / "mods" / "Old HUD_P.utoc", "toc");
-    Touch(game.Paks / "~T8Cine" / "Skin" / "skin_P.pak", "ours");
+    // Coming from the old name: settings and presets come along, leftover skins go.
+    Touch(game.Win64 / "T8Cine" / "t8cine.ini", "old");
+    Touch(game.Win64 / "T8Cine" / "presets" / "mine.t8look", "old");
+    Touch(game.Paks / "~T8Cine" / "Skin" / "skin_P.pak", "old");
+    fs::remove_all(game.Win64 / "tekken8mvm");
+    MoveFromOldName(game);
+    CHECK(fs::exists(game.Win64 / "tekken8mvm" / "tekken8mvm.ini") && fs::exists(game.Win64 / "tekken8mvm" / "presets" / "mine.t8look"));
+    CHECK(!fs::exists(game.Win64 / "T8Cine") && !fs::exists(game.Paks / "~T8Cine"));
+
+    Touch(game.Paks / "~tekken8mvm" / "Skin" / "skin_P.pak", "ours");
     auto others = files::OtherMods(game);
     CHECK(others.size() == 2 && others[0] == "Old HUD_P" && others[1].rfind("dinput8.dll", 0) == 0);
-    fs::remove_all(game.Paks / "~T8Cine");
+    fs::remove_all(game.Paks / "~tekken8mvm");
     CHECK(fs::exists(game.Paks / "mods" / "Old HUD_P.pak"));
 
     // Skins are listed with their sizes.
@@ -483,6 +521,7 @@ int main()
     TestRelativeCamera();
     TestSpeedRamp();
     TestLinearPath();
+    TestPathStyles();
     TestLookAt();
     TestFrameMath();
     TestScanner();

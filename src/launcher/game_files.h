@@ -53,8 +53,9 @@ struct GameInstall {
 GameInstall FindGame(const SteamState& steam);
 
 // ----- Session files
-fs::path DataDir(const GameInstall& game);      // <Win64>\T8Cine
-fs::path SkinMountDir(const GameInstall& game); // <Paks>\~T8Cine
+fs::path DataDir(const GameInstall& game);      // <Win64>\tekken8mvm
+fs::path SkinMountDir(const GameInstall& game); // <Paks>\~tekken8mvm
+void MoveFromOldName(const GameInstall& game);  // this tool used to be called T8Cine: brings its settings along
 
 struct InstallResult {
     bool Ok = false;
@@ -68,11 +69,11 @@ InstallResult InstallMod(const GameInstall& game, const fs::path& modDll, const 
 // Takes everything back out. Safe to call at any time.
 InstallResult RemoveMod(const GameInstall& game);
 
-// Is the file at this path a T8Cine build? (Looks for our marker string.)
+// Is the file at this path a tekken8mvm build? (Looks for our marker string.)
 bool IsOurDll(const fs::path& path);
 bool ModFilesPresent(const GameInstall& game);
 
-// Pak mods and other mods' DLLs that T8Cine didn't put there. They load in every launch, online too, so the launcher warns
+// Pak mods and other mods' DLLs that tekken8mvm didn't put there. They load in every launch, online too, so the launcher warns
 // about them. They belong to the user and are left alone.
 std::vector<std::string> OtherMods(const GameInstall& game);
 

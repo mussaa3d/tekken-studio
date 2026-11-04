@@ -372,27 +372,6 @@ void ApplyHiding(Hide wanted)
 // The stage's sky and fog get in the way of a clean black background.
 ShowFlag g_fogFlag { nullptr, 4, 18 };
 
-recorder::Pass g_appliedPass = recorder::Pass::Picture;
-
-// Sets up the fog for a recording pass. The fog changes go through engine calls, so only on a change.
-void ApplyPassFog(recorder::Pass pass)
-{
-    if (pass == g_appliedPass)
-        return;
-    g_appliedPass = pass;
-    switch (pass) {
-    case recorder::Pass::DepthWhiteFog:
-        dvars::SetFogOverride(1, 1, 1, g_settings.DepthDensity, 0);
-        break;
-    case recorder::Pass::DepthBlackFog:
-        dvars::SetFogOverride(0, 0, 0, g_settings.DepthDensity, 0);
-        break;
-    default:
-        dvars::ClearFogOverride();
-        break;
-    }
-}
-
 // Every tick, since the game can rebuild the flags when a level loads.
 void ApplyFlags()
 {
@@ -400,7 +379,6 @@ void ApplyFlags()
     if (!viewport)
         return;
     const recorder::Pass pass = recorder::ActivePass();
-    ApplyPassFog(pass);
     const bool hideStage = pass == recorder::Pass::Greenscreen || pass == recorder::Pass::FightersOnBlack;
     const bool hideFighters = pass == recorder::Pass::StageOnly;
     ApplyHiding(hideStage ? Hide::Stage : (hideFighters ? Hide::Fighters : Hide::Nothing));

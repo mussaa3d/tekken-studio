@@ -211,7 +211,7 @@ bool Describe(const std::string& fileName, Slot& out, std::string& error)
     FileHeader header;
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!file || header.Magic != FileMagic || header.Version != FileVersion || header.Stored > header.RecordSize || header.Stored < 0x1000) {
-        error = "That isn't a T8Cine replay file";
+        error = "That isn't a tekken8mvm replay file";
         return false;
     }
     std::vector<uint8_t> data(std::max<size_t>(header.RecordSize, Player2Name + NameBytes));
@@ -230,7 +230,7 @@ bool Import(const std::string& fileName, std::string& error)
     FileHeader header;
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!file || header.Magic != FileMagic || header.Version != FileVersion || header.Stored > header.RecordSize || header.Stored < 0x1000) {
-        error = "That isn't a T8Cine replay file";
+        error = "That isn't a tekken8mvm replay file";
         return false;
     }
     std::lock_guard lock(g_mutex);

@@ -27,7 +27,7 @@ struct Signature {
     bool Required = true;
 };
 
-#ifndef T8CINE_TESTS
+#ifndef TEKKEN8MVM_TESTS
 struct Module {
     uintptr_t Base = 0;
     size_t Size = 0;

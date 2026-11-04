@@ -1,5 +1,7 @@
 #include "mod/recorder.h"
 
+#include "mod/depth.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -65,7 +67,6 @@ struct Encoder {
 struct Output {
     std::shared_ptr<Encoder> Encoder;
     std::vector<uint32_t> Sum;
-    std::vector<uint8_t> DepthWhite; // the white fog picture, waiting for its black fog partner
     int Samples = 0;
 };
 
@@ -215,7 +216,7 @@ std::string TimestampedName()
     const std::time_t now = std::time(nullptr);
     std::tm local {};
     localtime_s(&local, &now);
-    std::strftime(name, sizeof(name), "T8Cine_%Y%m%d_%H%M%S", &local);
+    std::strftime(name, sizeof(name), "tekken8mvm_%Y%m%d_%H%M%S", &local);
     return name;
 }
 
@@ -240,7 +241,7 @@ void WriterLoop(std::shared_ptr<Encoder> encoder)
             if (!WriteFile(encoder->Stdin, data, static_cast<DWORD>(std::min<size_t>(remaining, 1 << 24)), &written, nullptr)) {
                 encoder->Broken = true;
                 encoder->Changed.notify_all();
-                SetError("ffmpeg stopped accepting frames; see t8cine_ffmpeg.log");
+                SetError("ffmpeg stopped accepting frames; see tekken8mvm_ffmpeg.log");
                 break;
             }
             data += written;
@@ -260,7 +261,7 @@ void WriterLoop(std::shared_ptr<Encoder> encoder)
     CloseHandle(encoder->Process.hThread);
     mod::Log("Recorder: ffmpeg exited with code %lu", code);
     if (code != 0)
-        SetError("ffmpeg failed; see t8cine_ffmpeg.log");
+        SetError("ffmpeg failed; see tekken8mvm_ffmpeg.log");
     --g_writers;
 }
 
@@ -284,7 +285,7 @@ std::shared_ptr<Encoder> StartEncoder(UINT width, UINT height, DXGI_FORMAT forma
         return nullptr;
     }
     SetHandleInformation(writeEnd, HANDLE_FLAG_INHERIT, 0);
-    const std::wstring logName = index == 0 ? L"t8cine_ffmpeg.log" : L"t8cine_ffmpeg" + std::to_wstring(index + 1) + L".log";
+    const std::wstring logName = index == 0 ? L"tekken8mvm_ffmpeg.log" : L"tekken8mvm_ffmpeg" + std::to_wstring(index + 1) + L".log";
     const std::wstring logPath = (mod::DataDir() / logName).wstring();
     HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 
@@ -325,7 +326,7 @@ Pass PassForLook(Look look)
     case Look::FightersOnBlack:
         return Pass::FightersOnBlack;
     case Look::Depth:
-        return Pass::DepthWhiteFog;
+        return Pass::Depth;
     default:
         return Pass::Picture;
     }
@@ -374,8 +375,6 @@ bool StartEncoders(UINT width, UINT height, DXGI_FORMAT format)
         const int outputIndex = static_cast<int>(g_outputs.size());
         g_outputs.push_back(std::move(output));
         g_plan.push_back({ PassForLook(stream.Look), outputIndex });
-        if (stream.Look == Look::Depth)
-            g_plan.push_back({ Pass::DepthBlackFog, outputIndex });
     }
 
     std::lock_guard lock(g_textMutex);
@@ -454,21 +453,10 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
     std::vector<uint8_t> image = TakeBuffer(*output.Encoder, bytes);
     CopyRows(footprint, bytesPerPixel, image.data());
 
-    if (pass.Pass == Pass::Greenscreen) {
+    // With the depth buffer the key is already on the frame, and exact.
+    if (pass.Pass == Pass::Greenscreen && !depth::Working()) {
         static std::vector<int> stack;
-        framemath::PaintBackgroundGreen(image.data(), footprint.Footprint.Width, footprint.Footprint.Height, g_pixels, g_settings.GreenDarkness, stack);
-    }
-
-    if (pass.Pass == Pass::DepthWhiteFog) {
-        output.DepthWhite.swap(image);
-        std::lock_guard lock(output.Encoder->Mutex);
-        if (!image.empty())
-            output.Encoder->Spare.push_back(std::move(image));
-        return; // waits for the black fog pass
-    }
-    if (pass.Pass == Pass::DepthBlackFog) {
-        if (output.DepthWhite.size() == image.size())
-            framemath::FogDifference(output.DepthWhite.data(), image.data(), pixels, g_pixels);
+        framemath::PaintBackgroundKey(image.data(), footprint.Footprint.Width, footprint.Footprint.Height, g_pixels, g_settings.GreenDarkness, g_settings.BlueKey, stack);
     }
 
     if (g_blendedSamples <= 1) {
@@ -495,15 +483,15 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
 
 const std::vector<Codec>& Codecs()
 {
-#define T8CINE_BT709 "-vf scale=out_color_matrix=bt709:out_range=tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 "
+#define TEKKEN8MVM_BT709 "-vf scale=out_color_matrix=bt709:out_range=tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 "
     static const std::vector<Codec> codecs = {
-        { "H.264 (x264, high quality)", ".mp4", T8CINE_BT709 "-c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p" },
-        { "H.264 (NVIDIA NVENC)", ".mp4", T8CINE_BT709 "-c:v h264_nvenc -preset p6 -cq 14 -pix_fmt yuv420p" },
-        { "H.265 (NVIDIA NVENC)", ".mp4", T8CINE_BT709 "-c:v hevc_nvenc -preset p6 -cq 16 -pix_fmt yuv420p" },
-        { "ProRes 422 HQ (for editing)", ".mov", T8CINE_BT709 "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le" },
+        { "H.264 (x264, high quality)", ".mp4", TEKKEN8MVM_BT709 "-c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p" },
+        { "H.264 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709 "-c:v h264_nvenc -preset p6 -cq 14 -pix_fmt yuv420p" },
+        { "H.265 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709 "-c:v hevc_nvenc -preset p6 -cq 16 -pix_fmt yuv420p" },
+        { "ProRes 422 HQ (for editing)", ".mov", TEKKEN8MVM_BT709 "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le" },
         { "PNG image sequence", ".png", "-c:v png -pix_fmt rgb24" },
     };
-#undef T8CINE_BT709
+#undef TEKKEN8MVM_BT709
     return codecs;
 }
 
@@ -545,12 +533,7 @@ void RequestStart()
     if (g_active || g_writers > 0)
         return;
 
-    // Depth takes two passes, so it needs time held even when it's the only stream.
-    const std::vector<int> enabled = EnabledStreamIndices();
-    int passes = 0;
-    for (const int index : enabled)
-        passes += g_settings.Streams[index].Look == Look::Depth ? 2 : 1;
-    g_holdsTime = passes > 1;
+    g_holdsTime = EnabledStreamIndices().size() > 1;
 
     g_samplesPerFrame = std::max(g_settings.MotionSamples, 1);
     g_blendedSamples = framemath::BlendedSampleCount(g_samplesPerFrame, g_settings.ShutterDegrees);
@@ -629,7 +612,7 @@ Pass ActivePass()
 {
     if (g_active || g_startRequested)
         return g_activePass;
-    return PassForLook(g_settings.Preview == Look::Depth ? Look::Picture : g_settings.Preview);
+    return PassForLook(g_settings.Preview);
 }
 
 int EnabledStreams()

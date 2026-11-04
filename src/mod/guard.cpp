@@ -193,15 +193,15 @@ void TurnOff(const std::string& reason)
     Sleep(250); // every detour now passes straight through
     game::Shutdown();
     MessageBoxW(nullptr,
-                L"The game went online, so T8Cine turned itself off.\n\n"
+                L"The game went online, so tekken8mvm turned itself off.\n\n"
                 L"Close the game. Use Steam's Offline Mode before starting a cinematic session.",
-                L"T8Cine", MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
+                L"tekken8mvm", MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
 }
 
 DWORD WINAPI Watch(void*)
 {
     Ini settings;
-    settings.Load(mod::DataDir() / "t8cine.ini");
+    settings.Load(mod::DataDir() / "tekken8mvm.ini");
     const bool enforce = settings.GetBool("online_guard", true);
 
     ConnectionAges ages;

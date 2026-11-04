@@ -76,6 +76,7 @@ constexpr int SettleAfterSeek = 4;
 std::atomic<int> g_settleFrames { 0 };
 int g_seekWaits = 0;
 bool g_seekJumped = false;
+bool g_seekToRound = false;
 double g_lastRealDt = StepSeconds;
 double g_lastAdvance = StepSeconds;
 
@@ -247,13 +248,14 @@ void RunSeek(double target)
     if (replay::CanJump() && !g_seekJumped && wanted >= 0) {
         g_seekJumped = true;
         g_seekWaits = 0;
-        replay::RequestJump(static_cast<uint32_t>(wanted));
+        replay::RequestJump(static_cast<uint32_t>(wanted), g_seekToRound);
         RunStep();
         return;
     }
 
     if (position > wanted) {
-        mod::Log("Seek: can't go further back than %lld (wanted %lld)", static_cast<long long>(position), static_cast<long long>(wanted));
+        if (!g_seekToRound)
+            mod::Log("Seek: can't go further back than %lld (wanted %lld)", static_cast<long long>(position), static_cast<long long>(wanted));
         EndSeek();
         return;
     }
@@ -394,7 +396,8 @@ void ApplyEngineTime()
         else
             wanted = g_time.Speed;
     }
-    if (std::fabs(wanted - applied) > 1e-5) {
+    // Restoring a saved point puts the game's own time back to normal, so this can't only be done on a change.
+    if (wanted != 1.0 || applied != 1.0) {
         SetGlobalTimeDilation(static_cast<float>(wanted));
         applied = wanted;
     }
@@ -488,6 +491,13 @@ bool DetourActor(void* actor, Vec3 location, Rot rotation, bool sweep, void* hit
             if (actor != g_fighters[i])
                 continue;
             Track& track = g_actorTracks[i];
+            if (Seeking()) {
+                track.PreviousLocation = track.TargetLocation = location;
+                track.PreviousRotation = track.TargetRotation = rotation;
+                track.Valid = true;
+                track.NewStep = false;
+                break;
+            }
             if (track.NewStep || !track.Valid)
                 Shift(track, location, rotation);
             const double alpha = g_alpha.load(std::memory_order_relaxed);
@@ -514,7 +524,9 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
             return;
         BoneTrack& track = g_boneTracks[i];
         std::lock_guard lock(track.Lock);
-        if (static_cast<int>(track.Target.size()) != count) {
+        // A seek runs many steps per frame. Blending from the frame before would start the next slow step that many steps back,
+        // and the fighter would visibly run through all of them within one tick.
+        if (static_cast<int>(track.Target.size()) != count || Seeking()) {
             track.Previous.assign(spaceBases->Data, spaceBases->Data + count);
             track.Target = track.Previous;
             track.NewStep = false;
@@ -700,7 +712,16 @@ void SeekTo(double seconds)
 {
     g_seekWaits = 0;
     g_seekJumped = false;
+    g_seekToRound = false;
     g_seekTarget = seconds;
+}
+
+void SeekToRound(uint32_t frame)
+{
+    g_seekWaits = 0;
+    g_seekJumped = false;
+    g_seekToRound = true;
+    g_seekTarget = frame * StepSeconds - g_clockZero.load(std::memory_order_relaxed);
 }
 
 bool Seeking()

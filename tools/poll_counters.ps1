@@ -1,6 +1,6 @@
 # Test helper: writes the game's clock and round counters to a file a few times a second, to see how they behave.
 param([string]$Out, [int]$Seconds = 60)
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 $end = (Get-Date).AddSeconds($Seconds)
 "" | Set-Content $Out
 while ((Get-Date) -lt $end) {

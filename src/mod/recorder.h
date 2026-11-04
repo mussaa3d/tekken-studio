@@ -30,9 +30,8 @@ const std::vector<Codec>& Codecs();
 enum class Look { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth };
 const char* LookName(Look look);
 
-// What the game should show for the frame being rendered. Depth renders twice, with white fog and then black fog:
-// subtracting the two cancels the picture and leaves only how far away each pixel is.
-enum class Pass { Picture, Greenscreen, StageOnly, FightersOnBlack, DepthWhiteFog, DepthBlackFog };
+// What the game should show for the frame being rendered.
+enum class Pass { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth };
 
 struct Stream {
     char Name[24] = "";
@@ -51,7 +50,9 @@ struct Settings {
     int MotionSamples = 1;    // renders per video frame; 1 = no blur
     float ShutterDegrees = 180; // how much of each frame's time the shutter is open
     Look Preview = Look::Picture; // the look on screen while not recording
-    int GreenDarkness = 16;   // how dark, out of 255, the empty background behind the fighters can be for the greenscreen
+    bool BlueKey = false;     // the keyed look is blue instead of green
+    int GreenDarkness = 16;   // how dark, out of 255, the empty background can be for the keyed look when the depth buffer can't be read
+    float DepthNear = 100, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
     bool UseRange = false;    // start and stop by themselves at the timeline's range
     double RangeIn = 0, RangeOut = 10; // seconds on the fight clock
 };

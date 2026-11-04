@@ -41,8 +41,9 @@ std::string Lower(std::string text)
     return text;
 }
 
-constexpr const char* Marker = "T8CINE-BUILD-MARKER";
-constexpr const wchar_t* BackupName = L"dinput8.dll.t8cine-backup";
+constexpr const char* Marker = "TEKKEN8MVM-BUILD-MARKER";
+constexpr const char* OldMarker = "T8CINE-BUILD-MARKER"; // the name this tool had before
+constexpr const wchar_t* BackupName = L"dinput8.dll.tekken8mvm-backup";
 
 uint64_t FolderBytes(const fs::path& folder, int* fileCount = nullptr)
 {
@@ -217,18 +218,18 @@ GameInstall FindGame(const SteamState& steam)
 
 fs::path DataDir(const GameInstall& game)
 {
-    return game.Win64 / "T8Cine";
+    return game.Win64 / "tekken8mvm";
 }
 
 fs::path SkinMountDir(const GameInstall& game)
 {
-    return game.Paks / "~T8Cine";
+    return game.Paks / "~tekken8mvm";
 }
 
 bool IsOurDll(const fs::path& path)
 {
     const std::string contents = ReadTextFile(path);
-    return contents.find(Marker) != std::string::npos;
+    return contents.find(Marker) != std::string::npos || contents.find(OldMarker) != std::string::npos;
 }
 
 bool ModFilesPresent(const GameInstall& game)
@@ -244,7 +245,7 @@ std::vector<std::string> OtherMods(const GameInstall& game)
     std::error_code error;
     // The game's own paks sit directly in Paks, so anything in a folder under it is a mod.
     for (const auto& entry : fs::directory_iterator(game.Paks, error)) {
-        if (!entry.is_directory(error) || entry.path().filename() == "~T8Cine")
+        if (!entry.is_directory(error) || entry.path().filename() == "~tekken8mvm")
             continue;
         for (const auto& file : fs::recursive_directory_iterator(entry.path(), fs::directory_options::skip_permission_denied, error))
             if (Lower(file.path().extension().string()) == ".pak")
@@ -255,6 +256,22 @@ std::vector<std::string> OtherMods(const GameInstall& game)
         found.push_back("dinput8.dll (another mod's loader)");
     std::sort(found.begin(), found.end());
     return found;
+}
+
+void MoveFromOldName(const GameInstall& game)
+{
+    std::error_code error;
+    if (fs::exists(game.Win64 / "T8Cine", error) && !fs::exists(DataDir(game), error)) {
+        fs::rename(game.Win64 / "T8Cine", DataDir(game), error);
+        if (!error) {
+            std::error_code ignored;
+            fs::rename(DataDir(game) / "t8cine.ini", DataDir(game) / "tekken8mvm.ini", ignored);
+        }
+    }
+    if (fs::exists(game.Paks / "~T8Cine", error))
+        fs::remove_all(game.Paks / "~T8Cine", error);
+    if (fs::exists(game.Win64 / L"dinput8.dll.t8cine-backup", error) && !fs::exists(game.Win64 / BackupName, error))
+        fs::rename(game.Win64 / L"dinput8.dll.t8cine-backup", game.Win64 / BackupName, error);
 }
 
 InstallResult InstallMod(const GameInstall& game, const fs::path& modDll, const std::vector<fs::path>& skinFolders)

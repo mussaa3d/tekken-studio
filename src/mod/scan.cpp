@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <sstream>
 
-#ifndef T8CINE_TESTS
+#ifndef TEKKEN8MVM_TESTS
 #include <windows.h>
 #endif
 
@@ -64,7 +64,7 @@ std::vector<const uint8_t*> FindAll(const uint8_t* begin, size_t size, const Pat
     return hits;
 }
 
-#ifndef T8CINE_TESTS
+#ifndef TEKKEN8MVM_TESTS
 Module MainModule()
 {
     const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));

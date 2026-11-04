@@ -1,5 +1,5 @@
 #pragma once
-// A flat key=value file. Used for t8cine.ini and the launcher's settings.
+// A flat key=value file. Used for tekken8mvm.ini and the launcher's settings.
 #include <filesystem>
 #include <map>
 #include <string>

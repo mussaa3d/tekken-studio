@@ -1,4 +1,4 @@
-// T8Cine launcher. A cinematic session puts the mod and any chosen skins in the game folder, starts the game
+// tekken8mvm launcher. A cinematic session puts the mod and any chosen skins in the game folder, starts the game
 // through Steam, and takes everything out again when the game closes. A normal launch makes sure none of it
 // is there, so online play always runs on untouched files.
 #include <d3d11.h>
@@ -110,7 +110,7 @@ std::string FindFfmpeg()
 
 void WriteModSettings()
 {
-    const fs::path file = files::DataDir(g_app.Game) / "t8cine.ini";
+    const fs::path file = files::DataDir(g_app.Game) / "tekken8mvm.ini";
     Ini ini;
     ini.Load(file);
     ini.Set("ffmpeg_path", FindFfmpeg());
@@ -135,6 +135,14 @@ void Refresh()
 {
     g_app.Steam = files::FindSteam();
     g_app.Game = files::FindGame(g_app.Steam);
+    if (g_app.Game.Found && !GameProcessRunning())
+        files::MoveFromOldName(g_app.Game);
+    if (wchar_t profile[MAX_PATH]; GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH) > 0) {
+        std::error_code ignored;
+        const fs::path videos = fs::path(profile) / "Videos";
+        if (fs::exists(videos / "T8Cine", ignored) && !fs::exists(videos / "tekken8mvm", ignored))
+            fs::rename(videos / "T8Cine", videos / "tekken8mvm", ignored);
+    }
     if (g_app.Game.Found && !g_app.Game.FullyInstalled())
         g_app.Download = files::EstimateDownload(files::ReadTextFile(g_app.Steam.SteamDir / "logs" / "content_log.txt"));
     if (g_app.Game.Found)
@@ -263,14 +271,14 @@ void PlayTab()
     ImGui::Spacing();
     ImGui::TextColored(Accent, "Normal game");
     ImGui::Separator();
-    ImGui::TextWrapped("T8Cine and its skins are taken out of the game folder first. Use this for online play.");
+    ImGui::TextWrapped("tekken8mvm and its skins are taken out of the game folder first. Use this for online play.");
     if (!g_app.OtherMods.empty()) {
         std::string list;
         for (const std::string& mod : g_app.OtherMods)
             list += (list.empty() ? "" : ", ") + mod;
         ImGui::TextColored(Warn, "Other mods are still in the game folder and load in every launch, online too:");
         ImGui::TextWrapped("%s", list.c_str());
-        ImGui::TextColored(Warn, "T8Cine didn't put these there and leaves them alone. Remove them yourself before playing online.");
+        ImGui::TextColored(Warn, "tekken8mvm didn't put these there and leaves them alone. Remove them yourself before playing online.");
     }
     ImGui::BeginDisabled(!canPlay);
     if (ImGui::Button("Start normal game", ImVec2(260, 32)))
@@ -328,7 +336,7 @@ void ReplaysTab()
     if (ImGui::Button("Open shared replays")) {
         wchar_t profile[MAX_PATH] = L".";
         GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
-        const fs::path folder = fs::path(profile) / "Videos" / "T8Cine" / "shared_replays";
+        const fs::path folder = fs::path(profile) / "Videos" / "tekken8mvm" / "shared_replays";
         std::error_code ignored;
         fs::create_directories(folder, ignored);
         OpenPath(folder.wstring());
@@ -434,7 +442,7 @@ void HelpTab()
     ImGui::Spacing();
     ImGui::TextColored(Accent, "Staying safe");
     ImGui::Separator();
-    ImGui::TextWrapped("Bandai Namco's rules allow bans for unauthorized mods, and no mod can promise otherwise. T8Cine keeps mods off "
+    ImGui::TextWrapped("Bandai Namco's rules allow bans for unauthorized mods, and no mod can promise otherwise. tekken8mvm keeps mods off "
                        "online play instead of hiding them: it only runs with Steam in Offline Mode, stops the game's internet connections "
                        "while it runs, turns itself off if Steam goes online, and leaves the game folder clean when it closes. "
                        "Don't copy skins or the mod into the game folder by hand.");
@@ -445,7 +453,7 @@ void HelpTab()
     if (ImGui::Button("Open recordings")) {
         wchar_t profile[MAX_PATH] = L".";
         GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
-        const fs::path videos = fs::path(profile) / "Videos" / "T8Cine";
+        const fs::path videos = fs::path(profile) / "Videos" / "tekken8mvm";
         std::error_code ignored;
         fs::create_directories(videos, ignored);
         OpenPath(videos.wstring());
@@ -570,7 +578,7 @@ LRESULT WINAPI WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CLOSE:
         if (g_app.State != Session::Idle && g_app.ModSession
             && MessageBoxW(window, L"A cinematic session is running. If you close this now, the mod stays in the game folder until the next launch.\n\nClose anyway?",
-                           L"T8Cine", MB_YESNO | MB_ICONWARNING) != IDYES)
+                           L"tekken8mvm", MB_YESNO | MB_ICONWARNING) != IDYES)
             return 0;
         break;
     case WM_DESTROY:
@@ -593,6 +601,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
     // Clear up after a crash or a closed launcher, unless the game is running right now.
     g_app.Steam = files::FindSteam();
     g_app.Game = files::FindGame(g_app.Steam);
+    if (g_app.Game.Found && !GameProcessRunning())
+        files::MoveFromOldName(g_app.Game);
+    if (wchar_t profile[MAX_PATH]; GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH) > 0) {
+        std::error_code ignored;
+        const fs::path videos = fs::path(profile) / "Videos";
+        if (fs::exists(videos / "T8Cine", ignored) && !fs::exists(videos / "tekken8mvm", ignored))
+            fs::rename(videos / "T8Cine", videos / "tekken8mvm", ignored);
+    }
     if (GameProcessRunning()) {
         g_app.State = Session::GameRunning;
         g_app.ModSession = g_app.Game.Found && files::ModFilesPresent(g_app.Game);
@@ -606,11 +622,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
     windowClass.lpfnWndProc = WndProc;
     windowClass.hInstance = instance;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.lpszClassName = L"T8CineLauncher";
+    windowClass.lpszClassName = L"tekken8mvm";
     RegisterClassExW(&windowClass);
 
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT { 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
-    HWND window = CreateWindowW(windowClass.lpszClassName, L"T8Cine", WS_OVERLAPPEDWINDOW, 100, 100, static_cast<int>(760 * scale),
+    HWND window = CreateWindowW(windowClass.lpszClassName, L"tekken8mvm", WS_OVERLAPPEDWINDOW, 100, 100, static_cast<int>(760 * scale),
                                 static_cast<int>(640 * scale), nullptr, nullptr, instance, nullptr);
     BOOL dark = TRUE;
     DwmSetWindowAttribute(window, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark));
@@ -642,7 +658,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
     ImGui_ImplDX11_Init(g_device, g_context);
 
     wchar_t autoShot[MAX_PATH] = L"";
-    GetEnvironmentVariableW(L"T8CINE_LAUNCHER_SMOKE", autoShot, MAX_PATH);
+    GetEnvironmentVariableW(L"TEKKEN8MVM_LAUNCHER_SMOKE", autoShot, MAX_PATH);
     int frames = 0;
 
     bool running = true;

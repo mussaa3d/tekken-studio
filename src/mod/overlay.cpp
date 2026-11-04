@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "mod/camera.h"
+#include "mod/depth.h"
 #include "mod/effects.h"
 #include "mod/game.h"
 #include "mod/guard.h"
@@ -405,6 +406,21 @@ void OnPresent(IDXGISwapChain3* swapChain)
     if (g_harness.Preview)
         game::PreviewFrame();
 
+    // The looks painted from the depth buffer go on the frame first, so the editor's view and the video both get them.
+    const recorder::Pass pass = recorder::ActivePass();
+    if (pass == recorder::Pass::Depth || pass == recorder::Pass::Greenscreen || pass == recorder::Pass::FightersOnBlack) {
+        const recorder::Settings& look = recorder::Config();
+        depth::Options options;
+        options.Kind = pass == recorder::Pass::Depth ? depth::Draw::Depth : depth::Draw::Key;
+        options.Near = look.DepthNear;
+        options.Far = look.DepthFar;
+        options.Curve = look.DepthCurve;
+        options.Key[0] = 0;
+        options.Key[1] = pass == recorder::Pass::Greenscreen && !look.BlueKey ? 1.0f : 0.0f;
+        options.Key[2] = pass == recorder::Pass::Greenscreen && look.BlueKey ? 1.0f : 0.0f;
+        depth::Apply(g_device, g_queue, frame.BackBuffer, frame.Rtv, g_desc.BufferDesc.Format, options);
+    }
+
     // Captured before the menu is drawn, so the video never contains it.
     recorder::OnPresent(g_device, g_queue, frame.BackBuffer, g_desc.BufferDesc.Format);
 
@@ -530,7 +546,7 @@ bool Install()
     WNDCLASSEXW windowClass = { sizeof(windowClass) };
     windowClass.lpfnWndProc = DefWindowProcW;
     windowClass.hInstance = GetModuleHandleW(nullptr);
-    windowClass.lpszClassName = L"T8CineProbe";
+    windowClass.lpszClassName = L"tekken8mvmProbe";
     RegisterClassExW(&windowClass);
     HWND window = CreateWindowExW(0, windowClass.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 64, 64, nullptr, nullptr, windowClass.hInstance, nullptr);
 
@@ -559,6 +575,7 @@ bool Install()
                 ok = Hook(queueTable[10], reinterpret_cast<void*>(&DetourExecute), oExecute)
                     && Hook(swapTable[8], reinterpret_cast<void*>(&DetourPresent), oPresent)
                     && Hook(swapTable[13], reinterpret_cast<void*>(&DetourResize), oResize);
+                depth::Install(device);
             }
         }
     }

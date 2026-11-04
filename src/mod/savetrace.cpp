@@ -1,6 +1,6 @@
 // Research tool for the replay sharing feature. Logs how the game opens, reads and decrypts its save files,
 // with the code address of each caller, so the point where a replay becomes plain data can be found. It only
-// logs: every call goes through unchanged. Turn it off with trace_saves = 0 in t8cine.ini.
+// logs: every call goes through unchanged. Turn it off with trace_saves = 0 in tekken8mvm.ini.
 #include "mod/savetrace.h"
 
 #include <windows.h>

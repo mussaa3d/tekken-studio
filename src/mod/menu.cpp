@@ -18,6 +18,7 @@
 
 #include "mod/audio.h"
 #include "mod/camera.h"
+#include "mod/depth.h"
 #include "mod/dvars.h"
 #include "mod/effects.h"
 #include "mod/game.h"
@@ -354,7 +355,11 @@ void CameraTab()
         if (ImGui::SmallButton("Restart"))
             camera::RestartPathClock();
     }
-    ImGui::Checkbox("Straight lines between keys", &s.LinearPath);
+    int pathStyle = static_cast<int>(s.PathStyle);
+    BarWidth();
+    if (ImGui::Combo("Dolly style", &pathStyle, "Smooth\0Linear\0CoDMVM\0"))
+        s.PathStyle = static_cast<cine::PathStyle>(pathStyle);
+    Help("Smooth: a curve through every key that keeps a steady speed however the keys are spaced. Linear: straight lines at constant speed, with a sharp corner at each key. CoDMVM: a plain curve through every key, where each stretch takes its own speed from how far apart its keys are.");
 
     static char name[64] = "path1";
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
@@ -565,7 +570,7 @@ void VisualsTab()
         ImGui::SameLine();
         if ((ImGui::Button("Run") || entered) && e.CustomCommand[0])
             effects::RunCommand(e.CustomCommand);
-        ImGui::TextColored(Dim, "Add sliders of your own in T8Cine\\dvars.ini.");
+        ImGui::TextColored(Dim, "Add sliders of your own in tekken8mvm\\dvars.ini.");
     }
 }
 
@@ -635,15 +640,29 @@ void RecordTab()
     Section("Preview a look");
     int preview = static_cast<int>(s.Preview);
     BarWidth();
-    if (ImGui::Combo("Look now", &preview, "Picture\0Greenscreen\0Stage only\0Fighters on black\0"))
+    if (ImGui::Combo("Look now", &preview, "Picture\0Greenscreen\0Stage only\0Fighters on black\0Depth\0"))
         s.Preview = static_cast<recorder::Look>(preview);
-    effects::Settings& e = effects::Config();
+    int keyColour = s.BlueKey ? 1 : 0;
     BarWidth();
-    ImGui::SliderInt("Green cut", &s.GreenDarkness, 2, 80);
-    Help("In a greenscreen stream, how dark the empty background can be. Dark clothing at a fighter's edge gets eaten if this is too high, and the background stays dark if it's too low. On screen the look shows the black background, and the video is green.");
+    if (ImGui::Combo("Screen colour", &keyColour, "Green\0Blue\0"))
+        s.BlueKey = keyColour == 1;
+    Help("The colour behind the fighters in the Greenscreen look, on screen and in the video.");
     BarWidth();
-    ImGui::SliderFloat("Depth range", &e.DepthDensity, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-    Help("How quickly the depth stream goes from black to white with distance.");
+    ImGui::SliderFloat("Depth near", &s.DepthNear, 0.0f, 2000.0f, "%.0f cm");
+    Help("How close to the camera the depth look is pure white. Anything closer is white too.");
+    BarWidth();
+    ImGui::SliderFloat("Depth far", &s.DepthFar, 100.0f, 20000.0f, "%.0f cm", ImGuiSliderFlags_Logarithmic);
+    Help("How far from the camera the depth look fades to black.");
+    BarWidth();
+    ImGui::SliderFloat("Depth curve", &s.DepthCurve, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    Help("Above 1 the grey falls off quickly behind the near distance, and below 1 it holds bright for longer.");
+    const recorder::Pass shownPass = recorder::ActivePass();
+    if ((shownPass == recorder::Pass::Depth || shownPass == recorder::Pass::Greenscreen) && !depth::Working()) {
+        ImGui::TextColored(Dim, "Can't read the game's depth buffer yet.");
+        BarWidth();
+        ImGui::SliderInt("Key cut", &s.GreenDarkness, 2, 80);
+        Help("Without the depth buffer, the video keys on how dark the background is. Dark clothing at a fighter's edge gets eaten if this is too high.");
+    }
 
     Section("Motion blur");
     BarWidth();
@@ -669,7 +688,7 @@ void RecordTab()
             const std::time_t now = std::time(nullptr);
             std::tm local {};
             localtime_s(&local, &now);
-            std::strftime(name, sizeof(name), "T8Cine_%Y%m%d_%H%M%S_audio.wav", &local);
+            std::strftime(name, sizeof(name), "tekken8mvm_%Y%m%d_%H%M%S_audio.wav", &local);
             audio::Start(s.OutputDir / name);
         }
     }
@@ -1076,6 +1095,26 @@ void ControlBar(ImVec2 position, ImVec2 size)
         g_layout.OneX = { (ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x) * 0.5f, (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f };
     }
 
+    // Jump to the start of a round. Round one has no point of its own: it starts at the first saved point.
+    const std::vector<replay::SavedPoint> points = replay::SavedPoints();
+    int roundsShown = 0;
+    const auto roundButton = [&](int round, uint32_t frame) {
+        ImGui::SameLine(0, roundsShown == 0 ? ImGui::GetStyle().ItemSpacing.x * 4 : -1.0f);
+        ++roundsShown;
+        char label[16];
+        snprintf(label, sizeof(label), "R%d", round);
+        if (ImGui::SmallButton(label))
+            game::SeekToRound(frame);
+    };
+    bool hasFirstRound = false;
+    for (const replay::SavedPoint& point : points)
+        hasFirstRound = hasFirstRound || (point.Type == replay::TypeRoundStart && point.Round <= 1);
+    if (!points.empty() && !hasFirstRound)
+        roundButton(1, points.front().Frame);
+    for (const replay::SavedPoint& point : points)
+        if (point.Type == replay::TypeRoundStart)
+            roundButton(point.Round, point.Frame);
+
     const game::Rates rates = game::MeasuredRates();
     char info[160];
     const double clock = game::Clock();
@@ -1107,11 +1146,11 @@ void MenuBar()
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("About")) {
-        ImGui::TextUnformatted("T8Cine: cinematic tools for Tekken 8, offline only.");
+        ImGui::TextUnformatted("tekken8mvm: cinematic tools for Tekken 8, offline only.");
         ImGui::TextUnformatted("Layout after IWXMVM. Engine notes from the Tekken Overlay rebuild.");
         ImGui::EndMenu();
     }
-    const char* label = "T8Cine 0.1  |  TEKKEN 8";
+    const char* label = "tekken8mvm 0.1  |  TEKKEN 8";
     ImGui::SameLine(ImGui::GetIO().DisplaySize.x - ImGui::CalcTextSize(label).x - ImGui::GetStyle().WindowPadding.x * 2);
     ImGui::TextColored(Dim, "%s", label);
     ImGui::EndMainMenuBar();

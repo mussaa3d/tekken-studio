@@ -26,7 +26,7 @@ Check "blur" (Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1).Fu
 & .\tools\harness\run_harness.ps1 -RecordFrames 30 -Samples 8 -Shutter 180 | Where-Object { $_ -match "TIMED|stopped after" }
 Check "shutter" (Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1).FullName @("--step", "8", "--frames", "30", "--soft-edge")
 
-"=== F: depth is two renders per frame; with no fog here, only the bar's movement shows in the difference"
+"=== F: a depth stream on its own, which is one render per frame; the harness has no depth buffer, so it shows the plain picture"
 & .\tools\harness\run_harness.ps1 -RecordFrames 30 -Looks "4" -Settle 0 | Where-Object { $_ -match "TIMED|stopped after" }
 Check "depth" (Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1).FullName @("--frames", "30", "--no-bar")
 
@@ -36,6 +36,6 @@ foreach ($f in (Get-ChildItem build\harness_out\*.mp4 | Sort-Object Name)) { Che
 
 "=== H: audio pass against a test tone"
 & .\tools\harness\run_harness.ps1 -RecordFrames 60 -Frames 240 -Audio | Where-Object { $_ -match "TIMED|Harness audio" }
-if (Test-Path build\T8Cine\harness_audio.wav) {
-    python -c "import wave,struct,sys,math; w=wave.open(r'build\T8Cine\harness_audio.wav'); n=w.getnframes(); d=w.readframes(n); s=struct.unpack('<%dh'%(len(d)//2),d); rms=math.sqrt(sum(x*x for x in s)/max(len(s),1)); print('audio:',w.getframerate(),'Hz',w.getnchannels(),'ch',round(n/w.getframerate(),2),'s rms',round(rms),'PASS' if rms>200 else 'FAIL')"
+if (Test-Path build\tekken8mvm\harness_audio.wav) {
+    python -c "import wave,struct,sys,math; w=wave.open(r'build\tekken8mvm\harness_audio.wav'); n=w.getnframes(); d=w.readframes(n); s=struct.unpack('<%dh'%(len(d)//2),d); rms=math.sqrt(sum(x*x for x in s)/max(len(s),1)); print('audio:',w.getframerate(),'Hz',w.getnchannels(),'ch',round(n/w.getframerate(),2),'s rms',round(rms),'PASS' if rms>200 else 'FAIL')"
 } else { "audio: NO FILE" }

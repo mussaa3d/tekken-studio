@@ -4,7 +4,7 @@
 
 namespace mod {
 
-// <game Win64 folder>\T8Cine (the launcher creates it; settings, paths and the log live here).
+// <game Win64 folder>\tekken8mvm (the launcher creates it; settings, paths and the log live here).
 const std::filesystem::path& DataDir();
 void SetDataDir(std::filesystem::path path);
 

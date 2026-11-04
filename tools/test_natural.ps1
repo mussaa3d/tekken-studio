@@ -1,6 +1,6 @@
 # Test: does playing on at normal speed from a landing give the same result as landing at the later moment directly?
 param([double]$At = 40)
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 200 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

@@ -1,7 +1,7 @@
 # Test helper: sends commands to the running mod, one call each, and prints chosen lines of its state.
 #   t8.ps1 "seek 12;pause 1" -Show clock,position -Wait 1.5
 param([string]$Command = "", [string[]]$Show = @("clock", "position", "paused", "rec "), [double]$Wait = 0.2)
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 100 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

@@ -104,24 +104,6 @@ inline Quat Multiply(Quat a, Quat b)
 }
 inline Quat Conjugate(Quat q) { return { -q.X, -q.Y, -q.Z, q.W }; }
 
-inline Quat Log(Quat q)
-{
-    const double v = std::sqrt(q.X * q.X + q.Y * q.Y + q.Z * q.Z);
-    if (v < 1e-9)
-        return { q.X, q.Y, q.Z, 0 };
-    const double angle = std::atan2(v, q.W);
-    return { q.X / v * angle, q.Y / v * angle, q.Z / v * angle, 0 };
-}
-
-inline Quat Exp(Quat q)
-{
-    const double angle = std::sqrt(q.X * q.X + q.Y * q.Y + q.Z * q.Z);
-    if (angle < 1e-9)
-        return Normalized({ q.X, q.Y, q.Z, 1 });
-    const double s = std::sin(angle) / angle;
-    return { q.X * s, q.Y * s, q.Z * s, std::cos(angle) };
-}
-
 struct CameraKey {
     double Time = 0; // seconds on the path's clock
     Vec3 Location;
@@ -150,8 +132,8 @@ inline double Hermite(double p0, double m0, double p1, double m1, double h, doub
     return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * h * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * h * m1;
 }
 
-// Keys must be sorted by Time. Location and FOV use a time-weighted Catmull-Rom spline, rotation uses
-// SQUAD, so the camera moves through every key with no kink. Outside the key range it holds the end key.
+// Keys must be sorted by Time. Every channel uses a time-weighted Catmull-Rom spline, so the camera moves through every key with no
+// kink. Yaw is counted past 180 instead of wrapping, so a turn of any size goes the way it was made. Outside the key range it holds the end key.
 inline CameraSample SamplePath(const std::vector<CameraKey>& keys, double time)
 {
     CameraSample out;
@@ -182,24 +164,9 @@ inline CameraSample SamplePath(const std::vector<CameraKey>& keys, double time)
                      channel(k0.Location.Z, k1.Location.Z, k2.Location.Z, k3.Location.Z) };
     out.Fov = channel(k0.Fov, k1.Fov, k2.Fov, k3.Fov);
 
-    // SQUAD: keep each quaternion on the same hemisphere as the previous one first.
-    Quat q0 = ToQuat(k0.Rotation), q1 = ToQuat(k1.Rotation), q2 = ToQuat(k2.Rotation), q3 = ToQuat(k3.Rotation);
-    const auto align = [](Quat reference, Quat& q) {
-        if (Dot(reference, q) < 0)
-            q = { -q.X, -q.Y, -q.Z, -q.W };
-    };
-    align(q1, q0);
-    align(q1, q2);
-    align(q2, q3);
-    const auto inner = [](Quat prev, Quat q, Quat next) {
-        const Quat inverse = Conjugate(q);
-        const Quat a = Log(Multiply(inverse, prev));
-        const Quat b = Log(Multiply(inverse, next));
-        return Normalized(Multiply(q, Exp({ -(a.X + b.X) / 4, -(a.Y + b.Y) / 4, -(a.Z + b.Z) / 4, 0 })));
-    };
-    const Quat s1 = inner(q0, q1, q2);
-    const Quat s2 = inner(q1, q2, q3);
-    out.Rotation = ToRot(Slerp(Slerp(q1, q2, u), Slerp(s1, s2, u), 2 * u * (1 - u)));
+    out.Rotation = { channel(k0.Rotation.Pitch, k1.Rotation.Pitch, k2.Rotation.Pitch, k3.Rotation.Pitch),
+                     channel(k0.Rotation.Yaw, k1.Rotation.Yaw, k2.Rotation.Yaw, k3.Rotation.Yaw),
+                     channel(k0.Rotation.Roll, k1.Rotation.Roll, k2.Rotation.Roll, k3.Rotation.Roll) };
     return out;
 }
 
@@ -242,9 +209,62 @@ inline CameraSample SamplePathLinear(const std::vector<CameraKey>& keys, double 
         ++i;
     const double u = std::clamp((time - keys[i].Time) / std::max(keys[i + 1].Time - keys[i].Time, 1e-6), 0.0, 1.0);
     out.Location = Lerp(keys[i].Location, keys[i + 1].Location, u);
-    out.Rotation = RotLerp(keys[i].Rotation, keys[i + 1].Rotation, u);
+    const Rot& a = keys[i].Rotation;
+    const Rot& b = keys[i + 1].Rotation;
+    out.Rotation = { a.Pitch + (b.Pitch - a.Pitch) * u, a.Yaw + (b.Yaw - a.Yaw) * u, a.Roll + (b.Roll - a.Roll) * u };
     out.Fov = keys[i].Fov + (keys[i + 1].Fov - keys[i].Fov) * u;
     return out;
+}
+
+// The CoD movie mods' kind of path: a plain Catmull-Rom through the keys that ignores their spacing in time, so each stretch between
+// two keys takes its own speed.
+inline CameraSample SamplePathCoD(const std::vector<CameraKey>& keys, double time)
+{
+    CameraSample out;
+    if (keys.empty())
+        return out;
+    if (time <= keys.front().Time || keys.size() == 1)
+        return { keys.front().Location, keys.front().Rotation, keys.front().Fov };
+    if (time >= keys.back().Time)
+        return { keys.back().Location, keys.back().Rotation, keys.back().Fov };
+    size_t i = 0;
+    while (i + 2 < keys.size() && time > keys[i + 1].Time)
+        ++i;
+    const CameraKey& k1 = keys[i];
+    const CameraKey& k2 = keys[i + 1];
+    const CameraKey& k0 = i > 0 ? keys[i - 1] : k1;
+    const CameraKey& k3 = i + 2 < keys.size() ? keys[i + 2] : k2;
+    const double u = std::clamp((time - k1.Time) / std::max(k2.Time - k1.Time, 1e-6), 0.0, 1.0);
+    const auto channel = [&](double a, double b, double c, double d) { return Hermite(b, (c - a) * 0.5, c, (d - b) * 0.5, 1.0, u); };
+    out.Location = { channel(k0.Location.X, k1.Location.X, k2.Location.X, k3.Location.X),
+                     channel(k0.Location.Y, k1.Location.Y, k2.Location.Y, k3.Location.Y),
+                     channel(k0.Location.Z, k1.Location.Z, k2.Location.Z, k3.Location.Z) };
+    out.Rotation = { channel(k0.Rotation.Pitch, k1.Rotation.Pitch, k2.Rotation.Pitch, k3.Rotation.Pitch),
+                     channel(k0.Rotation.Yaw, k1.Rotation.Yaw, k2.Rotation.Yaw, k3.Rotation.Yaw),
+                     channel(k0.Rotation.Roll, k1.Rotation.Roll, k2.Rotation.Roll, k3.Rotation.Roll) };
+    out.Fov = channel(k0.Fov, k1.Fov, k2.Fov, k3.Fov);
+    return out;
+}
+
+enum class PathStyle { Smooth, Linear, CoD };
+
+inline CameraSample SamplePathStyled(const std::vector<CameraKey>& keys, double time, PathStyle style)
+{
+    switch (style) {
+    case PathStyle::Linear:
+        return SamplePathLinear(keys, time);
+    case PathStyle::CoD:
+        return SamplePathCoD(keys, time);
+    default:
+        return SamplePath(keys, time);
+    }
+}
+
+// Keys from a file that stored yaw as -180 to 180: each one takes the short way from the one before.
+inline void CountYaw(std::vector<CameraKey>& keys)
+{
+    for (size_t i = 1; i < keys.size(); ++i)
+        keys[i].Rotation.Yaw = keys[i - 1].Rotation.Yaw + WrapAngle(keys[i].Rotation.Yaw - keys[i - 1].Rotation.Yaw);
 }
 
 // The rotation that points a camera at a target.

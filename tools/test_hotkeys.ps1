@@ -1,5 +1,5 @@
 # Test: presses each hotkey the way a keyboard does and reads the mod's state after it.
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Read-State {
     Remove-Item "$data\state.txt" -ErrorAction SilentlyContinue
     Set-Content "$data\commands.txt" -Value "state" -Encoding ascii

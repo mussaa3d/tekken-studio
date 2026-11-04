@@ -1,6 +1,6 @@
 # Test: builds a three-key camera path around a moment in a playing replay, previews it, then records it from the first frame.
 param([double]$At = 30, [double]$Length = 4, [string]$Streams = "", [string]$Extra = "")
-$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
+$data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\tekken8mvm"
 function Send-Lines($lines) {
     for ($i = 0; $i -lt 200 -and (Test-Path "$data\commands.txt"); $i++) { Start-Sleep -Milliseconds 20 }
     Set-Content "$data\commands.txt" -Value $lines -Encoding ascii

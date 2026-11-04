@@ -1,4 +1,4 @@
-# T8Cine mod log
+# tekken8mvm mod log
 
 Working notes. Facts here were read from the sources named, or measured where it says so. Measured on game version 3.02.02, exe TimeDateStamp 1787726436, Steam build 25221600.
 
@@ -33,7 +33,18 @@ Engine patterns, offsets, the 60 Hz accumulator idea and the HUD word lists come
 - Each `replay_game_no<K>1.sav` holds 5 slots. So a file isn't one replay, which is why file copying was never going to work.
 - The game's list reads the slots directly, when you enter the Replay screen. A filled slot right after the last one shows up and plays. Tested through the UI: export, load, listed, played.
 - Not tested: a different PC or Steam account. In memory it shouldn't matter, since the file encryption never comes into it.
-- `tools/savetrace` shows no BCrypt use: the game has its own decryption, and T8Cine doesn't touch it.
+- `tools/savetrace` shows no BCrypt use: the game has its own decryption, and tekken8mvm doesn't touch it.
+
+## Depth buffer (measured)
+- `ID3D12Device::CreateDepthStencilView` (table slot 21) ties a descriptor to a resource and `OMSetRenderTargets` (command list slot 46) says which is in use. The scene's depth is the picture-sized one bound most often in a frame. Here 1536x864, format 19 (R32G8X24), for a 1920x1080 picture, with the engine cycling through several resources of that size.
+- It can be read as `R32_FLOAT_X8X24_TYPELESS` at Present with no barrier, on an RTX 2070. Not tried on AMD or Intel. Its contents match the picture on the same frame.
+- Reversed depth with no far plane: distance in cm = 10 / value, and 0 means nothing was drawn. Hidden stage plus value 0 gives an exact key.
+- This replaced the fog pair (white fog minus black fog), which had colour holes, took two renders per frame and followed a 16-pixel grid.
+
+## Time (measured)
+- **The fighters ran across the screen in slow motion after a rewind.** A seek runs up to 32 steps per frame, and the pose blend went from the last frame's pose, up to 32 steps old. The first slow step then played all of those within one tick. While seeking and settling, the blend now holds the newest pose.
+- **The stage kept moving while paused.** Restoring a saved point puts global time dilation back to 1, and the mod only wrote it on a change. It's now written every tick unless it's meant to be 1. Llamas, the crowd and cloth then freeze.
+- A saved point's transition moves the fight on by up to about 7 frames, and a round start's by about 177 (its intro). A seek inside those would overshoot, so seeks use a point at least 17 frames back and skip round starts. Round buttons use the round start and land after the intro.
 
 ## Replays in the game
 - Offline, the only way into a replay is My Replays & Tips or Downloaded Replays, both with the tips UI. Tips pause the replay until set to Hide in its menu (B).
@@ -62,7 +73,7 @@ Engine patterns, offsets, the 60 Hz accumulator idea and the HUD word lists come
 In the real game, on replays, through real mouse and keyboard input where it says UI:
 - Editor layout, tabs, ruler rewind, preview and record buttons, export and load (UI). Insert, F5, F6, F8, F9, `.`, `[`, `]`, K (real key events). F7 through its button's function.
 - Timeline, seek accuracy, determinism.
-- Free camera, attach orbit, FOV, dolly, speed ramp, motion blur, 4 streams at once with equal frame counts, greenscreen, stage only, fighters on black, depth.
+- Free camera, attach orbit, FOV, dolly in all three styles with turns past 180, speed ramp, motion blur, streams at once with equal frame counts, green and blue screen, stage only, fighters on black, depth, round buttons (UI).
 - Fog with colour, sun, spawned light, HUD hide, hit effect hiding, DOF, post process, camera filter on real mid-round cinematic moves and zooms, classic camera.
 - Audio pass: real WASAPI capture. On this PC the game's Volume Mixer slider is at 0, which silences it, so it was verified at 2% and put back.
 - Launcher: session start, block when online, normal game, cleanup after a forced kill, skin in and out.
@@ -79,10 +90,10 @@ In the real game, on replays, through real mouse and keyboard input where it say
 3. Shipping builds strip `ShowFlag.*` console commands, so show flags are written to the viewport's bitfield.
 4. Text-mode `ofstream` writes CRLF; read back in binary, the build ID in `vault.txt` kept a stray `\r`. A unit test caught it.
 5. Restarting Steam with its offline flag set shows "Who's playing?", and picking the account signs in online and resets the flag. Use the Steam menu's Go Offline.
-6. `tools/session.ps1 start` writes `test_commands` and `trace_saves` into `T8Cine\t8cine.ini` in the game folder. The launcher keeps that file, so delete it after testing.
+6. `tools/session.ps1 start` writes `test_commands` and `trace_saves` into `tekken8mvm\tekken8mvm.ini` in the game folder. The launcher keeps that file, so delete it after testing.
 7. In the Replay screen the back key is K, and it can miss a press. Screenshot before clicking in the next screen: a blind click on the replay list opens a box with Delete Replay in it.
 8. A mod-paused game also freezes the game's menus, since they run inside the tick.
 
 ## Restore
-The launcher closes a session by removing `dinput8.dll` and `Paks/~T8Cine`. Manually: delete those two and `T8Cine/session.lock`.
+The launcher closes a session by removing `dinput8.dll` and `Paks/~tekken8mvm`. Manually: delete those two and `tekken8mvm/session.lock`.
 Save backups are in `~/.universal-modder/backups/tekken8-saved/`: `um backup restore tekken8-saved --snapshot <full path>`.

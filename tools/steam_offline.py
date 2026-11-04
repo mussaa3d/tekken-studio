@@ -24,7 +24,7 @@ if command == "status":
     sys.exit(0)
 
 value = "1" if command == "on" else "0"
-backup = path.with_suffix(".vdf.t8cine-backup")
+backup = path.with_suffix(".vdf.tekken8mvm-backup")
 if not backup.exists():
     shutil.copy2(path, backup)
 
