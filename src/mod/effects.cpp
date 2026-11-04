@@ -112,19 +112,125 @@ void UpdateHud()
             ue::SetWidgetVisibility(widget.Object, ue::SlateVisibility::Hidden);
 }
 
-void RemoveManagers(const char* className)
+// The drama manager runs rage arts and heat smashes. Destroying it or the effect manager crashes the game the next time it calls them
+// (a rewind does, for one), so they stay, and what they show gets switched off instead.
+void* g_dramaManager = nullptr;
+uint32_t g_dramaManagerIndex = 0;
+bool g_dramaPlaying = false;
+int g_dramaLookup = 0;
+
+void* DramaManager()
 {
-    void* cls = ue::FindClass(className);
-    if (!cls) {
-        mod::Log("Class %s not found", className);
+    if (g_dramaManager && ue::StillAlive(g_dramaManager, g_dramaManagerIndex))
+        return g_dramaManager;
+    g_dramaManager = nullptr;
+    if (--g_dramaLookup > 0 || !game::Fighter(0))
+        return nullptr;
+    g_dramaLookup = 120;
+    if (void* cls = ue::FindClass("PolarisDramaManager")) {
+        const auto objects = ue::AllObjectsOf(cls);
+        if (!objects.empty()) {
+            g_dramaManager = objects.front();
+            g_dramaManagerIndex = ue::Field<uint32_t>(g_dramaManager, ue::off::InternalIndex);
+        }
+    }
+    return g_dramaManager;
+}
+
+void UpdateDrama()
+{
+    void* manager = DramaManager();
+    bool playing = false;
+    if (manager) {
+        struct {
+            void* ReturnValue;
+        } current { nullptr };
+        static ue::FunctionRef getCurrent { "PolarisDramaManager", "GetCurrentDramaActor" };
+        ue::Call(manager, getCurrent, &current);
+        // The drama actor stays around between cinematics, so what counts is whether its sequence is playing.
+        static const int playerAt = [] {
+            void* cls = ue::FindClass("PolarisDramaActor");
+            return cls ? ue::PropertyOffset(cls, "LevelSequencePlayer") : -1;
+        }();
+        void* player = current.ReturnValue && playerAt >= 0 ? ue::Field<void*>(current.ReturnValue, playerAt) : nullptr;
+        if (player) {
+            struct {
+                bool ReturnValue;
+            } isPlaying { false };
+            static ue::FunctionRef playingRef { "MovieSceneSequencePlayer", "IsPlaying" };
+            ue::Call(player, playingRef, &isPlaying);
+            playing = isPlaying.ReturnValue;
+        }
+    }
+    if (playing != g_dramaPlaying) {
+        mod::Log("Drama %s at %.2f", playing ? "starts" : "ends", game::Clock());
+        g_dramaPlaying = playing;
+    }
+    if (playing && g_settings.NoDramaManager) {
+        static ue::FunctionRef reset { "PolarisDramaManager", "ResetDramaParameterPostProc" };
+        ue::Call(manager, reset, nullptr);
+    }
+}
+
+// Hit sparks and rage art glows, hidden as they appear.
+struct HiddenEffect {
+    void* Object;
+    uint32_t Index;
+};
+std::vector<HiddenEffect> g_hiddenEffects;
+int g_effectRescan = 0;
+
+void SetEffectHidden(void* component, bool hidden)
+{
+    struct {
+        bool Hidden, Propagate;
+    } params { hidden, false };
+    static ue::FunctionRef ref { "SceneComponent", "SetHiddenInGame" };
+    ue::Call(component, ref, &params);
+}
+
+void UpdateHitEffects()
+{
+    if (!g_settings.NoHitEffects) {
+        if (!g_hiddenEffects.empty()) {
+            for (const HiddenEffect& effect : g_hiddenEffects)
+                if (ue::StillAlive(effect.Object, effect.Index))
+                    SetEffectHidden(effect.Object, false);
+            g_hiddenEffects.clear();
+        }
         return;
     }
-    int removed = 0;
-    for (void* actor : ue::AllObjectsOf(cls)) {
-        ue::DestroyActor(actor);
-        ++removed;
+    if (--g_effectRescan > 0)
+        return;
+    g_effectRescan = 6;
+    void* cls = ue::FindClass("NiagaraComponent");
+    if (!cls)
+        return;
+    static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };
+    static void* lastLogged = nullptr;
+    for (void* component : ue::AllObjectsOf(cls)) {
+        struct {
+            void* ReturnValue;
+        } owner { nullptr };
+        ue::Call(component, getOwner, &owner);
+        if (!owner.ReturnValue)
+            continue;
+        const std::string ownerClass = Lower(ue::ClassNameOf(owner.ReturnValue));
+        const bool fightEffect = ownerClass.find("effect") != std::string::npos || ownerClass.find("niagara") != std::string::npos || ownerClass.find("character") != std::string::npos;
+        if (!fightEffect || ownerClass.find("stage") != std::string::npos)
+            continue;
+        const uint32_t index = ue::Field<uint32_t>(component, ue::off::InternalIndex);
+        const bool known = std::any_of(g_hiddenEffects.begin(), g_hiddenEffects.end(), [&](const HiddenEffect& e) { return e.Object == component && e.Index == index; });
+        if (known)
+            continue;
+        SetEffectHidden(component, true);
+        g_hiddenEffects.push_back({ component, index });
+        if (owner.ReturnValue != lastLogged) {
+            lastLogged = owner.ReturnValue;
+            mod::Log("Effects: hiding what %s shows", ownerClass.c_str());
+        }
     }
-    mod::Log("Removed %d %s", removed, className);
+    std::erase_if(g_hiddenEffects, [](const HiddenEffect& e) { return !ue::StillAlive(e.Object, e.Index); });
 }
 
 // Shipping builds strip the ShowFlag console commands, so these write the viewport's bitfield directly.
@@ -356,16 +462,22 @@ Settings& Config()
 
 void OnFightFound()
 {
-    if (g_settings.NoHitEffects)
-        RemoveManagers("PolarisEffectManager");
-    if (g_settings.NoDramaManager)
-        RemoveManagers("PolarisDramaManager");
+    g_dramaManager = nullptr;
+    g_dramaLookup = 0;
+    g_dramaPlaying = false;
+    g_hiddenEffects.clear();
+}
+
+bool DramaPlaying()
+{
+    return g_dramaPlaying;
 }
 
 void OnGameTick()
 {
-    if (g_refresh.exchange(false) && game::Fighter(0))
-        OnFightFound();
+    g_refresh.exchange(false);
+    UpdateDrama();
+    UpdateHitEffects();
     ApplyFlags();
     {
         std::vector<std::wstring> commands;

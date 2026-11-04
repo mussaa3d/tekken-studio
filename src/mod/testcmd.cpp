@@ -22,6 +22,7 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/savetrace.h"
+#include "mod/sharing.h"
 #include "mod/ue.h"
 
 namespace testcmd {
@@ -69,6 +70,7 @@ void WriteState()
     int round = -1;
     uint32_t frame = 0;
     const bool inFight = replay::Position(round, frame);
+    out << "drama " << effects::DramaPlaying() << "\n";
     out << "position " << inFight << " round " << round << " frame " << frame << " canjump " << replay::CanJump() << " seeking " << game::Seeking() << "\n";
     out.close();
     std::error_code ignored;
@@ -242,6 +244,81 @@ void Run(const std::string& line)
     } else if (command == "look") {
         in >> n;
         r.Preview = static_cast<recorder::Look>(n);
+    } else if (command == "slots") {
+        for (const sharing::Slot& slot : sharing::Slots())
+            if (slot.Downloaded)
+                mod::Log("[test] slot %d version %u downloaded", slot.Index, slot.GameVersion);
+    } else if (command == "pokeu32") {
+        // pokeu32 <hex address> <value>
+        std::string address;
+        in >> address >> n;
+        *reinterpret_cast<int*>(std::stoull(address, nullptr, 16)) = n;
+        mod::Log("[test] poked %s = %d", address.c_str(), n);
+    } else if (command == "exportslot") {
+        std::string name, error;
+        in >> n >> name;
+        mod::Log("[test] export slot %d: %d %s", n, sharing::Export(n, name, error), error.c_str());
+    } else if (command == "importfile") {
+        std::string name, error;
+        in >> name;
+        mod::Log("[test] import %s: %d %s", name.c_str(), sharing::Import(name, error), error.c_str());
+    } else if (command == "lightall") {
+        // lightall <Class> <intensity> <r> <g> <b>: sets every light of a class, to see whether that kind shows at all
+        std::string name;
+        float intensity = 0, red = 1, green = 1, blue = 1;
+        in >> name >> intensity >> red >> green >> blue;
+        void* cls = ue::FindClass(name);
+        static ue::FunctionRef setIntensity { "LightComponent", "SetIntensity" };
+        static ue::FunctionRef setColor { "LightComponent", "SetLightColor" };
+        int count = 0;
+        for (void* light : ue::AllObjectsOf(cls)) {
+            struct {
+                float Value;
+            } value { intensity };
+            ue::Call(light, setIntensity, &value);
+            struct {
+                float R, G, B, A;
+                bool SRGB;
+            } color { red, green, blue, 1, true };
+            ue::Call(light, setColor, &color);
+            ++count;
+        }
+        mod::Log("[test] lightall %s: %d lights", name.c_str(), count);
+    } else if (command == "memdump") {
+        // memdump <hex address> <bytes> <file name>: writes part of the game's memory to a file next to the mod's log
+        std::string address, name;
+        size_t size = 0;
+        in >> address >> size >> name;
+        const auto* begin = reinterpret_cast<const uint8_t*>(std::stoull(address, nullptr, 16));
+        std::ofstream file(mod::DataDir() / name, std::ios::binary | std::ios::trunc);
+        size_t written = 0;
+        MEMORY_BASIC_INFORMATION info {};
+        while (written < size && VirtualQuery(begin + written, &info, sizeof(info)) == sizeof(info) && info.State == MEM_COMMIT && !(info.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
+            const size_t chunk = std::min(size - written, static_cast<size_t>(static_cast<const uint8_t*>(info.BaseAddress) + info.RegionSize - (begin + written)));
+            file.write(reinterpret_cast<const char*>(begin + written), static_cast<std::streamsize>(chunk));
+            written += chunk;
+        }
+        mod::Log("[test] memdump %s: wrote %zu of %zu bytes", name.c_str(), written, size);
+    } else if (command == "memfind") {
+        // memfind <hex>: where a byte string is in the game's writable memory, with the size of the block around it
+        std::string hex;
+        in >> hex;
+        std::vector<uint8_t> needle;
+        for (size_t i = 0; i + 1 < hex.size(); i += 2)
+            needle.push_back(static_cast<uint8_t>(std::stoi(hex.substr(i, 2), nullptr, 16)));
+        MEMORY_BASIC_INFORMATION info {};
+        int hits = 0;
+        for (uint8_t* address = nullptr; VirtualQuery(address, &info, sizeof(info)) == sizeof(info) && hits < 40; address = static_cast<uint8_t*>(info.BaseAddress) + info.RegionSize) {
+            if (info.State != MEM_COMMIT || (info.Protect & (PAGE_READWRITE | PAGE_WRITECOPY)) == 0 || (info.Protect & PAGE_GUARD) || info.RegionSize > (1ull << 32))
+                continue;
+            const auto* begin = static_cast<const uint8_t*>(info.BaseAddress);
+            const auto* end = begin + info.RegionSize;
+            for (const uint8_t* hit = std::search(begin, end, needle.begin(), needle.end()); hit != end && hits < 40; hit = std::search(hit + 1, end, needle.begin(), needle.end())) {
+                ++hits;
+                mod::Log("[test] memfind %p region %p size %zu offset %zu", hit, begin, static_cast<size_t>(info.RegionSize), static_cast<size_t>(hit - begin));
+            }
+        }
+        mod::Log("[test] memfind: %d hits", hits);
     } else if (command == "lightinfo") {
         void* cls = ue::FindClass("LightComponent");
         void* scene = ue::FindClass("SceneComponent");
@@ -260,7 +337,7 @@ void Run(const std::string& line)
             uint8_t visibleMask = 0, affectsMask = 0, hiddenMask = 0;
             ue::BoolProperty(scene, "bVisible", visibleByte, visibleMask);
             ue::BoolProperty(scene, "bHiddenInGame", hiddenByte, hiddenMask);
-            ue::BoolProperty(cls, "bAffectsWorld", affectsByte, affectsMask);
+            ue::BoolProperty(ue::FindClass("LightComponentBase"), "bAffectsWorld", affectsByte, affectsMask);
             const int intensityAt = ue::PropertyOffset(cls, "Intensity");
             const int colorAt = ue::PropertyOffset(cls, "LightColor");
             const int channelsAt = ue::PropertyOffset(cls, "LightingChannels");

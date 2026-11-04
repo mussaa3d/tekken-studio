@@ -10,6 +10,7 @@
 #include <mutex>
 #include <sstream>
 
+#include "mod/effects.h"
 #include "mod/game.h"
 #include "mod/log.h"
 #include "mod/overlay.h"
@@ -313,7 +314,8 @@ void ApplyFilter(Vec3& location, Rot& rotation, float& fov)
         return;
     }
 
-    const bool jump = cine::IsCinematicJump(expected, now, s.JumpDistance, s.JumpAngle);
+    // The game saying a cinematic is on is the sure sign; the jump catches camera moves it does outside one.
+    const bool jump = effects::DramaPlaying() || cine::IsCinematicJump(expected, now, s.JumpDistance, s.JumpAngle);
     if (!jump) {
         // Stay "held" for a moment after the camera returns, so a cut back and forth doesn't flicker.
         g_filter.QuietFrames = g_filter.Holding ? g_filter.QuietFrames + 1 : 30;

@@ -29,6 +29,7 @@
 #include "mod/presets.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
+#include "mod/sharing.h"
 
 namespace menu {
 
@@ -103,53 +104,97 @@ bool SliderDouble(const char* label, double& value, double min, double max, cons
 
 // ----- REPLAYS tab
 
-std::vector<std::pair<std::string, std::string>> ListReplayFiles()
+std::string DateText(uint64_t seconds)
 {
-    std::vector<std::pair<std::string, std::string>> rows;
-    wchar_t local[MAX_PATH] = L"";
-    GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
-    const std::filesystem::path root = std::filesystem::path(local) / "TEKKEN 8" / "Saved" / "SaveGames";
-    std::error_code error;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error)) {
-        const std::string name = entry.path().filename().string();
-        if (name.rfind("replay_game_no", 0) != 0)
-            continue;
-        const auto when = std::chrono::clock_cast<std::chrono::system_clock>(entry.last_write_time(error));
-        const std::time_t time = std::chrono::system_clock::to_time_t(when);
-        std::tm tm {};
-        localtime_s(&tm, &time);
-        char text[32];
-        std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", &tm);
-        rows.push_back({ text, name });
-    }
-    std::sort(rows.rbegin(), rows.rend());
-    return rows;
+    const std::time_t time = static_cast<std::time_t>(seconds);
+    std::tm tm {};
+    localtime_s(&tm, &time);
+    char text[32];
+    std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", &tm);
+    return text;
+}
+
+// 30202 is game version 3.02.02.
+std::string VersionText(uint32_t version)
+{
+    char text[32];
+    snprintf(text, sizeof(text), "%u.%02u.%02u", version / 10000, (version / 100) % 100, version % 100);
+    return text;
 }
 
 void ReplaysTab()
 {
-    static std::vector<std::pair<std::string, std::string>> replays = ListReplayFiles();
+    static std::vector<sharing::Slot> slots;
+    static bool loaded = false;
+    static int selected = -1;
     static char search[64] = "";
+    static char exportName[64] = "replay1";
+    static std::vector<std::string> files;
+    static std::string message;
 
-    ImGui::Text("%d replays found!", static_cast<int>(replays.size()));
+    const auto refresh = [] {
+        slots = sharing::Slots();
+        std::sort(slots.begin(), slots.end(), [](const sharing::Slot& a, const sharing::Slot& b) { return a.Played > b.Played; });
+        files = sharing::SharedFiles();
+    };
+    if (!loaded) {
+        loaded = true;
+        refresh();
+    }
+
+    ImGui::Text("%d replays", static_cast<int>(slots.size()));
     ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Refresh").x - ImGui::GetStyle().FramePadding.x * 2);
     if (ImGui::SmallButton("Refresh"))
-        replays = ListReplayFiles();
+        refresh();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##search", "Search...", search, sizeof(search));
 
-    if (ImGui::BeginChild("replaylist", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.42f), ImGuiChildFlags_Borders)) {
-        for (const auto& [when, name] : replays) {
-            if (search[0] && name.find(search) == std::string::npos && when.find(search) == std::string::npos)
+    if (ImGui::BeginChild("replaylist", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.36f), ImGuiChildFlags_Borders)) {
+        for (const sharing::Slot& slot : slots) {
+            const std::string when = DateText(slot.Played);
+            const std::string row = when + "  " + slot.Player1 + " vs " + slot.Player2;
+            if (search[0] && row.find(search) == std::string::npos)
                 continue;
-            ImGui::TextColored(Dim, "%s", when.c_str());
-            ImGui::SameLine();
-            ImGui::TextUnformatted(name.c_str());
+            ImGui::PushID(slot.Index);
+            if (ImGui::Selectable(row.c_str(), selected == slot.Index))
+                selected = slot.Index;
+            ImGui::PopID();
         }
     }
     ImGui::EndChild();
-    ImGui::TextColored(Warn, "Export and load for sharing are being finished.");
-    ImGui::TextWrapped("Play a replay from the game's own menu for now, then use the other tabs.");
+
+    Section("Share a replay");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::InputText("##exportname", exportName, sizeof(exportName));
+    ImGui::SameLine();
+    ImGui::BeginDisabled(selected < 0);
+    if (ImGui::Button("Export")) {
+        std::string error;
+        message = sharing::Export(selected, exportName, error) ? std::string("Saved ") + exportName + ".t8replay" : error;
+        files = sharing::SharedFiles();
+    }
+    ImGui::EndDisabled();
+    Help("Pick a replay in the list, name the file, and send it to a friend. It holds both players' names. It only plays on the same game version.");
+    if (ImGui::SmallButton("Open the folder"))
+        ShellExecuteA(nullptr, "open", sharing::Folder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ImGui::TextColored(Dim, "Files here can be loaded:");
+    for (const std::string& file : files) {
+        ImGui::PushID(file.c_str());
+        if (ImGui::SmallButton("Load")) {
+            std::string error;
+            if (sharing::Import(file, error)) {
+                message = "Loaded. Open Replay > Downloaded Replays in the game. To keep it past this session, that's the game's own save: it stays only until you close the game.";
+                refresh();
+            } else {
+                message = error;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(file.c_str());
+        ImGui::PopID();
+    }
+    if (!message.empty())
+        ImGui::TextWrapped("%s", message.c_str());
 
     Section("Shots");
     ImGui::TextWrapped("Camera path, speed ramp and look together. Give a friend the same replay and this file for your exact shot.");
@@ -428,10 +473,10 @@ void VisualsTab()
     }
 
     if (Group("Rage art and heat effects")) {
-        changed |= ImGui::Checkbox("Remove hit effects", &e.NoHitEffects);
-        Help("Removes the fight's effect manager. Stays off until the next fight, even after you untick it.");
-        changed |= ImGui::Checkbox("Remove drama and camera shakes", &e.NoDramaManager);
-        Help("Removes the manager behind rage art and wall break shakes. Stays off until the next fight, even after you untick it.");
+        changed |= ImGui::Checkbox("Hide hit sparks and glows", &e.NoHitEffects);
+        Help("Hides the sparks of hits and the glows of rage arts and heat as they appear. Untick to get them back.");
+        changed |= ImGui::Checkbox("No rage art screen effects", &e.NoDramaManager);
+        Help("Cancels what a rage art or heat smash puts over the picture while it plays.");
     }
     if (changed)
         effects::RequestRefresh();

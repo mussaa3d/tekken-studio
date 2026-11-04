@@ -14,6 +14,7 @@ namespace {
 std::array<Light, MaxLights> g_rig;
 
 struct Live {
+    void* Actor = nullptr;
     void* Component = nullptr;
     uint32_t Index = 0;
     bool Spot = false;
@@ -25,43 +26,68 @@ struct LinearColor {
     float R, G, B, A;
 };
 
-// Adds a light component to a fighter through the engine's own function. Its parameter layout comes from reflection, so
-// the struct below isn't assumed.
-void* AddLight(void* owner, const char* className)
+// Identity transform: rotation quaternion, translation, scale, four doubles each.
+void WriteIdentity(uint8_t* at)
 {
-    static ue::FunctionRef addComponent { "Actor", "AddComponentByClass" };
+    auto* transform = reinterpret_cast<double*>(at);
+    transform[3] = 1.0;
+    transform[8] = transform[9] = transform[10] = 1.0;
+}
+
+// Spawns a light actor through the engine's own functions, with their parameter layout from reflection. A light on a fighter never
+// shows: the fighter's own actor is hidden, and that hides everything on it.
+void* SpawnLight(const char* className)
+{
+    void* library = ue::FindClass("GameplayStatics");
     void* cls = ue::FindClass(className);
-    void* actorClass = ue::FindClass("Actor");
-    void* function = actorClass ? ue::FindFunction(actorClass, "AddComponentByClass") : nullptr;
-    if (!cls || !function)
+    void* begin = library ? ue::FindFunction(library, "BeginDeferredActorSpawnFromClass") : nullptr;
+    void* finish = library ? ue::FindFunction(library, "FinishSpawningActor") : nullptr;
+    if (!cls || !begin || !finish)
         return nullptr;
-    const int classAt = ue::PropertyOffset(function, "Class");
-    const int manualAt = ue::PropertyOffset(function, "bManualAttachment");
-    const int transformAt = ue::PropertyOffset(function, "RelativeTransform");
-    const int deferredAt = ue::PropertyOffset(function, "bDeferredFinish");
-    const int returnAt = ue::PropertyOffset(function, "ReturnValue");
-    if (classAt < 0 || transformAt < 0 || returnAt < 0) {
+    const int worldAt = ue::PropertyOffset(begin, "WorldContextObject");
+    const int classAt = ue::PropertyOffset(begin, "ActorClass");
+    const int transformAt = ue::PropertyOffset(begin, "SpawnTransform");
+    const int collisionAt = ue::PropertyOffset(begin, "CollisionHandlingOverride");
+    const int returnAt = ue::PropertyOffset(begin, "ReturnValue");
+    const int finishActorAt = ue::PropertyOffset(finish, "Actor");
+    const int finishTransformAt = ue::PropertyOffset(finish, "SpawnTransform");
+    if (worldAt < 0 || classAt < 0 || transformAt < 0 || returnAt < 0 || finishActorAt < 0 || finishTransformAt < 0) {
         if (!g_warned)
-            mod::Log("Lights: AddComponentByClass has an unexpected layout");
+            mod::Log("Lights: the spawn functions have an unexpected layout");
         g_warned = true;
         return nullptr;
     }
     alignas(16) uint8_t params[0x200] = {};
+    *reinterpret_cast<void**>(params + worldAt) = ue::World();
     *reinterpret_cast<void**>(params + classAt) = cls;
-    if (manualAt >= 0)
-        params[manualAt] = 0;
-    if (deferredAt >= 0)
-        params[deferredAt] = 0;
-    // Identity transform: rotation quaternion, translation, scale, four doubles each.
-    auto* transform = reinterpret_cast<double*>(params + transformAt);
-    transform[3] = 1.0;
-    transform[8] = transform[9] = transform[10] = 1.0;
-    ue::Call(owner, addComponent, params);
-    void* light = *reinterpret_cast<void**>(params + returnAt);
+    WriteIdentity(params + transformAt);
+    if (collisionAt >= 0)
+        params[collisionAt] = 1; // always spawn
+    static ue::FunctionRef beginRef { "GameplayStatics", "BeginDeferredActorSpawnFromClass" };
+    ue::Call(nullptr, beginRef, params);
+    void* actor = *reinterpret_cast<void**>(params + returnAt);
+    if (!actor)
+        return nullptr;
+
+    alignas(16) uint8_t finishParams[0x200] = {};
+    *reinterpret_cast<void**>(finishParams + finishActorAt) = actor;
+    WriteIdentity(finishParams + finishTransformAt);
+    static ue::FunctionRef finishRef { "GameplayStatics", "FinishSpawningActor" };
+    ue::Call(nullptr, finishRef, finishParams);
+    return actor;
+}
+
+void* LightOf(void* actor)
+{
+    void* base = ue::FindClass("Light");
+    const int at = base ? ue::PropertyOffset(base, "LightComponent") : -1;
+    if (at < 0)
+        return nullptr;
+    void* light = ue::Field<void*>(actor, at);
     if (!light)
         return nullptr;
 
-    // A light added at runtime has to be movable to show up at all, and fighters can sit on their own lighting channel.
+    // A light has to be movable to follow anything, and fighters can sit on their own lighting channel.
     struct {
         uint8_t Mobility;
     } mobility { 2 };
@@ -107,13 +133,8 @@ void Configure(void* component, const Light& light)
 
 void Destroy(Live& live)
 {
-    if (live.Component && ue::StillAlive(live.Component, live.Index)) {
-        static ue::FunctionRef destroy { "ActorComponent", "K2_DestroyComponent" };
-        struct {
-            void* Object;
-        } params { live.Component };
-        ue::Call(live.Component, destroy, &params);
-    }
+    if (live.Actor && ue::StillAlive(live.Component, live.Index))
+        ue::DestroyActor(live.Actor);
     live = {};
 }
 
@@ -131,19 +152,20 @@ void OnFightFound()
 
 void OnGameTick()
 {
-    void* owner = game::Fighter(0);
+    const bool inFight = game::Fighter(0) != nullptr;
     for (int i = 0; i < MaxLights; ++i) {
         const Light& light = g_rig[i];
         Live& live = g_live[i];
-        if (!light.On || !owner) {
-            if (live.Component && owner)
+        if (!light.On || !inFight) {
+            if (live.Component && inFight)
                 Destroy(live);
             continue;
         }
         if (live.Component && (!ue::StillAlive(live.Component, live.Index) || live.Spot != light.Spot))
             Destroy(live);
         if (!live.Component) {
-            live.Component = AddLight(owner, light.Spot ? "SpotLightComponent" : "PointLightComponent");
+            live.Actor = SpawnLight(light.Spot ? "SpotLight" : "PointLight");
+            live.Component = live.Actor ? LightOf(live.Actor) : nullptr;
             if (!live.Component)
                 continue;
             live.Index = ue::Field<uint32_t>(live.Component, ue::off::InternalIndex);

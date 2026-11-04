@@ -6,8 +6,8 @@ namespace effects {
 
 struct Settings {
     bool HideHud = false;
-    bool NoHitEffects = false;   // removes the fight's PolarisEffectManager (hit sparks and rage art effects)
-    bool NoDramaManager = false; // removes the fight's PolarisDramaManager (camera shakes, rage art drama)
+    bool NoHitEffects = false;   // hides hit sparks and the glows of rage arts and heat
+    bool NoDramaManager = false; // cancels the screen effects a rage art or heat smash puts over the picture
     bool NoBloom = false;
     bool NoMotionBlur = false;
     bool NoDepthOfField = false;
@@ -20,6 +20,7 @@ Settings& Config();
 
 void OnFightFound();
 void OnGameTick();
+bool DramaPlaying(); // a rage art or heat smash cinematic is running
 
 // Applied on the next game tick.
 void RequestRefresh();
