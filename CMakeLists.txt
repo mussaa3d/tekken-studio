@@ -20,7 +20,7 @@ add_library(t8cine_mod SHARED
     src/mod/proxy.cpp src/mod/dllmain.cpp src/mod/scan.cpp src/mod/ue.cpp src/mod/game.cpp
     src/mod/camera.cpp src/mod/effects.cpp src/mod/guard.cpp src/mod/recorder.cpp src/mod/overlay.cpp
     src/mod/menu.cpp src/mod/savetrace.cpp src/mod/dvars.cpp src/mod/postfx.cpp src/mod/lights.cpp src/mod/audio.cpp
-    src/mod/presets.cpp src/common/config.cpp
+    src/mod/presets.cpp src/mod/testcmd.cpp src/common/config.cpp
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx12.cpp)
 set_target_properties(t8cine_mod PROPERTIES OUTPUT_NAME dinput8)
 target_include_directories(t8cine_mod PRIVATE src ${IMGUI} ${IMGUI}/backends)

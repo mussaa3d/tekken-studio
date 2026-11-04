@@ -20,6 +20,7 @@
 #include "mod/overlay.h"
 #include "mod/recorder.h"
 #include "mod/savetrace.h"
+#include "mod/testcmd.h"
 
 void LoadRealDinput8();
 
@@ -114,6 +115,7 @@ void LoadSettings()
 DWORD WINAPI GameThread(void*)
 {
     mod::Log("T8Cine starting");
+    guard::BlockInternet();
     LoadSettings();
     dvars::LoadExtra();
     // The executable may still be unpacking when we load, so wait for its code to be findable.
@@ -123,8 +125,10 @@ DWORD WINAPI GameThread(void*)
             guard::Start();
             Ini ini;
             ini.Load(mod::DataDir() / "t8cine.ini");
-            if (ini.GetBool("trace_saves", true))
+            if (ini.GetBool("trace_saves", false))
                 savetrace::Start();
+            if (ini.GetBool("test_commands", false))
+                testcmd::Enable();
             mod::Log("T8Cine ready. Insert opens the menu.");
             return 0;
         }
@@ -257,6 +261,8 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason, void*)
         return TRUE;
 
     mod::SetDataDir(dataDir);
+    // Steam's overlay draws before we capture, so its FPS counter would end up in the video. This asks it not to draw.
+    SetEnvironmentVariableW(L"SteamNoOverlayUIDrawing", L"1");
     CloseHandle(CreateThread(nullptr, 0, GameThread, nullptr, 0, nullptr));
     return TRUE;
 }

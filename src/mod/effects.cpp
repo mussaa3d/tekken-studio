@@ -144,17 +144,124 @@ ShowFlag g_showFlags[] = {
     { &Settings::NoDepthOfField, 0, 20 },
     { &Settings::NoMotionBlur, 0, 21 },
     { &Settings::NoParticles, 4, 10 },
-    { nullptr, 0, 10, true },        // Decals
-    { nullptr, 4, 5, true },         // NaniteMeshes
-    { nullptr, 4, 6, true },         // InstancedStaticMeshes
-    { nullptr, 4, 7, true },         // InstancedFoliage
-    { nullptr, 4, 8, true },         // InstancedGrass
-    { nullptr, 4, 16, true },        // StaticMeshes
-    { nullptr, 4, 17, true },        // Landscape
-    { nullptr, 4, 20, true },        // BSP
-    { nullptr, 4, 22, true },        // Atmosphere
-    { nullptr, 4, 11, false, true }, // SkeletalMeshes
+    { nullptr, 0, 10, true },        // Decals aren't primitives, so hiding components doesn't reach them
+    { nullptr, 4, 22, true },        // Atmosphere, likewise
 };
+
+// ----- Hiding the stage or the fighters for a recording look. Crowds, holograms and particles are all kinds of mesh, so show
+// flags can't pick them apart from the fighters. This goes by who owns each component.
+struct HiddenComponent {
+    void* Object;
+    uint32_t Index;
+};
+std::vector<HiddenComponent> g_hiddenComponents;
+enum class Hide { Nothing, Stage, Fighters };
+Hide g_hiding = Hide::Nothing;
+int g_hideRescan = 0;
+
+void* ComponentOwner(void* component)
+{
+    struct {
+        void* ReturnValue;
+    } params { nullptr };
+    static ue::FunctionRef ref { "ActorComponent", "GetOwner" };
+    ue::Call(component, ref, &params);
+    return params.ReturnValue;
+}
+
+void* ParentOf(void* actor)
+{
+    struct {
+        void* ReturnValue;
+    } params { nullptr };
+    static ue::FunctionRef attached { "Actor", "GetAttachParentActor" };
+    ue::Call(actor, attached, &params);
+    if (params.ReturnValue)
+        return params.ReturnValue;
+    static ue::FunctionRef owner { "Actor", "GetOwner" };
+    ue::Call(actor, owner, &params);
+    return params.ReturnValue;
+}
+
+bool BelongsToFighter(void* actor)
+{
+    for (int depth = 0; actor && depth < 6; ++depth) {
+        if (actor == game::Fighter(0) || actor == game::Fighter(1))
+            return true;
+        actor = ParentOf(actor);
+    }
+    return false;
+}
+
+void SetComponentHidden(void* component, bool hidden)
+{
+    struct {
+        bool Hidden, Propagate;
+    } params { hidden, false };
+    static ue::FunctionRef ref { "SceneComponent", "SetHiddenInGame" };
+    ue::Call(component, ref, &params);
+}
+
+void ShowHiddenComponents()
+{
+    for (const HiddenComponent& hidden : g_hiddenComponents)
+        if (ue::StillAlive(hidden.Object, hidden.Index))
+            SetComponentHidden(hidden.Object, false);
+    g_hiddenComponents.clear();
+}
+
+// Hit sparks live on the effect manager and read as part of the fight, so they stay with the fighters.
+bool IsFightEffect(void* owner)
+{
+    static void* cls = nullptr;
+    cls = ue::FindClass("PolarisEffectManager");
+    return owner && cls && ue::IsA(owner, cls);
+}
+
+void HideComponents(Hide what)
+{
+    void* primitive = ue::FindClass("PrimitiveComponent");
+    void* scene = ue::FindClass("SceneComponent");
+    if (!primitive || !scene || !game::Fighter(0))
+        return;
+    static int hiddenByte = -1;
+    static uint8_t hiddenMask = 0;
+    if (hiddenByte < 0)
+        ue::BoolProperty(scene, "bHiddenInGame", hiddenByte, hiddenMask);
+
+    int count = 0;
+    for (void* component : ue::AllObjectsOf(primitive)) {
+        void* owner = ComponentOwner(component);
+        const bool fighterPart = BelongsToFighter(owner) || IsFightEffect(owner);
+        if (fighterPart == (what == Hide::Stage))
+            continue;
+        const uint32_t index = ue::Field<uint32_t>(component, ue::off::InternalIndex);
+        // Leave alone anything the game itself had hidden, so showing it again doesn't pop it into view.
+        if (hiddenByte >= 0 && (ue::Field<uint8_t>(component, hiddenByte) & hiddenMask))
+            continue;
+        SetComponentHidden(component, true);
+        g_hiddenComponents.push_back({ component, index });
+        ++count;
+    }
+    if (count > 0)
+        mod::Log("Look: hid %d components", count);
+}
+
+void ApplyHiding(Hide wanted)
+{
+    if (wanted != g_hiding) {
+        ShowHiddenComponents();
+        g_hiding = wanted;
+        g_hideRescan = 0;
+    }
+    if (g_hiding == Hide::Nothing)
+        return;
+    // New effects keep appearing during a fight.
+    if (--g_hideRescan <= 0) {
+        g_hideRescan = 20;
+        HideComponents(g_hiding);
+    }
+}
 
 // The stage's sky and fog get in the way of a clean black background.
 ShowFlag g_fogFlag { nullptr, 4, 18 };
@@ -196,6 +303,7 @@ void ApplyFlags()
     ApplyPassFog(pass);
     const bool hideStage = pass == recorder::Pass::Greenscreen || pass == recorder::Pass::FightersOnBlack;
     const bool hideFighters = pass == recorder::Pass::StageOnly;
+    ApplyHiding(hideStage ? Hide::Stage : (hideFighters ? Hide::Fighters : Hide::Nothing));
 
     const auto apply = [&](ShowFlag& flag, bool off) {
         uint32_t& word = ue::Field<uint32_t>(viewport, ue::off::ViewportShowFlags + flag.WordOffset);

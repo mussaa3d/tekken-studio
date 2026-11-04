@@ -1,6 +1,6 @@
 # Test helper: does what the launcher's cinematic session does, from a script. start | stop | status | log
 # Leaves the launcher's own session handling to be tested separately.
-param([Parameter(Mandatory)][string]$Action, [int]$Lines = 40)
+param([Parameter(Mandatory)][string]$Action, [int]$Lines = 40, [string]$Command = "")
 
 $root = Resolve-Path "$PSScriptRoot\.."
 $game = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8"
@@ -13,7 +13,8 @@ switch ($Action) {
         New-Item -ItemType Directory -Force $data | Out-Null
         Copy-Item "$root\dist\mod\dinput8.dll" "$win64\dinput8.dll" -Force
         $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
-        Set-Content "$data\t8cine.ini" -Value "ffmpeg_path = $ffmpeg`nonline_guard = 1`n" -Encoding ascii
+        Set-Content "$data\t8cine.ini" -Value "ffmpeg_path = $ffmpeg`nonline_guard = 1`ntest_commands = 1`ntrace_saves = 1`noutput_dir = $root\build\game_out`n" -Encoding ascii
+        Remove-Item "$data\commands.txt", "$data\state.txt" -ErrorAction SilentlyContinue
         Set-Content "$data\session.lock" -Value (Get-Date).ToString() -Encoding ascii
         Remove-Item "$data\t8cine.log" -ErrorAction SilentlyContinue
         Start-Process "steam://rungameid/1778820"
@@ -33,6 +34,16 @@ switch ($Action) {
         $p = Get-Process Polaris-Win64-Shipping -ErrorAction SilentlyContinue
         if ($p) { "running $($p.Id), responding $($p.Responding), $([math]::Round($p.WorkingSet64 / 1GB, 1)) GB" } else { "not running" }
         "mod installed: " + (Test-Path "$win64\dinput8.dll")
+    }
+    "cmd" {
+        # Everything after -Action cmd comes through -Command, one line per command. Waits for the state file when asked for it.
+        Remove-Item "$data\state.txt" -ErrorAction SilentlyContinue
+        Set-Content "$data\commands.txt" -Value ($Command -split ';' | ForEach-Object { $_.Trim() }) -Encoding ascii
+        if ($Command -match 'state') {
+            $deadline = (Get-Date).AddSeconds(8)
+            while ((Get-Date) -lt $deadline -and -not (Test-Path "$data\state.txt")) { Start-Sleep -Milliseconds 100 }
+            if (Test-Path "$data\state.txt") { Get-Content "$data\state.txt" } else { "no state: the game thread isn't ticking the mod" }
+        }
     }
     "log" {
         if (Test-Path "$data\t8cine.log") { Get-Content "$data\t8cine.log" -Tail $Lines | ForEach-Object { $_.Substring(0, [math]::Min(170, $_.Length)) } } else { "no log" }

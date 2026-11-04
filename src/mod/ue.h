@@ -36,6 +36,7 @@ constexpr uintptr_t ViewportShowFlags = 0xB8; // FEngineShowFlags: a bitfield re
 constexpr uintptr_t PovLocation = 0x22D0; // APlayerCameraManager.CameraCachePrivate.POV
 constexpr uintptr_t PovRotation = 0x22E8;
 constexpr uintptr_t PovFov = 0x2300;
+constexpr uintptr_t ViewInfoFov = 0x30; // FMinimalViewInfo.FOV, in the view given to the projection function
 constexpr uintptr_t CharacterSide = 0x7AC; // PolarisCharacterActor: 0 = P1, 1 = P2
 constexpr uintptr_t MeshSpaceTransforms = 0x950;
 constexpr int ProcessEventIndex = 77;

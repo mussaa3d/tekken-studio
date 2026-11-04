@@ -48,6 +48,10 @@ struct AttachSettings {
 AttachSettings& Attach();
 std::vector<std::string> Bones(int fighter); // bone names, once a fight is on
 
+// The game takes its field of view from the view it hands the projection function, not from the camera cache. This reports
+// what the game wanted there and returns what to use.
+float ProjectionFov(float gameFov);
+
 // Game thread, once per rendered frame, just after the engine updated its camera.
 void OnCameraUpdate(void* cameraManager);
 void MarkNewStep();
@@ -55,6 +59,7 @@ void OnFightFound();
 
 void ToggleFree();
 void ToggleDolly();
+void SetFreePose(cine::Vec3 location, cine::Rot rotation, double fov);
 bool WantsKeyboard(); // the free camera is flying, so WASD should not reach the game
 
 struct View {

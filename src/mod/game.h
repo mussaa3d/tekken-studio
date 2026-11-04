@@ -62,7 +62,7 @@ int FightCount(); // goes up each time a new fight is found
 double StepAlpha();
 
 struct HookStatus {
-    bool Tick = false, Camera = false, Actors = false, Bones = false, GameMode = false, FightStart = false;
+    bool Tick = false, Camera = false, Actors = false, Bones = false, GameMode = false, FightStart = false, Fov = false;
 };
 const HookStatus& Hooks();
 

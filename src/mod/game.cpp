@@ -21,6 +21,7 @@
 #include "mod/overlay.h"
 #include "mod/recorder.h"
 #include "mod/scan.h"
+#include "mod/testcmd.h"
 #include "mod/ue.h"
 
 namespace game {
@@ -47,6 +48,7 @@ using FightStartFn = void (*)(void*, void*, void*);
 using CameraFn = void (*)(void*, float);
 using ActorFn = bool (*)(void*, Vec3, Rot, bool, void*, uint8_t);
 using BoneFn = void (*)(void*, void*, void*, bool, TArray<BoneTransform>*, TArray<BoneTransform>*, Vec3*, void*, void*);
+using ProjectionFn = void (*)(void*, uint8_t, void*, void*);
 
 TickFn oTick = nullptr;
 GameModeTickFn oGameModeTick = nullptr;
@@ -54,6 +56,7 @@ FightStartFn oFightStart = nullptr;
 CameraFn oCamera = nullptr;
 ActorFn oActor = nullptr;
 BoneFn oBones = nullptr;
+ProjectionFn oProjection = nullptr;
 
 HookStatus g_hooks;
 TimeControl g_time;
@@ -349,6 +352,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     audio::OnGameTick(Clock());
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
+    testcmd::OnGameTick();
 }
 
 void DetourFightStart(void* a, void* b, void* c)
@@ -366,6 +370,15 @@ void DetourCamera(void* manager, float dt)
     oCamera(manager, dt);
     if (!guard::Tripped())
         camera::OnCameraUpdate(manager);
+}
+
+void DetourProjection(void* view, uint8_t constraint, void* a, void* b)
+{
+    if (!guard::Tripped()) {
+        float& fov = Field<float>(view, off::ViewInfoFov);
+        fov = camera::ProjectionFov(fov);
+    }
+    oProjection(view, constraint, a, b);
 }
 
 bool DetourActor(void* actor, Vec3 location, Rot rotation, bool sweep, void* hit, uint8_t teleport)
@@ -418,7 +431,7 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
 
 struct Addresses {
     uintptr_t GEngine = 0, FpsVariable = 0, GObjects = 0, AppendString = 0, GameModeTick = 0, TekkenTick = 0, FightStart = 0,
-              DoUpdateCamera = 0, SetActorLocationAndRotation = 0, PerformAnimationProcessing = 0;
+              DoUpdateCamera = 0, SetActorLocationAndRotation = 0, PerformAnimationProcessing = 0, CalculateProjection = 0;
 };
 
 // Rip-relative statics carry the operand offset; functions match at their first byte. Any entry can be
@@ -443,6 +456,7 @@ const Entry kEntries[] = {
     { "DoUpdateCamera", "48 8B C4 48 89 58 18 55 56 57 48 81 EC 50", 0, false, true, &Addresses::DoUpdateCamera },
     { "SetActorLocationAndRotation", "48 81 EC 68 01 00 00 48 8B 89 A0 01 00 00 48 85 C9 74 71", 0, false, false, &Addresses::SetActorLocationAndRotation },
     { "PerformAnimationProcessing", "48 85 D2 0F 84 49 07", 0, false, false, &Addresses::PerformAnimationProcessing },
+    { "CalculateProjection", "48 8B C4 48 89 58 ?? 57 48 81 EC ?? ?? ?? ?? F6 41", 0, false, false, &Addresses::CalculateProjection },
 };
 
 template <typename T>
@@ -509,8 +523,9 @@ bool Initialize()
     g_hooks.Camera = Install(addresses.DoUpdateCamera, reinterpret_cast<void*>(&DetourCamera), oCamera, "DoUpdateCamera");
     g_hooks.Actors = Install(addresses.SetActorLocationAndRotation, reinterpret_cast<void*>(&DetourActor), oActor, "SetActorLocationAndRotation");
     g_hooks.Bones = Install(addresses.PerformAnimationProcessing, reinterpret_cast<void*>(&DetourBones), oBones, "PerformAnimationProcessing");
-    mod::Log("Hooks: tick %d, gamemode %d, camera %d, actors %d, bones %d, fight %d", g_hooks.Tick, g_hooks.GameMode, g_hooks.Camera,
-             g_hooks.Actors, g_hooks.Bones, g_hooks.FightStart);
+    g_hooks.Fov = Install(addresses.CalculateProjection, reinterpret_cast<void*>(&DetourProjection), oProjection, "CalculateProjection");
+    mod::Log("Hooks: tick %d, gamemode %d, camera %d, actors %d, bones %d, fight %d, fov %d", g_hooks.Tick, g_hooks.GameMode, g_hooks.Camera,
+             g_hooks.Actors, g_hooks.Bones, g_hooks.FightStart, g_hooks.Fov);
     return g_hooks.Tick && g_hooks.GameMode && g_hooks.Camera;
 }
 

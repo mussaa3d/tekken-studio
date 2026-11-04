@@ -57,7 +57,27 @@ void* AddLight(void* owner, const char* className)
     transform[3] = 1.0;
     transform[8] = transform[9] = transform[10] = 1.0;
     ue::Call(owner, addComponent, params);
-    return *reinterpret_cast<void**>(params + returnAt);
+    void* light = *reinterpret_cast<void**>(params + returnAt);
+    if (!light)
+        return nullptr;
+
+    // A light added at runtime has to be movable to show up at all, and fighters can sit on their own lighting channel.
+    struct {
+        uint8_t Mobility;
+    } mobility { 2 };
+    static ue::FunctionRef setMobility { "SceneComponent", "SetMobility" };
+    ue::Call(light, setMobility, &mobility);
+    struct {
+        bool Channel0, Channel1, Channel2;
+    } channels { true, true, true };
+    static ue::FunctionRef setChannels { "LightComponent", "SetLightingChannels" };
+    ue::Call(light, setChannels, &channels);
+    struct {
+        bool Visible, Propagate;
+    } visible { true, false };
+    static ue::FunctionRef setVisibility { "SceneComponent", "SetVisibility" };
+    ue::Call(light, setVisibility, &visible);
+    return light;
 }
 
 void SetWorldLocation(void* component, cine::Vec3 location)

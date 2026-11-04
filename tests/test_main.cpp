@@ -8,6 +8,7 @@
 #include "common/cinemath.h"
 #include "common/config.h"
 #include "common/framemath.h"
+#include "common/guardlogic.h"
 #include "launcher/game_files.h"
 #include "mod/scan.h"
 
@@ -234,6 +235,28 @@ static void TestScanner()
     CHECK(scan::FindAll(memory.data(), 2, *exact).empty());
 }
 
+static void TestGuard()
+{
+    ConnectionAges ages;
+    CHECK(ages.Update({ "a:80" }, 1000).count("a:80") == 1);
+    CHECK(ages.OpenLongerThan(60000).empty());
+    // Still open but not yet at the limit, and not reported as new again.
+    CHECK(ages.Update({ "a:80" }, 30000).empty());
+    CHECK(ages.OpenLongerThan(60000).empty());
+    // A connection that closes and comes back starts over: repeated short checks never add up.
+    ages.Update({}, 40000);
+    ages.Update({ "a:80" }, 50000);
+    ages.Update({ "a:80" }, 100000);
+    CHECK(ages.OpenLongerThan(60000).empty());
+    // One that stays open gets caught.
+    ages.Update({ "a:80", "b:443" }, 111000);
+    CHECK(ages.OpenLongerThan(60000) == "a:80");
+    ages.Update({ "b:443" }, 112000);
+    CHECK(ages.OpenLongerThan(60000).empty());
+    ages.Update({ "b:443" }, 171000);
+    CHECK(ages.OpenLongerThan(60000) == "b:443");
+}
+
 static void TestIni()
 {
     const fs::path path = fs::temp_directory_path() / "t8cine_test.ini";
@@ -446,6 +469,7 @@ int main()
     TestLookAt();
     TestFrameMath();
     TestScanner();
+    TestGuard();
     TestIni();
     TestVdf();
     TestSessionFiles();

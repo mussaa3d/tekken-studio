@@ -620,7 +620,10 @@ void RecordTab()
         status("Depth of field and colour", postfx::Available());
     else
         ImGui::TextColored(Dim, "--   Depth of field and colour (not used yet)");
+    const int steam = guard::SteamState();
+    ImGui::TextColored(steam == 0 ? Good : (steam == 1 ? Accent : Dim), "Steam: %s", steam == 0 ? "Offline Mode" : (steam == 1 ? "signed in" : "not started yet"));
     ImGui::Text("Internet connections from the game: %d", guard::LastConnectionCount());
+    ImGui::Text("Connections stopped by the network block: %d", guard::BlockedAttempts());
 }
 
 // ----- Timeline

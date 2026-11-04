@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -28,6 +29,8 @@ Settings g_settings;
 
 Vec3 g_flyLocation;
 Rot g_flyRotation;
+std::atomic<float> g_gameFov { 45.0f };
+std::atomic<float> g_wantedFov { -1.0f };
 View g_view;
 std::mutex g_viewMutex;
 
@@ -343,6 +346,14 @@ void MarkNewStep()
     g_gameCamera.NewStep = true;
 }
 
+float ProjectionFov(float gameFov)
+{
+    if (gameFov > 1.0f && gameFov < 170.0f)
+        g_gameFov.store(gameFov, std::memory_order_relaxed);
+    const float wanted = g_wantedFov.load(std::memory_order_relaxed);
+    return wanted > 0 ? wanted : gameFov;
+}
+
 void OnFightFound()
 {
     g_gameCamera = {};
@@ -373,7 +384,19 @@ void OnCameraUpdate(void* manager)
         return;
     Vec3& location = ue::Field<Vec3>(manager, ue::off::PovLocation);
     Rot& rotation = ue::Field<Rot>(manager, ue::off::PovRotation);
-    float& fov = ue::Field<float>(manager, ue::off::PovFov);
+    float fov = g_gameFov.load(std::memory_order_relaxed);
+
+    // A fighter's mesh can load after the fight is found.
+    static int boneRetry = 0;
+    if (++boneRetry >= 60) {
+        boneRetry = 0;
+        std::lock_guard lock(g_bonesMutex);
+        for (int side = 0; side < 2; ++side) {
+            void* fighter = game::Fighter(side);
+            if (fighter && g_boneNames[side].empty())
+                g_boneNames[side] = ue::BoneNames(ue::CharacterMesh(fighter));
+        }
+    }
 
     if (game::Time().Interpolate && !ue::IsGamePaused()) {
         if (g_gameCamera.NewStep || !g_gameCamera.Valid) {
@@ -418,6 +441,9 @@ void OnCameraUpdate(void* manager)
 
     postfx::Apply(manager, location);
 
+    const bool ours = s.Mode != Mode::Game || s.FovOverride || g_filter.Holding || s.Filter == Filter::Classic;
+    g_wantedFov.store(ours ? fov : -1.0f, std::memory_order_relaxed);
+
     std::lock_guard lock(g_viewMutex);
     g_view = { location, rotation, fov, true };
 }
@@ -437,6 +463,15 @@ void ToggleFree()
         s.Fov = view.Fov;
     }
     s.Mode = Mode::Free;
+}
+
+void SetFreePose(Vec3 location, Rot rotation, double fov)
+{
+    g_flyLocation = location;
+    g_flyRotation = { rotation.Pitch, rotation.Yaw, 0 };
+    g_settings.Roll = rotation.Roll;
+    g_settings.Fov = fov;
+    g_settings.Mode = Mode::Free;
 }
 
 void ToggleDolly()
