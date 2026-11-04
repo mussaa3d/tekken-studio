@@ -467,6 +467,18 @@ void SetGlobalTimeDilation(float dilation)
         Call(nullptr, ref, &params);
 }
 
+double WorldRealTime()
+{
+    struct {
+        void* World;
+        double ReturnValue;
+    } params { World(), 0 };
+    static FunctionRef ref { "GameplayStatics", "GetRealTimeSeconds" };
+    if (params.World)
+        Call(nullptr, ref, &params);
+    return params.ReturnValue;
+}
+
 bool ActorLocation(void* actor, cine::Vec3& out)
 {
     struct {

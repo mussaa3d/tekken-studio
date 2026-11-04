@@ -22,6 +22,7 @@ void RunOnGameThread(std::function<void()> task);
 struct TimeControl {
     double Speed = 1.0;
     bool Paused = false;
+    bool SlowWorldClock = true; // also slow the clock materials can read, which ignores time dilation
     bool ScaleEffects = true; // also slow particles, cloth and materials through the world's time dilation
     bool Interpolate = true;  // blend poses between the 60 Hz steps, which is what makes slow motion smooth
     double FpsCap = 0;        // 0 = leave the game's own cap alone

@@ -134,6 +134,7 @@ bool IsGamePaused();
 void ConsoleCommand(const std::wstring& command);
 int CvarInt(const std::wstring& name);
 void SetGlobalTimeDilation(float dilation);
+double WorldRealTime(); // the world's clock that time dilation doesn't touch, which materials like plant wind can run on
 bool ActorLocation(void* actor, cine::Vec3& out);
 void* CharacterMesh(void* character);
 void DestroyActor(void* actor);

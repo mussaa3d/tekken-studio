@@ -155,9 +155,16 @@ void FlyInput()
         looking = false;
     }
 
+    // With the editor open, scrolling over its panels and timeline is theirs.
     const int wheel = overlay::TakeMouseWheel();
-    if (wheel != 0)
-        s.FlySpeed = std::clamp(s.FlySpeed * std::pow(1.15, wheel), 10.0, 5000.0);
+    if (wheel != 0 && (!overlay::MenuOpen() || overlay::MouseOverGameView())) {
+        if (Down(VK_CONTROL))
+            s.Fov = std::clamp(s.Fov - wheel * 2.0, 5.0, 130.0);
+        else if (Down(VK_SHIFT))
+            s.FlySpeed = std::clamp(s.FlySpeed * std::pow(1.15, wheel), 10.0, 5000.0);
+        else
+            s.Roll += wheel * 2.0;
+    }
 }
 
 double g_shotEnd = 0;

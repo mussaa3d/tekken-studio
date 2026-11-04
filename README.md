@@ -19,7 +19,7 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
 - **Attached camera:** fix the camera to a bone, orbit it, or watch it from wherever you fly.
-- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people and the stage slow and stop along with the fight.
+- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.
 - **Rage art and heat smash camera:** keep the normal fight camera through cinematics and big-hit zooms, or use a fixed classic 2D camera all fight.
 - **Effects:** hide hit sparks and glows, cancel rage art screen effects, hide the HUD (and the game's FPS counter).
@@ -54,7 +54,7 @@ To make a shot: pause, go to a moment on the ruler, press F5 and fly the camera,
 | F9 | Hide the HUD |
 | K | Add a dolly key (free camera on) |
 
-Free camera: `WASD` fly, `Q` `E` down and up, hold right mouse to look, `Shift` faster, `Ctrl` slower, wheel sets speed, `Z` `C` roll, `R` level, `+` `-` zoom.
+Free camera: `WASD` fly, `Q` `E` down and up, hold right mouse to look, `Shift` faster, `Ctrl` slower, wheel or `Z` `C` roll, `R` level, `Ctrl`+wheel or `+` `-` zoom, `Shift`+wheel sets speed. In the editor, the wheel only does this with the mouse over the game picture.
 
 A paused editor stops the game's own menus too, including the one at the end of a replay. Unpause (F8) if a game menu stops responding.
 
@@ -73,7 +73,7 @@ The game keeps every replay decoded in fixed slots in memory, so sharing copies 
 - **The greenscreen and depth come from the game's depth buffer.** Anything that doesn't write depth, like sparks and glows, is painted over in the greenscreen and doesn't show in the depth. If the buffer can't be read, the editor says so, and the greenscreen video falls back on keying the dark background.
 - **Rewinding changes the picture slightly compared to the first playthrough:** by less than 3 cm on a fighter's position, right after a jump. It's the same every time.
 - **Clothes in very slow motion:** cloth only moves when the fight takes a step, so below about 0.1x you may see it update in small hops.
-- **Plants still sway while paused** on maps with foliage. That wind isn't tied to the game's clock.
+- **Leaf edges shimmer a little while paused.** That's the game's anti-aliasing, not movement: the plants themselves are still.
 - **The first seconds of a replay can't be rewound to.** The game's first saved point lands about 4.5 s in, just after the first round's intro. Round buttons land just after each round's intro in the same way.
 
 ## Not verified

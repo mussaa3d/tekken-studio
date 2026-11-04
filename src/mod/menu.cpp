@@ -323,7 +323,7 @@ void CameraTab()
     if (Group("Free camera controls")) {
         ImGui::TextColored(Dim, "W A S D fly, Q E down and up");
         ImGui::TextColored(Dim, "Right mouse over the picture to look");
-        ImGui::TextColored(Dim, "Shift faster, Ctrl slower, wheel sets speed");
+        ImGui::TextColored(Dim, "Shift faster, Ctrl slower. Wheel rolls, Ctrl+wheel zooms, Shift+wheel sets speed");
         ImGui::TextColored(Dim, "Z C roll, R level, + - zoom, K add a key");
         SliderDouble("Fly speed", s.FlySpeed, 10.0, 5000.0, "%.0f cm/s", ImGuiSliderFlags_Logarithmic);
         SliderDouble("Look speed", s.LookSpeed, 0.02, 0.5, "%.2f");

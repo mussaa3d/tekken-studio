@@ -401,6 +401,9 @@ void Run(const std::string& line)
         for (const replay::SavedPoint& point : replay::SavedPoints())
             if (point.Type == replay::TypeRoundStart && point.Round == n)
                 game::SeekToRound(point.Frame);
+    } else if (command == "clockslow") {
+        in >> n;
+        game::Time().SlowWorldClock = n != 0;
     } else if (command == "keycolour") {
         in >> n;
         r.BlueKey = n != 0;

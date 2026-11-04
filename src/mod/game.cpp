@@ -434,6 +434,48 @@ void KeepClothWithTheFight()
     wasSeeking = seeking;
 }
 
+// The world keeps a clock that time dilation doesn't touch, and the renderer hands it to materials. It has no property, so it's found by
+// looking in the world for the value the engine reports, on two frames in a row.
+constexpr int WorldClockSearchEnd = 0x1000;
+
+void* g_worldClockWorld = nullptr;
+int g_worldClockOffset = -1;
+std::vector<int> g_worldClockCandidates;
+
+void FindWorldClock(void* world)
+{
+    if (world != g_worldClockWorld) {
+        g_worldClockWorld = world;
+        g_worldClockOffset = -1;
+        g_worldClockCandidates.clear();
+    }
+    if (!world || g_worldClockOffset >= 0 || !scan::IsReadable(world, WorldClockSearchEnd))
+        return;
+    const double now = WorldRealTime();
+    if (now <= 0)
+        return;
+    if (g_worldClockCandidates.empty()) {
+        for (int offset = 0x40; offset < WorldClockSearchEnd; offset += 8)
+            if (Field<double>(world, offset) == now)
+                g_worldClockCandidates.push_back(offset);
+        return;
+    }
+    std::erase_if(g_worldClockCandidates, [&](int offset) { return Field<double>(world, offset) != now; });
+    if (g_worldClockCandidates.size() == 1) {
+        g_worldClockOffset = g_worldClockCandidates.front();
+        mod::Log("World clock at +0x%X", g_worldClockOffset);
+    }
+}
+
+// Takes back the part of this frame's time that the fight didn't get, so it runs at the fight's speed and never jumps.
+void SlowWorldClock(double rate)
+{
+    void* world = World();
+    FindWorldClock(world);
+    if (g_worldClockOffset >= 0 && rate < 1.0 && g_time.SlowWorldClock)
+        Field<double>(world, g_worldClockOffset) -= g_lastRealDt * (1.0 - rate);
+}
+
 // Applies time dilation and the FPS cap on the game thread once per frame.
 void ApplyEngineTime()
 {
@@ -457,6 +499,7 @@ void ApplyEngineTime()
         SetGlobalTimeDilation(static_cast<float>(wanted));
         applied = wanted;
     }
+    SlowWorldClock(wanted);
 
     static bool capWritten = false;
     static float* capVariable = nullptr;
