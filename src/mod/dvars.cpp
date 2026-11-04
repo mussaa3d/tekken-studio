@@ -104,6 +104,7 @@ void Remember(void* object, void* cls, const char* property)
 constexpr float FogGlowScale = 200000.0f; // a glow this many times the density looks like its full colour
 
 bool g_fogOn = false;
+bool g_fogTinted = false;
 int g_gameVolumetricFog = 0;
 
 void TurnFogOn()
@@ -258,6 +259,20 @@ void ApplyTint()
                 density = slider.Value;
         const float glow = density * FogGlowScale;
         ForEachOf("ExponentialHeightFogComponent", [&](void* fog) { SetFogGlow(fog, { g_colors.Fog[0] * glow, g_colors.Fog[1] * glow, g_colors.Fog[2] * glow, 1 }); });
+        g_fogTinted = true;
+    } else if (g_fogTinted) {
+        // Back to fog lit by the stage.
+        g_fogTinted = false;
+        static ue::FunctionRef albedo { "ExponentialHeightFogComponent", "SetVolumetricFogAlbedo" };
+        static ue::FunctionRef emissive { "ExponentialHeightFogComponent", "SetVolumetricFogEmissive" };
+        uint32_t white = 0xFFFFFFFFu;
+        struct {
+            LinearColor Value;
+        } none { { 0, 0, 0, 1 } };
+        ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
+            ue::Call(fog, albedo, &white);
+            ue::Call(fog, emissive, &none);
+        });
     }
     if (g_colors.SunOverridden) {
         struct {

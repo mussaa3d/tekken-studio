@@ -130,6 +130,9 @@ static void TestRelativeCamera()
     RelativeCamera turnedView = rel;
     turnedView.YawOffset += 40;
     CHECK(IsCinematicJump(rel, turnedView, 60, 8));
+    RelativeCamera zoomed = rel;
+    zoomed.Fov = rel.Fov - 30;
+    CHECK(IsCinematicJump(rel, zoomed, 60, 8));
 }
 
 static void TestSpeedRamp()

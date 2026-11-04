@@ -170,6 +170,7 @@ void ReplaysTab()
     }
 
     ImGui::Text("%d replays", static_cast<int>(slots.size()));
+    Help("Play a replay from the game's own Replay menu, under My Replays & Tips or Downloaded Replays. In its menu (B), set the three tips to Hide, or the replay stops at every tip.");
     ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Refresh").x - ImGui::GetStyle().FramePadding.x * 2);
     if (ImGui::SmallButton("Refresh"))
         refresh();

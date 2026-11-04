@@ -24,7 +24,8 @@ struct Settings {
     bool FovOverride = false; // use Fov with the game's camera too
     double JumpDistance = 60; // how far the game's camera may leave its normal spot before it counts as a cut
     double JumpAngle = 8;
-    double SeparationZoom = 0.5; // how far the held camera backs off per cm the fighters move apart
+    double SeparationZoom = 0.15; // how far the held camera backs off per cm the fighters move apart
+    double NormalFov = 65;       // the game's lens during normal fighting
     bool PathOnRealTime = false; // true: the dolly plays in real seconds even while the game is paused
     bool LinearPath = false;     // straight lines between keys instead of a smooth curve
 };

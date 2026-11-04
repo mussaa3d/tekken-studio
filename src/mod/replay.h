@@ -26,6 +26,7 @@ bool CanJump();
 // Done on the next pass through the replay's input code. Landing is on the last saved point at or before the frame.
 void RequestJump(uint32_t frame);
 bool JumpPending();
+bool JumpSettling(); // the game's short transition after a jump is still running
 void CancelJump();
 
 struct SavedPoint {

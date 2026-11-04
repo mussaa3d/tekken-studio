@@ -307,10 +307,15 @@ void ApplyFilter(Vec3& location, Rot& rotation, float& fov)
     cine::RelativeCamera expected = g_filter.Normal;
     expected.Side += (frame.Separation - g_filter.NormalSeparation) * s.SeparationZoom;
 
+    // The normal framing has to be learned from the normal camera. Starting from a zoom or a cinematic would mean holding that instead.
     if (!g_filter.HaveNormal) {
+        const bool normalLens = std::fabs(now.Fov - s.NormalFov) < 1.0;
+        if (!normalLens || effects::DramaPlaying() || !game::Hooks().Tick)
+            return;
         g_filter.Normal = now;
         g_filter.NormalSeparation = frame.Separation;
         g_filter.HaveNormal = true;
+        mod::Log("Camera filter: learned the fight framing at %.2f", game::Clock());
         return;
     }
 

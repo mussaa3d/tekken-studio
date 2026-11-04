@@ -235,9 +235,16 @@ void RunSeek(double target)
         RunStep();
         return;
     }
+    // The game's transition after a jump runs inside its step too, and the fight doesn't move until it's over.
+    if (g_seekJumped && replay::JumpSettling()) {
+        for (int i = 0; i < 32 && replay::JumpSettling(); ++i)
+            RunStep();
+        return;
+    }
 
     const int64_t position = g_position.load(std::memory_order_relaxed);
-    if (replay::CanJump() && !g_seekJumped && wanted >= 0 && (position > wanted || wanted - position > 240)) {
+    // Always by way of a saved point, even for a short hop ahead: what's on screen at a moment then doesn't depend on where you came from.
+    if (replay::CanJump() && !g_seekJumped && wanted >= 0) {
         g_seekJumped = true;
         g_seekWaits = 0;
         replay::RequestJump(static_cast<uint32_t>(wanted));

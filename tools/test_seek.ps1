@@ -1,4 +1,5 @@
-# Test: seeks a playing replay back and forward from the mod's command channel and checks where it lands.
+# Test: seeks a playing replay back and forward from the mod's command channel and checks where it lands. Also prints where the
+# fighters are, since a rewound replay has to play out exactly as the original did.
 param([double[]]$Targets = @(20, 25, 15, 5, 60, 45, 90, 3, 110))
 $data = "C:\Program Files (x86)\Steam\steamapps\common\TEKKEN 8\Polaris\Binaries\Win64\T8Cine"
 function Send-Lines($lines) {

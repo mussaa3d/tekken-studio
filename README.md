@@ -1,38 +1,46 @@
 # T8Cine
 
-Cinematic tools for Tekken 8 on PC, in the spirit of CoDMVM and HLAE. Offline only.
+Cinematic tools for Tekken 8 on PC, in the spirit of CoDMVM, HLAE and IWXMVM. Offline only.
 
-> **Status: not tested in the game yet.** The menu, recorder, launcher and maths are tested without the game. The game hooks aren't.
+Tested in the real game on version 3.02.02 (Steam build 25221600), on replays and through real mouse and keyboard input. What wasn't tested is listed under [Not verified](#not-verified).
 
 ## What's in it
 The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool tabs on the right, playback controls and a keyframe timeline along the bottom.
 
-- **Timeline:** camera keys, a timescale curve, the recording range, and the live tick and tick rate.
+- **Timeline:** the replay's real frame count, with camera keys, a timescale curve, the recording range, round markers, and the live tick and tick rate.
+- **Rewinding:** click anywhere on the ruler and the replay goes there, back or forward, to the exact frame, in under a second. A moment looks the same however you got to it.
+- **Preview shot:** goes to the first camera key, flies the path and stops on the last key.
+- **Record shot:** the same, recording from the first key's exact frame to the last key's.
+- **Streams:** several files at once that line up frame for frame: picture, greenscreen (real green), stage only, fighters on black, depth.
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
 - **Attached camera:** fix the camera to a bone, orbit it, or watch it from wherever you fly.
 - **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps.
-- **Dolly paths:** keyframes on the fight clock, smooth through every key. Save, load, and export HLAE CamIO for After Effects or Blender.
-- **Rage art and heat smash camera:** keep the normal fight camera through cinematics, or use a fixed classic 2D camera all fight.
-- **Visuals:** hide the HUD, remove hit effects and camera shakes, Filmtweaks-style colour, depth of field with autofocus, lens effects, fog, sun and sky, your own lighting rig, and sliders for engine settings. Add your own in `T8Cine\dvars.ini`.
+- **Dolly paths:** keyframes on the timeline, smooth through every key. Save, load, and export HLAE CamIO for After Effects or Blender.
+- **Rage art and heat smash camera:** keep the normal fight camera through cinematics and big-hit zooms, or use a fixed classic 2D camera all fight.
+- **Effects:** hide hit sparks and glows, cancel rage art screen effects, hide the HUD (and the game's FPS counter).
+- **Visuals:** Filmtweaks-style colour, depth of field with autofocus, lens effects, fog with a colour you pick, sun and sky, your own lighting rig, and sliders for engine settings. Add your own in `T8Cine\dvars.ini`.
 - **Recording:** frame-locked video through ffmpeg (H.264, H.265, ProRes or PNG). Smooth however slowly it renders.
-- **Streams:** several files at once that line up frame for frame: picture, greenscreen, stage only, fighters on black, depth.
 - **Motion blur:** real blur from averaging 2 to 64 renders per frame, with a shutter angle.
 - **Audio pass:** captures only the game's sound to a WAV at 1x, since frame-locked video has none.
 - **Presets and shots:** save a look, or a whole shot with its camera path and speed ramp.
 - **Skins:** choose pak mods per session. They're only in the game folder while the session runs.
-- **Replay sharing (being built):** export your own gameplay to a file, send it to a friend, and they load it. No servers involved.
+- **Replay sharing:** export a replay to a file, send it to a friend, and they load it. No servers involved.
 - **Replay vault:** snapshot your own saves on this PC, tagged with the game build, and restore them.
 
 ## Use
 1. Run `dist\T8CineLauncher.exe`. It needs [ffmpeg](https://ffmpeg.org) on your PATH for recording.
 2. In Steam, choose **Steam > Go Offline**.
 3. Click **Start cinematic session**. Keep the launcher open: it cleans up when the game closes.
-4. In the game, press **Insert** for the menu.
+4. In the game, open a replay: **Replay > My Replays & Tips**, then pick one.
+5. In the replay's own menu (B), set the three tips (punishment, high moves, throws) to **Hide**, or the replay stops at every tip.
+6. Press **Insert** for the editor.
+
+To make a shot: pause, go to a moment on the ruler, press F5 and fly the camera, press K for a key, move along the timeline, and add more keys. Then press **Preview shot** to watch it and **Record shot** to record it.
 
 | Key | Does |
 |---|---|
-| Insert | Menu |
+| Insert | Editor |
 | F5 | Free camera |
 | F6 | Play dolly path |
 | F7 | Record |
@@ -44,29 +52,44 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 
 Free camera: `WASD` fly, `Q` `E` down and up, hold right mouse to look, `Shift` faster, `Ctrl` slower, wheel sets speed, `Z` `C` roll, `R` level, `+` `-` zoom.
 
-## Replays
-The game saves each replay as its own encrypted file. T8Cine's goal is to export one to a file you can send to someone, and to load a file
-you received, without touching your real saves or Steam Cloud. This part isn't finished, because it needs the running game. Replays are input
-logs, so both people need the same game build, and a patch can stop an old replay from playing.
+A paused editor stops the game's own menus too, including the one at the end of a replay. Unpause (F8) if a game menu stops responding.
+
+## Sharing replays
+In the editor's REPLAYS tab, pick a replay and press **Export**. The `.t8replay` file goes in `shared_replays` next to your recordings. Send it to a friend, who puts it in the same folder and presses **Load**. It then shows up in the game's **Replay > Downloaded Replays**. If that screen is open, leave it and come back.
+
+- Both of you need the same game version. A replay made on an older version won't play.
+- The file holds both players' names.
+- Loading only changes the game's memory, so the replay is gone when you close the game, unless the game itself saves that group of replays, which happens when you download or delete a replay nearby. Your existing replays aren't touched.
+
+The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by T8Cine and no save file is edited.
+
+## Good to know
+- **Rewinding needs a replay.** Practice mode has no saved points, so the ruler only goes forward there.
+- **Windows Volume Mixer:** the audio pass captures the game after its slider. If the game is at zero there, the recording is silent, and the editor tells you.
+- **The greenscreen looks black on screen** and is green in the video, because the green is painted in as each frame is captured. If dark clothing at a fighter's edge gets eaten, lower **Green cut** in the RECORD tab.
+- **Rewinding changes the picture slightly compared to the first playthrough:** by less than 3 cm on a fighter's position, right after a jump. It's the same every time.
+
+## Not verified
+- **A rage art itself.** The filter was tested on the game's real mid-round cinematic camera moves and zooms, and on round intros, in replays that happened to have no rage art. Rage arts should behave the same, but this one case hasn't been watched.
+- **The "No rage art screen effects" option** runs without trouble, but it hasn't been seen against a rage art for the same reason.
+- **A friend's PC.** Export and load were tested on one PC and one Steam account, by loading a replay exported moments earlier.
 
 ## Bans and anti-cheat
-Bandai Namco's stated ban reasons include unauthorized mods, and no mod can promise you're safe. T8Cine doesn't hide from anything. It stays
-off online play instead:
+Bandai Namco's stated ban reasons include unauthorized mods, and no mod can promise you're safe. T8Cine doesn't hide from anything. It stays off online play instead:
 - A cinematic session only starts with Steam in Offline Mode.
-- If the game connects to the internet, the mod turns itself off until the game restarts.
-- The mod and skins leave the game folder when the game closes. A normal launch makes sure they're gone first.
+- While the mod runs, it stops the game's outgoing internet connections. Even in Steam's Offline Mode the game keeps trying to reach servers, and the log lists each connection it stopped.
+- If Steam goes online, the mod turns itself off until the game restarts.
+- The mod and skins leave the game folder when the game closes, even after a crash. A normal launch makes sure they're gone first.
 
 Don't play online with the mod or skins in the game folder.
 
 ## After a game patch
-If the mod stops working, `T8Cine\t8cine.log` in the game's `Win64` folder names the pattern that no longer matches. Put a new one in
-`T8Cine\signatures.ini` as `Name = AA BB ?? CC`; there's no rebuild needed. `tools\check_patterns.py` checks them against the exe.
+If the mod stops working, `T8Cine\t8cine.log` in the game's `Win64` folder names the pattern that no longer matches. Put a new one in `T8Cine\signatures.ini` as `Name = AA BB ?? CC`; there's no rebuild needed. `tools\check_patterns.py` checks them against the exe. If only the rewinding patterns stop matching, the timeline falls back to counting steps and everything else keeps working.
 
 ## Build
-Needs Visual Studio 2022 Build Tools. Run `build.cmd`. Tests: `build\t8cine_tests.exe` and `tools\harness\run_harness.ps1`.
+Needs Visual Studio 2022 Build Tools. Run `build.cmd`. Tests: `build\t8cine_tests.exe` and `tools\harness\run_all.ps1`. `tools\` also has the scripts used to test against the real game, with `test_commands = 1` in `T8Cine\t8cine.ini`.
 
 ## Credits and license
-GPL-3.0. Engine notes, patterns and the method for smooth motion come from the
-[Tekken Overlay rebuild](https://github.com/parsaes80/tekken-overlay-rebuild), based on KulaGGin's Tekken Overlay.
+GPL-3.0. Engine notes, patterns and the method for smooth motion come from the [Tekken Overlay rebuild](https://github.com/parsaes80/tekken-overlay-rebuild), based on KulaGGin's Tekken Overlay. OpenDojo's research notes helped with the game's subsystems.
 Uses [Dear ImGui](https://github.com/ocornut/imgui) and [MinHook](https://github.com/TsudaKageyu/minhook). Written with Claude.
 Contains no game files. Not affiliated with Bandai Namco.

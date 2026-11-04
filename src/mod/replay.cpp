@@ -28,7 +28,14 @@ using GetManagerFn = uint8_t* (*)();
 using CopyPointFn = void* (*)(void*, const void*);
 using RestorePointFn = int (*)(void*, void*);
 using InputFn = void (*)(void*);
+using AfterJumpFn = void (*)(void*, int, int);
 
+// In the replay controller: set while the transition after a jump is running.
+constexpr int ControllerInTransition = 0x3C;
+
+void* g_controller = nullptr;
+int g_afterJumpSlot = 0;
+int g_jumpCounterField = 0;
 GetRegistryFn g_getRegistry = nullptr;
 LookupFn g_lookup = nullptr;
 const void* g_battleKey = nullptr;
@@ -129,7 +136,7 @@ void RefreshList()
 }
 
 // What the game's own rewind does once it has picked a point: copy it, and restore from the copy.
-void RestoreLastPointBefore(uint32_t frame)
+void RestoreLastPointBefore(void* controller, uint32_t frame)
 {
     const uint8_t* begin = nullptr;
     size_t count = 0;
@@ -153,15 +160,22 @@ void RestoreLastPointBefore(uint32_t frame)
     std::vector<uint8_t> copy(g_pointSize + 0x40);
     const int result = g_restorePoint(manager, g_copyPoint(copy.data(), best));
     mod::Log("Replay jump: wanted frame %u, restored the point at %u (round %d, type %d), result %d", frame, chosen.Frame, chosen.Round, chosen.Type, result);
+
+    // The same follow-up as the game's own rewind. It runs a short transition that resets both players' input state, and without
+    // that the fight plays on differently from the original.
+    auto* table = *reinterpret_cast<AfterJumpFn**>(controller);
+    table[g_afterJumpSlot](controller, result, 0);
+    std::memset(static_cast<uint8_t*>(controller) + g_jumpCounterField, 0, sizeof(uint64_t));
 }
 
 void DetourInput(void* controller)
 {
+    g_controller = controller;
     if (g_inputCalls.fetch_add(1, std::memory_order_relaxed) % 60 == 0)
         RefreshList();
     const int64_t frame = g_pendingFrame.exchange(-1);
     if (frame >= 0)
-        RestoreLastPointBefore(static_cast<uint32_t>(frame));
+        RestoreLastPointBefore(controller, static_cast<uint32_t>(frame));
     oInput(controller);
 }
 
@@ -174,6 +188,17 @@ void Setup(const Code& code)
         return;
     }
     g_getManager = CallTarget<GetManagerFn>(code.RewindSite);
+
+    // In the rewind code, right after the jump: a call through the controller's table, and a field it clears.
+    const auto site = reinterpret_cast<const uint8_t*>(code.RewindSite);
+    if (site[31] != 0x41 || site[32] != 0xFF || site[33] != 0x91 || site[0x41] != 0x48 || site[0x42] != 0x89 || site[0x43] != 0x77) {
+        mod::Log("Replay rewind code has changed shape: the timeline counts steps and rewinding is off");
+        return;
+    }
+    int afterJumpOffset = 0;
+    std::memcpy(&afterJumpOffset, site + 34, sizeof(afterJumpOffset));
+    g_afterJumpSlot = afterJumpOffset / 8;
+    g_jumpCounterField = site[0x44];
 
     // The rewind fetches the battle system and passes its frame on to the real function: nearly everything we need is in those two.
     const uintptr_t thunk = reinterpret_cast<uintptr_t>(CallTarget<void*>(code.RewindSite + 13));
@@ -226,6 +251,17 @@ void RequestJump(uint32_t frame)
 bool JumpPending()
 {
     return g_pendingFrame.load() >= 0;
+}
+
+bool JumpSettling()
+{
+    if (!g_controller)
+        return false;
+    __try {
+        return *(static_cast<const uint8_t*>(g_controller) + ControllerInTransition) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 void CancelJump()

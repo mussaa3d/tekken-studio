@@ -321,8 +321,10 @@ inline bool IsCinematicJump(const RelativeCamera& normal, const RelativeCamera& 
     const double dx = now.Along - normal.Along, dy = now.Side - normal.Side, dz = now.Height - normal.Height;
     if (std::sqrt(dx * dx + dy * dy + dz * dz) > distanceLimit)
         return true;
+    // The game also zooms for big hits with the camera nearly where it was.
     return std::fabs(WrapAngle(now.YawOffset - normal.YawOffset)) > angleLimit
-        || std::fabs(now.Pitch - normal.Pitch) > angleLimit;
+        || std::fabs(now.Pitch - normal.Pitch) > angleLimit
+        || std::fabs(now.Fov - normal.Fov) > 2.0;
 }
 
 } // namespace cine
