@@ -445,6 +445,17 @@ void ConsoleCommand(const std::wstring& command)
     Call(nullptr, ref, &params);
 }
 
+int CvarInt(const std::wstring& name)
+{
+    struct {
+        FString Name;
+        int ReturnValue;
+    } params { FString(name), 0 };
+    static FunctionRef ref { "KismetSystemLibrary", "GetConsoleVariableIntValue" };
+    Call(nullptr, ref, &params);
+    return params.ReturnValue;
+}
+
 void SetGlobalTimeDilation(float dilation)
 {
     struct {

@@ -11,6 +11,7 @@
 #include <imgui_impl_win32.h>
 
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
@@ -355,14 +356,53 @@ void OnPresent(IDXGISwapChain3* swapChain)
     }
 }
 
-HRESULT STDMETHODCALLTYPE DetourPresent(IDXGISwapChain3* swapChain, UINT sync, UINT flags)
+HRESULT PresentThrough(PresentFn next, IDXGISwapChain3* swapChain, UINT sync, UINT flags)
 {
     if (!guard::Tripped()) {
         OnPresent(swapChain);
         if (recorder::Active())
             sync = 0; // recording runs as fast as frames can be made, not at the monitor's rate
     }
-    return oPresent(swapChain, sync, flags);
+    return next(swapChain, sync, flags);
+}
+
+// Steam's overlay also hooks Present and can get there before us, which would put its popups on the frame when we copy it. The game
+// calls Present through the swap chain's own table, which comes before every hook, so a copy of that table with our function in it
+// puts us first: the frame is captured clean and Steam still draws on top for the screen.
+constexpr int SwapChainMethods = 41;
+void* g_frontTable[SwapChainMethods];
+IDXGISwapChain3* g_frontChain = nullptr;
+PresentFn g_frontNext = nullptr;
+thread_local bool g_inFront = false;
+
+HRESULT STDMETHODCALLTYPE FrontPresent(IDXGISwapChain3* swapChain, UINT sync, UINT flags)
+{
+    g_inFront = true;
+    const HRESULT result = PresentThrough(g_frontNext, swapChain, sync, flags);
+    g_inFront = false;
+    return result;
+}
+
+void GetInFront(IDXGISwapChain3* swapChain)
+{
+    void** table = *reinterpret_cast<void***>(swapChain);
+    if (table == g_frontTable)
+        return;
+    std::memcpy(g_frontTable, table, sizeof(g_frontTable));
+    g_frontNext = reinterpret_cast<PresentFn>(table[8]);
+    g_frontTable[8] = reinterpret_cast<void*>(&FrontPresent);
+    *reinterpret_cast<void***>(swapChain) = g_frontTable;
+    g_frontChain = swapChain;
+    mod::Log("Present: in front of other hooks");
+}
+
+HRESULT STDMETHODCALLTYPE DetourPresent(IDXGISwapChain3* swapChain, UINT sync, UINT flags)
+{
+    if (g_inFront)
+        return oPresent(swapChain, sync, flags);
+    if (!guard::Tripped() && !g_harness.Enabled && swapChain != g_frontChain)
+        GetInFront(swapChain);
+    return PresentThrough(oPresent, swapChain, sync, flags);
 }
 
 HRESULT STDMETHODCALLTYPE DetourResize(IDXGISwapChain3* swapChain, UINT count, UINT width, UINT height, DXGI_FORMAT format, UINT flags)

@@ -98,8 +98,51 @@ void Remember(void* object, void* cls, const char* property)
         g_originals[key] = ue::Field<float>(object, offset);
 }
 
+// The game ships with volumetric fog turned off and leaves its plain fog barely visible, so nothing a fog object is told shows until
+// volumetric fog is on. It's lit by the stage, which is where its colour comes from; with no albedo only its own glow is left, which
+// makes it a colour we can choose.
+constexpr float FogGlowScale = 200000.0f; // a glow this many times the density looks like its full colour
+
+bool g_fogOn = false;
+int g_gameVolumetricFog = 0;
+
+void TurnFogOn()
+{
+    static ue::FunctionRef enable { "ExponentialHeightFogComponent", "SetVolumetricFog" };
+    if (!g_fogOn) {
+        g_fogOn = true;
+        g_gameVolumetricFog = ue::CvarInt(L"r.VolumetricFog");
+        ue::ConsoleCommand(L"r.VolumetricFog 1");
+    }
+    struct {
+        bool Enable;
+    } params { true };
+    ForEachOf("ExponentialHeightFogComponent", [&](void* fog) { ue::Call(fog, enable, &params); });
+}
+
+void TurnFogOff()
+{
+    if (!g_fogOn)
+        return;
+    g_fogOn = false;
+    ue::ConsoleCommand(L"r.VolumetricFog " + std::to_wstring(g_gameVolumetricFog));
+}
+
+void SetFogGlow(void* fog, LinearColor glow)
+{
+    static ue::FunctionRef albedo { "ExponentialHeightFogComponent", "SetVolumetricFogAlbedo" };
+    static ue::FunctionRef emissive { "ExponentialHeightFogComponent", "SetVolumetricFogEmissive" };
+    const uint32_t black = 0xFF000000u;
+    ue::Call(fog, albedo, const_cast<uint32_t*>(&black));
+    struct {
+        LinearColor Value;
+    } params { glow };
+    ue::Call(fog, emissive, &params);
+}
+
 void ApplyFogFloat(ue::FunctionRef& setter, const char* property, float value)
 {
+    TurnFogOn();
     void* cls = ue::FindClass("ExponentialHeightFogComponent");
     const int count = ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
         Remember(fog, cls, property);
@@ -206,13 +249,15 @@ void RestoreStage(const Slider& slider)
 
 void ApplyTint()
 {
-    static ue::FunctionRef fogColor { "ExponentialHeightFogComponent", "SetFogInscatteringColor" };
     static ue::FunctionRef sunColor { "LightComponent", "SetLightColor" };
     if (g_colors.FogOverridden) {
-        struct {
-            LinearColor Value;
-        } params { { g_colors.Fog[0], g_colors.Fog[1], g_colors.Fog[2], 1 } };
-        ForEachOf("ExponentialHeightFogComponent", [&](void* fog) { ue::Call(fog, fogColor, &params); });
+        TurnFogOn();
+        float density = 0.02f;
+        for (const Slider& slider : All())
+            if (slider.Kind == Kind::FogDensity)
+                density = slider.Value;
+        const float glow = density * FogGlowScale;
+        ForEachOf("ExponentialHeightFogComponent", [&](void* fog) { SetFogGlow(fog, { g_colors.Fog[0] * glow, g_colors.Fog[1] * glow, g_colors.Fog[2] * glow, 1 }); });
     }
     if (g_colors.SunOverridden) {
         struct {
@@ -223,10 +268,11 @@ void ApplyTint()
     }
 }
 
-// Colour and floats of a fog object from before greenscreen, read from memory.
+// A fog object from before a depth pass, read from memory.
 struct GreenBackup {
     float Density, Falloff, Start, Opacity;
-    LinearColor Color;
+    uint32_t Albedo;
+    LinearColor Glow;
     bool Valid;
 };
 std::map<void*, GreenBackup> g_greenBackup;
@@ -326,6 +372,15 @@ void OnGameTick()
                 Apply(slider);
     if (tint || refresh)
         ApplyTint();
+
+    // Once nothing asks for fog any more, the game goes back to how it was.
+    if (!pending.empty() && g_fogOn && !g_colors.FogOverridden && g_greenBackup.empty()) {
+        bool wanted = false;
+        for (const Slider& slider : All())
+            wanted = wanted || (slider.Overridden && (slider.Kind == Kind::FogDensity || slider.Kind == Kind::FogFalloff || slider.Kind == Kind::FogStartDistance || slider.Kind == Kind::FogMaxOpacity));
+        if (!wanted)
+            TurnFogOff();
+    }
 }
 
 namespace {
@@ -353,33 +408,33 @@ bool FogOverride(bool on, float r, float g, float b, float densityValue, float s
     static ue::FunctionRef falloff { "ExponentialHeightFogComponent", "SetFogHeightFalloff" };
     static ue::FunctionRef start { "ExponentialHeightFogComponent", "SetStartDistance" };
     static ue::FunctionRef opacity { "ExponentialHeightFogComponent", "SetFogMaxOpacity" };
-    static ue::FunctionRef color { "ExponentialHeightFogComponent", "SetFogInscatteringColor" };
     const int densityAt = ue::PropertyOffset(cls, "FogDensity");
     const int falloffAt = ue::PropertyOffset(cls, "FogHeightFalloff");
     const int startAt = ue::PropertyOffset(cls, "StartDistance");
     const int opacityAt = ue::PropertyOffset(cls, "FogMaxOpacity");
-    int colorAt = ue::PropertyOffset(cls, "FogInscatteringLuminance");
-    if (colorAt < 0)
-        colorAt = ue::PropertyOffset(cls, "FogInscatteringColor");
+    const int albedoAt = ue::PropertyOffset(cls, "VolumetricFogAlbedo");
+    const int glowAt = ue::PropertyOffset(cls, "VolumetricFogEmissive");
 
-    const auto setColor = [&](void* fog, LinearColor value) {
-        struct {
-            LinearColor Value;
-        } params { value };
-        ue::Call(fog, color, &params);
-    };
-
+    if (on) {
+        TurnFogOn();
+        // The fog's history would smear each pass into the next.
+        ue::ConsoleCommand(L"r.VolumetricFog.TemporalReprojection 0");
+    } else if (!g_greenBackup.empty()) {
+        ue::ConsoleCommand(L"r.VolumetricFog.TemporalReprojection 1");
+    }
+    const float glow = densityValue * FogGlowScale;
     const int count = ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
         if (on) {
             if (!g_greenBackup.count(fog)) {
                 GreenBackup backup {};
-                backup.Valid = densityAt >= 0 && falloffAt >= 0 && startAt >= 0 && opacityAt >= 0 && colorAt >= 0;
+                backup.Valid = densityAt >= 0 && falloffAt >= 0 && startAt >= 0 && opacityAt >= 0 && albedoAt >= 0 && glowAt >= 0;
                 if (backup.Valid) {
                     backup.Density = ue::Field<float>(fog, densityAt);
                     backup.Falloff = ue::Field<float>(fog, falloffAt);
                     backup.Start = ue::Field<float>(fog, startAt);
                     backup.Opacity = ue::Field<float>(fog, opacityAt);
-                    backup.Color = ue::Field<LinearColor>(fog, colorAt);
+                    backup.Albedo = ue::Field<uint32_t>(fog, albedoAt);
+                    backup.Glow = ue::Field<LinearColor>(fog, glowAt);
                 }
                 g_greenBackup[fog] = backup;
             }
@@ -387,17 +442,29 @@ bool FogOverride(bool on, float r, float g, float b, float densityValue, float s
             CallFloat(fog, falloff, 0.001f); // the same thickness at every height
             CallFloat(fog, start, startValue);
             CallFloat(fog, opacity, 1.0f);
-            setColor(fog, { r, g, b, 1 });
+            SetFogGlow(fog, { r * glow, g * glow, b * glow, 1 });
         } else if (const auto it = g_greenBackup.find(fog); it != g_greenBackup.end() && it->second.Valid) {
             CallFloat(fog, density, it->second.Density);
             CallFloat(fog, falloff, it->second.Falloff);
             CallFloat(fog, start, it->second.Start);
             CallFloat(fog, opacity, it->second.Opacity);
-            setColor(fog, it->second.Color);
+            static ue::FunctionRef albedo { "ExponentialHeightFogComponent", "SetVolumetricFogAlbedo" };
+            static ue::FunctionRef emissive { "ExponentialHeightFogComponent", "SetVolumetricFogEmissive" };
+            ue::Call(fog, albedo, &it->second.Albedo);
+            struct {
+                LinearColor Value;
+            } params { it->second.Glow };
+            ue::Call(fog, emissive, &params);
         }
     });
-    if (!on)
+    if (!on && !g_greenBackup.empty()) {
         g_greenBackup.clear();
+        bool wanted = g_colors.FogOverridden;
+        for (const Slider& slider : All())
+            wanted = wanted || (slider.Overridden && (slider.Kind == Kind::FogDensity || slider.Kind == Kind::FogFalloff || slider.Kind == Kind::FogStartDistance || slider.Kind == Kind::FogMaxOpacity));
+        if (!wanted)
+            TurnFogOff();
+    }
     return count > 0;
 }
 

@@ -242,8 +242,67 @@ void Run(const std::string& line)
     } else if (command == "look") {
         in >> n;
         r.Preview = static_cast<recorder::Look>(n);
-    } else if (command == "greendist") {
-        in >> e.GreenClearDistance;
+    } else if (command == "lightinfo") {
+        void* cls = ue::FindClass("LightComponent");
+        void* scene = ue::FindClass("SceneComponent");
+        int count = 0;
+        for (void* light : ue::AllObjectsOf(cls)) {
+            const std::string name = ue::NameOf(light);
+            ++count;
+            if (name.rfind("PointLightComponent_", 0) != 0 && count > 3)
+                continue;
+            struct {
+                cine::Vec3 ReturnValue;
+            } where {};
+            static ue::FunctionRef location { "SceneComponent", "K2_GetComponentLocation" };
+            ue::Call(light, location, &where);
+            int visibleByte = -1, affectsByte = -1, hiddenByte = -1, movableAt = ue::PropertyOffset(scene, "Mobility");
+            uint8_t visibleMask = 0, affectsMask = 0, hiddenMask = 0;
+            ue::BoolProperty(scene, "bVisible", visibleByte, visibleMask);
+            ue::BoolProperty(scene, "bHiddenInGame", hiddenByte, hiddenMask);
+            ue::BoolProperty(cls, "bAffectsWorld", affectsByte, affectsMask);
+            const int intensityAt = ue::PropertyOffset(cls, "Intensity");
+            const int colorAt = ue::PropertyOffset(cls, "LightColor");
+            const int channelsAt = ue::PropertyOffset(cls, "LightingChannels");
+            mod::Log("[test] %s (%s): at %.0f %.0f %.0f intensity %g visible %d hidden %d affects %d mobility %d color %08X channels %02X", name.c_str(), ue::ClassNameOf(light).c_str(),
+                     where.ReturnValue.X, where.ReturnValue.Y, where.ReturnValue.Z, intensityAt >= 0 ? ue::Field<float>(light, intensityAt) : -1.0f,
+                     visibleByte >= 0 ? (ue::Field<uint8_t>(light, visibleByte) & visibleMask) != 0 : -1, hiddenByte >= 0 ? (ue::Field<uint8_t>(light, hiddenByte) & hiddenMask) != 0 : -1,
+                     affectsByte >= 0 ? (ue::Field<uint8_t>(light, affectsByte) & affectsMask) != 0 : -1, movableAt >= 0 ? ue::Field<uint8_t>(light, movableAt) : -1,
+                     colorAt >= 0 ? ue::Field<uint32_t>(light, colorAt) : 0, channelsAt >= 0 ? ue::Field<uint8_t>(light, channelsAt) : 0);
+        }
+        mod::Log("[test] %d lights in all", count);
+    } else if (command == "greendark") {
+        in >> r.GreenDarkness;
+    } else if (command == "fogcall") {
+        // fogcall <Function> f <float> | c <r g b a> | b <0|1> | k <b g r a>: calls an engine function on every fog object
+        std::string name, kind;
+        in >> name >> kind;
+        ue::FunctionRef ref { "ExponentialHeightFogComponent", name.c_str() };
+        struct Params {
+            float Values[4] = {};
+        } params;
+        if (kind == "f") {
+            in >> params.Values[0];
+        } else if (kind == "c") {
+            in >> params.Values[0] >> params.Values[1] >> params.Values[2] >> params.Values[3];
+        } else if (kind == "b") {
+            in >> n;
+            *reinterpret_cast<bool*>(params.Values) = n != 0;
+        } else if (kind == "k") {
+            int bytes[4] = {};
+            in >> bytes[0] >> bytes[1] >> bytes[2] >> bytes[3];
+            auto* out = reinterpret_cast<uint8_t*>(params.Values);
+            for (int i = 0; i < 4; ++i)
+                out[i] = static_cast<uint8_t>(bytes[i]);
+        }
+        void* cls = ue::FindClass("ExponentialHeightFogComponent");
+        for (void* fog : ue::AllObjectsOf(cls))
+            ue::Call(fog, ref, &params);
+        mod::Log("[test] fogcall %s done", name.c_str());
+    } else if (command == "cvar") {
+        std::string name;
+        in >> name;
+        mod::Log("[test] %s = %d", name.c_str(), ue::CvarInt(std::wstring(name.begin(), name.end())));
     } else if (command == "depthrange") {
         in >> e.DepthDensity;
     } else if (command == "rec") {

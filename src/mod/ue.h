@@ -132,6 +132,7 @@ void* World();
 void* PlayerController();
 bool IsGamePaused();
 void ConsoleCommand(const std::wstring& command);
+int CvarInt(const std::wstring& name);
 void SetGlobalTimeDilation(float dilation);
 bool ActorLocation(void* actor, cine::Vec3& out);
 void* CharacterMesh(void* character);

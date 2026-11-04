@@ -563,10 +563,8 @@ void RecordTab()
         s.Preview = static_cast<recorder::Look>(preview);
     effects::Settings& e = effects::Config();
     BarWidth();
-    ImGui::SliderFloat("Green starts at", &e.GreenClearDistance, 100.0f, 10000.0f, "%.0f cm");
-    Help("Anything closer to the camera than this stays clear of the green. Keep the fighters inside it.");
-    ImGui::Checkbox("Also paint pure black green", &s.PaintBlackGreen);
-    Help("For stages with no fog to use. It can punch holes in very dark clothing.");
+    ImGui::SliderInt("Green cut", &s.GreenDarkness, 2, 80);
+    Help("In a greenscreen stream, how dark the empty background can be. Dark clothing at a fighter's edge gets eaten if this is too high, and the background stays dark if it's too low. On screen the look shows the black background, and the video is green.");
     BarWidth();
     ImGui::SliderFloat("Depth range", &e.DepthDensity, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
     Help("How quickly the depth stream goes from black to white with distance.");

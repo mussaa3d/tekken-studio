@@ -318,6 +318,8 @@ void ApplyFilter(Vec3& location, Rot& rotation, float& fov)
         // Stay "held" for a moment after the camera returns, so a cut back and forth doesn't flicker.
         g_filter.QuietFrames = g_filter.Holding ? g_filter.QuietFrames + 1 : 30;
         if (g_filter.QuietFrames >= 30) {
+            if (g_filter.Holding)
+                mod::Log("Camera filter: back to the game's camera at %.2f", game::Clock());
             g_filter.Holding = false;
             // Learn slowly: a cinematic that eases in must not drag the baseline along with it.
             BlendRelative(g_filter.Normal, now, 0.005);
@@ -325,7 +327,7 @@ void ApplyFilter(Vec3& location, Rot& rotation, float& fov)
         }
     } else {
         if (!g_filter.Holding)
-            mod::Log("Camera filter: holding normal framing");
+            mod::Log("Camera filter: holding the fight framing from %.2f", game::Clock());
         g_filter.Holding = true;
         g_filter.QuietFrames = 0;
     }

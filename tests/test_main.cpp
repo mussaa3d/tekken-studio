@@ -199,13 +199,27 @@ static void TestFrameMath()
     Average(sum10, 1, PixelFormat::X2Bgr10, 2, reinterpret_cast<uint8_t*>(out10));
     CHECK(out10[0] == pack(512, 500, 200, 3));
 
-    // Only true black becomes green.
-    uint32_t pixels[3] = { 0xFF000000u, 0xFF000001u, 0xFF102030u };
-    PaintBlackGreen(reinterpret_cast<uint8_t*>(pixels), 3, PixelFormat::Bgra8);
-    CHECK(pixels[0] == 0xFF00FF00u && pixels[1] == 0xFF000001u && pixels[2] == 0xFF102030u);
-    uint32_t pixels10[2] = { 3u << 30, pack(1, 0, 0, 3) };
-    PaintBlackGreen(reinterpret_cast<uint8_t*>(pixels10), 2, PixelFormat::X2Bgr10);
-    CHECK(pixels10[0] == pack(0, 1023, 0, 3) && pixels10[1] == pack(1, 0, 0, 3));
+    // Dark and connected to the edge becomes green. Dark but walled in by a bright fighter stays.
+    {
+        std::vector<int> stack;
+        const uint32_t dark = 0xFF050A0Bu, bright = 0xFF8090A0u, green = 0xFF00FF00u;
+        uint32_t image[5 * 5] = {
+            dark, dark,   dark,   dark,   dark,
+            dark, bright, bright, bright, dark,
+            dark, bright, dark,   bright, dark,
+            dark, bright, bright, bright, dark,
+            dark, dark,   dark,   dark,   dark,
+        };
+        PaintBackgroundGreen(reinterpret_cast<uint8_t*>(image), 5, 5, PixelFormat::Bgra8, 20, stack);
+        CHECK(image[0] == green && image[4] == green && image[24] == green && image[10] == green);
+        CHECK(image[12] == dark);
+        CHECK(image[6] == bright && image[18] == bright);
+
+        uint32_t image10[2 * 2] = { pack(20, 40, 44, 3), pack(20, 40, 44, 3), pack(500, 500, 500, 3), pack(20, 40, 44, 3) };
+        PaintBackgroundGreen(reinterpret_cast<uint8_t*>(image10), 2, 2, PixelFormat::X2Bgr10, 20, stack);
+        CHECK(image10[0] == pack(0, 1023, 0, 3) && image10[3] == pack(0, 1023, 0, 3));
+        CHECK(image10[2] == pack(500, 500, 500, 3));
+    }
 
     // Depth: whatever the surface colour, white fog minus black fog gives the same grey for the same fog amount.
     const auto fogged = [](double colour, double fog, double fogColour) { return static_cast<uint8_t>(colour * (1 - fog) + fogColour * fog + 0.5); };

@@ -26,6 +26,9 @@ constexpr size_t MaxQueuedFrames = 4;
 Settings g_settings;
 bool g_rangeFired = false;
 bool g_rangeOnce = false;
+int g_rangeStopWait = 0;
+constexpr int PictureLag = 2;
+std::atomic<bool> g_firstCaptureDone { true };
 std::atomic<bool> g_startRequested { false };
 std::atomic<bool> g_stopRequested { false };
 std::atomic<bool> g_active { false };
@@ -451,8 +454,10 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
     std::vector<uint8_t> image = TakeBuffer(*output.Encoder, bytes);
     CopyRows(footprint, bytesPerPixel, image.data());
 
-    if (pass.Pass == Pass::Greenscreen && g_settings.PaintBlackGreen)
-        framemath::PaintBlackGreen(image.data(), pixels, g_pixels);
+    if (pass.Pass == Pass::Greenscreen) {
+        static std::vector<int> stack;
+        framemath::PaintBackgroundGreen(image.data(), footprint.Footprint.Width, footprint.Footprint.Height, g_pixels, g_settings.GreenDarkness, stack);
+    }
 
     if (pass.Pass == Pass::DepthWhiteFog) {
         output.DepthWhite.swap(image);
@@ -554,6 +559,8 @@ void RequestStart()
     g_sampleIndex = 0;
     g_passIndex = 0;
     g_stopRequested = false;
+    g_rangeStopWait = 0;
+    g_firstCaptureDone = false;
     g_startRequested = true;
     game::SetRecordingClock(true, static_cast<double>(g_settings.Fps) * g_samplesPerFrame);
 }
@@ -604,6 +611,11 @@ bool HoldsTime()
     return g_active && g_holdsTime;
 }
 
+bool WaitingForFirstFrame()
+{
+    return !g_firstCaptureDone;
+}
+
 bool TakeAdvance()
 {
     int tokens = g_advanceTokens.load();
@@ -650,6 +662,11 @@ void OnGameTick(double clock)
         g_rangeFired = true;
         RequestStart();
     } else if (g_active && clock >= s.RangeOut) {
+        // What's on screen is a little behind the game, and with passes each frame takes several renders.
+        const int passes = std::max(static_cast<int>(g_plan.size()), 1);
+        const int wait = PictureLag + (g_holdsTime ? passes * (s.SettleFrames + 1) * g_samplesPerFrame : 0);
+        if (++g_rangeStopWait <= wait)
+            return;
         RequestStop();
         if (g_rangeOnce) {
             g_rangeOnce = false;
@@ -699,13 +716,16 @@ void OnPresent(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* 
     // The game shows a new look a few frames after it's asked for. Without a change there's nothing to wait for.
     const bool settlingNeeded = g_holdsTime || g_frames == 0;
     if (settlingNeeded && g_settleCount < g_settings.SettleFrames) {
-        ++g_settleCount;
+        // The picture is one frame behind the game, so time starts moving one frame before the first capture.
+        if (++g_settleCount == g_settings.SettleFrames)
+            g_firstCaptureDone = true;
         return;
     }
 
     const PlannedPass pass = g_plan[g_passIndex];
     if (g_sampleIndex < g_blendedSamples)
         CapturePass(pass, device, queue, backBuffer, format);
+    g_firstCaptureDone = true;
 
     int next = g_passIndex + 1;
     if (next >= static_cast<int>(g_plan.size())) {

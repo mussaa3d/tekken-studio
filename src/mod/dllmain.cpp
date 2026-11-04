@@ -261,8 +261,6 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason, void*)
         return TRUE;
 
     mod::SetDataDir(dataDir);
-    // Steam's overlay draws before we capture, so its FPS counter would end up in the video. This asks it not to draw.
-    SetEnvironmentVariableW(L"SteamNoOverlayUIDrawing", L"1");
     CloseHandle(CreateThread(nullptr, 0, GameThread, nullptr, 0, nullptr));
     return TRUE;
 }

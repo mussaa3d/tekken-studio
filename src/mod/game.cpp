@@ -301,7 +301,7 @@ void DetourTick(double dt)
     double advance = 0;
     if (!g_time.Paused) {
         if (g_recording) {
-            if (!recorder::HoldsTime() || recorder::TakeAdvance())
+            if (!recorder::WaitingForFirstFrame() && (!recorder::HoldsTime() || recorder::TakeAdvance()))
                 advance = g_time.Speed / g_recordingFps;
         } else {
             advance = real * g_time.Speed;

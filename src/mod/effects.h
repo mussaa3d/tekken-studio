@@ -13,8 +13,7 @@ struct Settings {
     bool NoDepthOfField = false;
     bool NoParticles = false;
     bool NoVignette = false;
-    float GreenClearDistance = 2000; // how far from the camera the greenscreen starts, so fighters stay clear of it
-    float DepthDensity = 0.05f;      // how quickly the depth stream goes from black to white with distance
+    float DepthDensity = 0.06f;      // how quickly the depth stream goes from black to white with distance
     char CustomCommand[256] = "";
 };
 Settings& Config();

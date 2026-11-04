@@ -51,7 +51,7 @@ struct Settings {
     int MotionSamples = 1;    // renders per video frame; 1 = no blur
     float ShutterDegrees = 180; // how much of each frame's time the shutter is open
     Look Preview = Look::Picture; // the look on screen while not recording
-    bool PaintBlackGreen = false; // greenscreen fallback for stages with no fog object
+    int GreenDarkness = 16;   // how dark, out of 255, the empty background behind the fighters can be for the greenscreen
     bool UseRange = false;    // start and stop by themselves at the timeline's range
     double RangeIn = 0, RangeOut = 10; // seconds on the fight clock
 };
@@ -69,6 +69,8 @@ std::string LastError();
 // More than one pass per sample: the game must only move when TakeAdvance says so.
 bool HoldsTime();
 bool TakeAdvance();
+// Starting takes a few frames. The game waits, so a recording begins on the frame it was asked to begin on.
+bool WaitingForFirstFrame();
 Pass ActivePass();
 int EnabledStreams();
 

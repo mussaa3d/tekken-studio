@@ -28,7 +28,7 @@ std::vector<std::wstring> g_commands;
 // words and none of the excluded ones, so menus and dialogs stay. List from the Tekken Overlay rebuild.
 const char* const kHudWords[] = { "hud", "gamemessage", "buttonhelp", "controlguide", "guide_button", "ragearts", "matchinfo",
                                   "replayinfo", "replaycontrol", "combochallenge", "counterpractice", "storyiw",
-                                  "suppressiongauge", "wbp_ui_practice_" };
+                                  "suppressiongauge", "wbp_ui_practice_", "fpsdisplay" };
 const char* const kNotHudWords[] = { "menu", "option", "dialog", "fader", "arrowbutton", "wbp_ui_op_" };
 
 struct HudWidget {
@@ -275,12 +275,6 @@ void ApplyPassFog(recorder::Pass pass)
         return;
     g_appliedPass = pass;
     switch (pass) {
-    case recorder::Pass::Greenscreen:
-        if (!dvars::SetFogOverride(0, 1, 0, 0.5f, g_settings.GreenClearDistance)) {
-            mod::Log("Greenscreen: this stage has no fog object, so pure black pixels get painted green instead");
-            recorder::Config().PaintBlackGreen = true;
-        }
-        break;
     case recorder::Pass::DepthWhiteFog:
         dvars::SetFogOverride(1, 1, 1, g_settings.DepthDensity, 0);
         break;
@@ -319,7 +313,7 @@ void ApplyFlags()
             flag.Applied = false;
         }
     };
-    apply(g_fogFlag, pass == recorder::Pass::FightersOnBlack);
+    apply(g_fogFlag, pass == recorder::Pass::FightersOnBlack || pass == recorder::Pass::Greenscreen);
     for (ShowFlag& flag : g_showFlags) {
         const bool wanted = (flag.Option && g_settings.*flag.Option) || (flag.HiddenWithStage && hideStage) || (flag.HiddenWithFighters && hideFighters);
         apply(flag, wanted);
