@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -223,8 +224,84 @@ void OrbitInput()
         g_attach.OrbitDistance = std::clamp(g_attach.OrbitDistance * static_cast<float>(std::pow(0.9, wheel)), 10.0f, 3000.0f);
 }
 
+// The bone that holds the fighter's eyes. Names differ between rigs, so this goes by the shortest name with "head" in it.
+std::string HeadBone(int fighter)
+{
+    std::lock_guard lock(g_bonesMutex);
+    std::string best;
+    for (const std::string& bone : g_boneNames[std::clamp(fighter, 0, 1)]) {
+        std::string lower = bone;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lower.find("head") != std::string::npos && lower.find("end") == std::string::npos && (best.empty() || bone.size() < best.size()))
+            best = bone;
+    }
+    return best;
+}
+
+// Hiding goes through every mesh the fighter owns, since hair and masks are meshes of their own.
+struct HiddenHead {
+    void* Fighter = nullptr;
+    ue::FName Bone;
+    std::vector<void*> Meshes;
+} g_hiddenHead;
+
+void ShowHead()
+{
+    static ue::FunctionRef unhide { "SkinnedMeshComponent", "UnHideBoneByName" };
+    if (g_hiddenHead.Fighter && game::Fighter(0) != g_hiddenHead.Fighter && game::Fighter(1) != g_hiddenHead.Fighter)
+        g_hiddenHead = {}; // that fight is over, and its meshes with it
+    for (void* mesh : g_hiddenHead.Meshes)
+        ue::Call(mesh, unhide, &g_hiddenHead.Bone);
+    g_hiddenHead = {};
+}
+
+void HideHead(void* fighter, const std::string& bone)
+{
+    if (g_hiddenHead.Fighter == fighter)
+        return;
+    ShowHead();
+    static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };
+    static ue::FunctionRef hide { "SkinnedMeshComponent", "HideBoneByName" };
+    g_hiddenHead.Fighter = fighter;
+    g_hiddenHead.Bone = ue::MakeName(std::wstring(bone.begin(), bone.end()));
+    struct {
+        ue::FName Bone;
+        uint8_t PhysicsOption;
+    } params { g_hiddenHead.Bone, 0 };
+    for (void* mesh : ue::AllObjectsOf(ue::FindClass("SkinnedMeshComponent"))) {
+        struct {
+            void* ReturnValue;
+        } owner { nullptr };
+        ue::Call(mesh, getOwner, &owner);
+        if (owner.ReturnValue == fighter) {
+            ue::Call(mesh, hide, &params);
+            g_hiddenHead.Meshes.push_back(mesh);
+        }
+    }
+    mod::Log("POV: hid %s on %zu meshes", bone.c_str(), g_hiddenHead.Meshes.size());
+}
+
+Vec3 RotateByQuat(cine::Quat q, Vec3 v)
+{
+    const cine::Quat r = cine::Multiply(cine::Multiply(q, { v.X, v.Y, v.Z, 0 }), cine::Conjugate(q));
+    return { r.X, r.Y, r.Z };
+}
+
 void ApplyAttach(Vec3& location, Rot& rotation, float& fov)
 {
+    const bool pov = g_attach.Style == AttachStyle::Pov;
+    void* povFighter = game::Fighter(g_attach.Fighter);
+    if (pov && povFighter) {
+        const std::string head = HeadBone(g_attach.Fighter);
+        strncpy_s(g_attach.Bone, head.c_str(), _TRUNCATE);
+        if (g_attach.PovHideHead && !head.empty())
+            HideHead(povFighter, head);
+        else
+            ShowHead();
+    } else {
+        ShowHead();
+    }
+
     Vec3 boneLocation;
     Rot boneRotation;
     if (!BoneTransform(boneLocation, boneRotation))
@@ -253,6 +330,14 @@ void ApplyAttach(Vec3& location, Rot& rotation, float& fov)
         targetLocation = g_flyLocation;
         targetRotation = cine::LookAt(targetLocation, boneLocation, g_settings.Roll);
         break;
+    case AttachStyle::Pov: {
+        const cine::Quat head = cine::Normalized(cine::Multiply(cine::ToQuat(boneRotation), cine::ToQuat({ g_attach.PovTurn[0], g_attach.PovTurn[1], g_attach.PovTurn[2] })));
+        targetLocation = boneLocation + RotateByQuat(head, { g_attach.PovOffset[0], g_attach.PovOffset[1], g_attach.PovOffset[2] });
+        targetRotation = cine::ToRot(head);
+        if (g_attach.PovLevel)
+            targetRotation.Roll = 0;
+        break;
+    }
     }
 
     // Bones shake on hits; a little smoothing takes the edge off.
@@ -265,7 +350,7 @@ void ApplyAttach(Vec3& location, Rot& rotation, float& fov)
     haveSmooth = true;
     location = smoothLocation;
     rotation = smoothRotation;
-    fov = static_cast<float>(g_settings.Fov);
+    fov = pov ? g_attach.PovFov : static_cast<float>(g_settings.Fov);
 }
 
 // Picks the line direction closest to last frame's, so the camera stays on its side when the fighters
@@ -470,6 +555,8 @@ void OnCameraUpdate(void* manager)
     } else if (s.FovOverride) {
         fov = static_cast<float>(s.Fov);
     }
+    if (s.Mode != Mode::Attach)
+        ShowHead();
 
     postfx::Apply(manager, location);
 

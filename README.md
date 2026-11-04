@@ -19,7 +19,9 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
 - **Attached camera:** fix the camera to a bone, orbit it, or watch it from wherever you fly.
-- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight.
+- **Fighter POV:** look out of either fighter's eyes (CAMERA > Attach to fighter > Style: Fighter POV). Their head is hidden so it doesn't fill the picture, and you can keep the horizon level.
+- **Change replay from inside a replay:** in the REPLAYS tab, pick one and press **Play this replay**, or double-click it. It takes about 20 seconds.
+- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight. The same moment looks the same however you get to it, clothes included.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.
 - **Rage art and heat smash camera:** keep the normal fight camera through cinematics and big-hit zooms, or use a fixed classic 2D camera all fight.
 - **Effects:** hide hit sparks and glows, cancel rage art screen effects, hide the HUD (and the game's FPS counter).
@@ -73,6 +75,9 @@ The game keeps every replay decoded in fixed slots in memory, so sharing copies 
 - **The greenscreen and depth come from the game's depth buffer.** Anything that doesn't write depth, like sparks and glows, is painted over in the greenscreen and doesn't show in the depth. If the buffer can't be read, the editor says so, and the greenscreen video falls back on keying the dark background.
 - **Rewinding changes the picture slightly compared to the first playthrough:** by less than 3 cm on a fighter's position, right after a jump. It's the same every time.
 - **Clothes in very slow motion:** cloth only moves when the fight takes a step, so below about 0.1x you may see it update in small hops.
+- **Fights run at 60 fps** at 1x and slower, because cloth only comes out the same with every frame the same length. Above 1x the frame rate is free again.
+- **A rewind takes a second or two longer** than it used to, because the last second plays at normal pace for the cloth to settle.
+- **Changing replay** presses keys in the game's own menus, so leave the keyboard alone and the game in front until it's done. It needs the game's list sorted by New. Replays from older game versions are refused, because the game won't play them.
 - **Leaf edges shimmer a little while paused.** That's the game's anti-aliasing, not movement: the plants themselves are still.
 - **The first seconds of a replay can't be rewound to.** The game's first saved point lands about 4.5 s in, just after the first round's intro. Round buttons land just after each round's intro in the same way.
 

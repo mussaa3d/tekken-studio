@@ -50,6 +50,21 @@ Engine patterns, offsets, the 60 Hz accumulator idea and the HUD word lists come
 - **Plants swayed while paused.** Their materials run on the world's real-time clock, which time dilation doesn't touch, and wind sources (`SetSpeed`, `SetStrength`) make no difference. The clock has no property, so it's found by looking in the world for the value `GetRealTimeSeconds` reports (+0x6B8 on this build), and each tick takes back the part of the frame the fight didn't get. Measured over 3 s paused with anti-aliasing off (`tools/test_stillness.ps1`): 15.1% of the picture changed with the clock running normally, 0.4% with it slowed.
 - With TAA on (`r.AntiAliasingMethod` 2) about 8% of the picture still changes on a still scene, on the edges of masked leaves. `r.TemporalAASamples 1` and lower `r.TemporalAACurrentFrameWeight` didn't help.
 
+- **The same moment gave different cloth each time.** Fixed fight frame, reached three ways: Bryan's hem and Jin's ribbon were in visibly different places, 14% of a greenscreen picture different. The solver's result depends on frame length. The engine's `bUseFixedFrameRate` with `FixedFrameRate` 60 gives exact frames; a seek's last 60 steps run at one per frame after `ForceClothNextUpdateTeleportAndReset`. Measured on the greenscreen look with AA off (`tools/test_cloth.ps1`), pixels off by more than 25/255: 0.32% between two seeks from different places. Stepping onto a tick at 60, 250 and 500 ms gaps: 0.9 to 2%.
+- Fighters' cloth takes real time, not dilated time. Raising the fighters' `CustomTimeDilation` to give a solve one step of dilated time took frames from 60 to 0.2 fps. Don't.
+- Not measured: cloth at 0.01x. The fighters move in the same shots, and the reading was the same with the rule on and off. Slow-motion stops land between ticks, so those can't be compared with a seek either.
+- `p.ClothPhysics` is read back each frame, since a level load could change it behind our back.
+
+## Changing replay (measured)
+- No reflected function plays a replay by index. `PolarisUMGReplayList.NavigateToButton` called with a guessed argument crashed the game with a fatal error, so the screens are driven with key presses.
+- The match-end saved point (type 2) leads to `WBP_UI_Dialog_C`: Play Again, Return to Replay List, Return to Main Menu, then a question that starts on No. `WBP_UI_Replay_List_C` is the list.
+- Rows are newest slot first within a tab: downloaded slots 106 down to 102 were rows 1 to 5. Not by date. Only tested on that tab under "Sort by: New".
+- At the match end the controller's transition flag stays set, which held a seek open forever until it got a limit.
+
+## Fighter POV (measured)
+- The head bone is `Head`. Its +X points up out of the skull and -Y out of the face, so the camera needs a turn of yaw -90, roll 90. Checked on Jin and Bryan.
+- `HideBoneByName` on all the fighter's skinned meshes hides the head and hair: 6 meshes on Bryan.
+
 ## Fog (measured)
 - Past 60 m (`VolumetricFogDistance` 6000) only the plain height fog applies, and its `SkyAtmosphereAmbientContributionColorScale` of 1 feeds the sky's blue into it. That's the haze. Black needs that at 0 as well as `FogInscatteringColor`, `FogInscatteringLuminance`, the directional colours and the cubemap. No setter was found for the scale, so these are written directly and `SetFogDensity` to a different value and back makes the engine read them.
 - `SetFogInscatteringColor` only changes the luminance field here; the older colour field stayed at 0.447.

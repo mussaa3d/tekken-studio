@@ -31,6 +31,7 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/sharing.h"
+#include "mod/switcher.h"
 
 namespace menu {
 
@@ -186,13 +187,33 @@ void ReplaysTab()
                 continue;
             ImGui::PushID(slot.Index);
             ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.62f, 0.15f, 0.19f, 1));
-            if (ImGui::Selectable(row.c_str(), selected == slot.Index))
+            if (ImGui::Selectable(row.c_str(), selected == slot.Index, ImGuiSelectableFlags_AllowDoubleClick)) {
                 selected = slot.Index;
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !switcher::Start(slot.Index, message))
+                    mod::Log("Switch: %s", message.c_str());
+            }
             ImGui::PopStyleColor();
             ImGui::PopID();
         }
     }
     ImGui::EndChild();
+
+    if (switcher::Running()) {
+        ImGui::TextUnformatted(switcher::Status().c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel"))
+            switcher::Cancel();
+    } else {
+        ImGui::BeginDisabled(selected < 0);
+        if (ImGui::Button("Play this replay") && !switcher::Start(selected, message))
+            mod::Log("Switch: %s", message.c_str());
+        ImGui::EndDisabled();
+        if (!switcher::Status().empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(Dim, "%s", switcher::Status().c_str());
+        }
+        Help("Leaves this replay and starts the one you picked, through the game's own screens, in about 30 seconds. Don't touch the keyboard until it's done. Double-click a row does the same. It needs the game's list sorted by New.");
+    }
 
     Section("Share a replay");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
@@ -255,8 +276,25 @@ void AttachControls()
     int style = static_cast<int>(a.Style);
     ImGui::SameLine();
     BarWidth();
-    if (ImGui::Combo("Style", &style, "Fixed to bone\0Orbit around bone\0Watch bone\0"))
+    if (ImGui::Combo("Style", &style, "Fixed to bone\0Orbit around bone\0Watch bone\0Fighter POV\0"))
         a.Style = static_cast<camera::AttachStyle>(style);
+
+    if (a.Style == camera::AttachStyle::Pov) {
+        ImGui::Checkbox("Hide their head", &a.PovHideHead);
+        Help("Their own head and hair would fill the picture. Off shows them, for a mask or a helmet you want in view.");
+        ImGui::SameLine();
+        ImGui::Checkbox("Keep the horizon level", &a.PovLevel);
+        BarWidth();
+        ImGui::SliderFloat3("Eye position", a.PovOffset, -40.0f, 40.0f, "%.0f");
+        Help("Forward, right and up from the head bone, in centimetres. Fighters are different sizes, so nudge this if the view starts inside a face.");
+        BarWidth();
+        ImGui::SliderFloat3("Look", a.PovTurn, -180.0f, 180.0f, "%.0f");
+        BarWidth();
+        ImGui::SliderFloat("POV field of view", &a.PovFov, 40.0f, 130.0f, "%.0f");
+        BarWidth();
+        ImGui::SliderFloat("Smoothing", &a.Smooth, 0.0f, 0.98f, "%.2f");
+        return;
+    }
 
     const std::vector<std::string> bones = camera::Bones(a.Fighter);
     BarWidth();

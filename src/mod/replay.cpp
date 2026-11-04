@@ -154,7 +154,7 @@ void RestoreLastPointBefore(void* controller, uint32_t frame, bool roundStart)
     for (size_t i = 0; i < count; ++i) {
         if (!ReadPoint(begin + i * g_pointSize, point))
             return;
-        const bool usable = roundStart ? point.Frame <= frame : (point.Frame + TransitionFrames <= frame && point.Type != TypeRoundStart);
+        const bool usable = roundStart ? point.Frame <= frame : (point.Frame + TransitionFrames + SeekRunUp <= frame && point.Type != TypeRoundStart);
         if (usable) {
             best = begin + i * g_pointSize;
             chosen = point;

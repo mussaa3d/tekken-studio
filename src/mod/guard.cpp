@@ -190,6 +190,7 @@ void TurnOff(const std::string& reason)
     game::RunOnGameThread([] {
         ue::SetGlobalTimeDilation(1.0f);
         ue::ConsoleCommand(L"p.ClothPhysics 1");
+        game::ReleaseExactFrames();
     });
     Sleep(250); // let the game thread put time dilation back
     g_tripped = true;

@@ -22,6 +22,8 @@ void RunOnGameThread(std::function<void()> task);
 struct TimeControl {
     double Speed = 1.0;
     bool Paused = false;
+    bool ClothFollowsFight = true; // cloth gets one solve per fight step, so it moves the same at any speed
+    bool ExactFrames = true;       // and every solve the same length, so it lands the same every time
     bool SlowWorldClock = true; // also slow the clock materials can read, which ignores time dilation
     bool ScaleEffects = true; // also slow particles, cloth and materials through the world's time dilation
     bool Interpolate = true;  // blend poses between the 60 Hz steps, which is what makes slow motion smooth
@@ -45,6 +47,8 @@ uint64_t StepCount();
 // Takes the fight to this point on the clock, as fast as it can. Going backwards needs a replay, with its saved points to jump to;
 // anywhere else it only goes forward.
 void SeekTo(double seconds);
+void StopSeek();
+void ReleaseExactFrames();
 void SeekToRound(uint32_t frame); // the saved point a round starts from, which is just after its intro
 bool Seeking();
 

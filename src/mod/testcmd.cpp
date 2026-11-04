@@ -24,6 +24,7 @@
 #include "mod/replay.h"
 #include "mod/savetrace.h"
 #include "mod/sharing.h"
+#include "mod/switcher.h"
 #include "mod/ue.h"
 
 namespace testcmd {
@@ -401,6 +402,17 @@ void Run(const std::string& line)
         for (const replay::SavedPoint& point : replay::SavedPoints())
             if (point.Type == replay::TypeRoundStart && point.Round == n)
                 game::SeekToRound(point.Frame);
+    } else if (command == "clothfollow") {
+        in >> n;
+        game::Time().ClothFollowsFight = n != 0;
+    } else if (command == "exactframes") {
+        in >> n;
+        game::Time().ExactFrames = n != 0;
+    } else if (command == "switch") {
+        in >> n;
+        std::string error;
+        if (!switcher::Start(n, error))
+            mod::Log("[test] switch: %s", error.c_str());
     } else if (command == "clockslow") {
         in >> n;
         game::Time().SlowWorldClock = n != 0;
@@ -447,6 +459,20 @@ void Run(const std::string& line)
         in >> at.Fighter >> n >> bone;
         at.Style = static_cast<camera::AttachStyle>(n);
         strncpy_s(at.Bone, bone == "-" ? "" : bone.c_str(), _TRUNCATE);
+    } else if (command == "pov") {
+        // pov <hide 0|1> <level 0|1> <offset x y z> <turn pitch yaw roll>
+        camera::AttachSettings& at = camera::Attach();
+        int hide = 1, level = 0;
+        in >> hide >> level >> at.PovOffset[0] >> at.PovOffset[1] >> at.PovOffset[2] >> at.PovTurn[0] >> at.PovTurn[1] >> at.PovTurn[2];
+        at.PovHideHead = hide != 0;
+        at.PovLevel = level != 0;
+    } else if (command == "bones") {
+        in >> n;
+        std::string line2;
+        for (const std::string& bone : camera::Bones(n))
+            if (bone.find("ead") != std::string::npos || bone.find("eye") != std::string::npos || bone.find("Eye") != std::string::npos || bone.find("eck") != std::string::npos)
+                line2 += bone + " ";
+        mod::Log("[bones] %s", line2.c_str());
     } else if (command == "orbit") {
         camera::AttachSettings& at = camera::Attach();
         in >> at.OrbitDistance >> at.OrbitYaw >> at.OrbitPitch >> at.Smooth;
@@ -469,6 +495,9 @@ void Run(const std::string& line)
         if (kind == "b") {
             in >> n;
             *reinterpret_cast<bool*>(values) = n != 0;
+        } else if (kind == "i") {
+            in >> n;
+            *reinterpret_cast<int*>(values) = n;
         } else if (kind == "f") {
             in >> values[0];
         } else if (kind == "c") {
@@ -476,12 +505,32 @@ void Run(const std::string& line)
         }
         int count = 0;
         for (void* object : ue::AllObjectsOf(ue::FindClass(name))) {
+            if (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+                continue;
             float params[16] = {};
             std::memcpy(params, values, sizeof(values));
             if (ue::Call(object, ref, params))
                 ++count;
         }
         mod::Log("[test] called %s.%s on %d objects", name.c_str(), function.c_str(), count);
+    } else if (command == "widgets") {
+        // The game's widgets on screen with Replay, Dialog, Menu, Result or Select in their class name.
+        static ue::FunctionRef visible { "Widget", "IsVisible" };
+        std::map<std::string, int> found;
+        for (void* widget : ue::AllObjectsOf(ue::FindClass("PolarisUserWidget"))) {
+            if (ue::Field<uint32_t>(widget, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+                continue;
+            struct {
+                bool ReturnValue;
+            } params { false };
+            ue::Call(widget, visible, &params);
+            const std::string name = ue::ClassNameOf(widget);
+            if (params.ReturnValue && (name.find("Replay") != std::string::npos || name.find("Dialog") != std::string::npos || name.find("Menu") != std::string::npos || name.find("Result") != std::string::npos || name.find("Select") != std::string::npos))
+                ++found[name];
+        }
+        for (const auto& [name, count] : found)
+            mod::Log("[widgets] %d x %s", count, name.c_str());
+        mod::Log("[widgets] end");
     } else if (command == "census") {
         // What's on this stage that moves or tints the picture, grouped by who owns it.
         static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };

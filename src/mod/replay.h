@@ -26,6 +26,7 @@ bool CanJump();
 // Done on the next pass through the replay's input code. Landing is on a saved point far enough before the frame to run up to it
 // exactly. With roundStart it lands on the round start at the frame itself, and the game's intro for that round then moves it on a little.
 void RequestJump(uint32_t frame, bool roundStart = false);
+constexpr int SeekRunUp = 60; // steps a seek plays at normal pace before landing
 bool JumpPending();
 bool JumpSettling(); // the game's short transition after a jump is still running
 void CancelJump();

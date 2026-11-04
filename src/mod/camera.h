@@ -32,8 +32,8 @@ struct Settings {
 Settings& Config();
 
 // Fixed = the camera moves and turns with the bone. Orbit = circles the bone, right mouse to turn and wheel for distance.
-// Watch = flies like the free camera, always aimed at the bone.
-enum class AttachStyle { Fixed, Orbit, Watch };
+// Watch = flies like the free camera, always aimed at the bone. Pov = looks out of the fighter's eyes.
+enum class AttachStyle { Fixed, Orbit, Watch, Pov };
 
 struct AttachSettings {
     int Fighter = 0;
@@ -45,6 +45,11 @@ struct AttachSettings {
     float OrbitDistance = 150;
     float OrbitYaw = 0;
     float OrbitPitch = 0;
+    float PovOffset[3] = { 12, 0, 8 };  // from the head bone to the eyes: forward, right, up
+    float PovTurn[3] = { 0, -90, 90 };  // the head bone's axes don't point the way the face does; this is what lines them up
+    float PovFov = 90;
+    bool PovHideHead = true;           // the fighter's own head would fill the picture
+    bool PovLevel = false;             // ignore the head's tilt, so the horizon stays flat
 };
 AttachSettings& Attach();
 std::vector<std::string> Bones(int fighter); // bone names, once a fight is on

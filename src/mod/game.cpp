@@ -22,6 +22,7 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/scan.h"
+#include "mod/switcher.h"
 #include "mod/testcmd.h"
 #include "mod/ue.h"
 
@@ -77,6 +78,8 @@ std::atomic<int> g_settleFrames { 0 };
 int g_seekWaits = 0;
 bool g_seekJumped = false;
 bool g_seekToRound = false;
+bool g_seekWarming = false;
+bool g_clothResetPending = false;
 double g_lastRealDt = StepSeconds;
 double g_lastAdvance = StepSeconds;
 
@@ -237,7 +240,13 @@ void RunSeek(double target)
         return;
     }
     // The game's transition after a jump runs inside its step too, and the fight doesn't move until it's over.
+    // At the end of a match the flag stays up behind the game's menu, so this can't wait forever.
     if (g_seekJumped && replay::JumpSettling()) {
+        if (++g_seekWaits > 240) {
+            mod::Log("Seek: the replay is still in a transition, stopping");
+            EndSeek();
+            return;
+        }
         for (int i = 0; i < 32 && replay::JumpSettling(); ++i)
             RunStep();
         return;
@@ -254,13 +263,24 @@ void RunSeek(double target)
     }
 
     if (position > wanted) {
+        g_clothResetPending = true;
         if (!g_seekToRound)
             mod::Log("Seek: can't go further back than %lld (wanted %lld)", static_cast<long long>(position), static_cast<long long>(wanted));
         EndSeek();
         return;
     }
-    for (int i = 0; i < 32 && g_position.load(std::memory_order_relaxed) < wanted; ++i)
+    // Fast up to the run-up, then one step per frame: cloth only settles over real frames, and a fixed run-up gives the same cloth every time.
+    const int64_t runUpFrom = wanted - replay::SeekRunUp;
+    if (position < runUpFrom) {
+        for (int i = 0; i < 32 && g_position.load(std::memory_order_relaxed) < runUpFrom; ++i)
+            RunStep();
+    } else {
+        if (!g_seekWarming) {
+            g_seekWarming = true;
+            g_clothResetPending = true;
+        }
         RunStep();
+    }
     // The game's own pause, or the end of the fight: the position stops moving.
     if (g_position.load(std::memory_order_relaxed) == position) {
         if (++g_seekWaits > 8) {
@@ -379,12 +399,12 @@ bool FightersStillAlive()
 }
 
 // A cloth solver straightens the cloth out once per simulated frame, however small the time step, so in slow motion or while paused it
-// keeps moving at full speed long after the fight has stopped. So when things are slowed, cloth only gets a frame when the fight took a
-// step. With the switch off, cloth holds its last pose rather than dropping back to the bare mesh.
-constexpr double ClothFollowsStepsBelow = 0.75;
-
+// keeps moving at full speed long after the fight has stopped. So whenever the fight's speed isn't the real speed, cloth gets exactly one
+// solve per step of the fight, and that solve gets one step's worth of time through the fighters' own time dilation. The cloth then
+// moves the same at any timescale and while recording.
 std::vector<std::pair<void*, uint32_t>> g_fighterMeshes;
 int g_fighterMeshesFight = -1;
+double g_appliedDilation = 1.0;
 
 void FindFighterMeshes()
 {
@@ -406,24 +426,53 @@ void FindFighterMeshes()
     }
 }
 
+// The cloth solver's result depends on the length of each of its steps. The engine can run on an exact frame length, and with that the same
+// steps of the fight give the same cloth every time. The fighters' cloth takes real time, not slowed time, so 60 Hz here is one fight step.
+void SetExactFrames(bool on)
+{
+    void* engine = Engine().GEngine ? *Engine().GEngine : nullptr;
+    void* cls = FindClass("Engine");
+    if (!engine || !cls)
+        return;
+    static int byteAt = -1;
+    static uint8_t mask = 0;
+    if (byteAt < 0)
+        BoolProperty(cls, "bUseFixedFrameRate", byteAt, mask);
+    if (byteAt < 0)
+        return;
+    if (on) {
+        Field<uint8_t>(engine, byteAt) |= mask;
+        Field<float>(engine, off::EngineFixedFrameRate) = 60.0f;
+    } else {
+        Field<uint8_t>(engine, byteAt) &= static_cast<uint8_t>(~mask);
+    }
+}
+
 void KeepClothWithTheFight()
 {
     static uint64_t seenSteps = 0;
-    static bool clothOn = true, wasSeeking = false;
-
     const uint64_t steps = g_steps.load(std::memory_order_relaxed);
     const bool stepped = steps != seenSteps;
     seenSteps = steps;
-    const bool seeking = Seeking();
-    const bool slowed = g_time.ScaleEffects && g_fightersValid && (g_time.Paused || g_time.Speed < ClothFollowsStepsBelow || g_recording);
 
-    const bool wanted = !slowed || stepped || seeking;
-    if (wanted != clothOn) {
-        clothOn = wanted;
+    // Above 1x several steps share a frame, so cloth just runs normally there.
+    const bool locked = g_time.ClothFollowsFight && g_fightersValid && (Seeking() || g_time.Paused || g_time.Speed <= 1.0 || g_recording);
+    const int wanted = !locked || stepped ? 1 : 0;
+    // Read back each frame: a level load or the game itself can change it behind our back.
+    if (CvarInt(L"p.ClothPhysics") != wanted)
         ConsoleCommand(wanted ? L"p.ClothPhysics 1" : L"p.ClothPhysics 0");
+
+    // Motion blur renders many frames per step, and those need the recorder's own rate.
+    static bool exact = false;
+    const bool wantExact = g_time.ExactFrames && locked && !(g_recording && g_recordingFps > 60);
+    if (wantExact || exact) {
+        SetExactFrames(wantExact);
+        exact = wantExact;
     }
-    // After a jump the cloth is somewhere else entirely. Starting it again from the pose means a moment looks the same however you got there.
-    if (wasSeeking && !seeking && g_fightersValid) {
+
+    // A seek's run-up starts the cloth over from the pose, so a moment looks the same however you got there.
+    if (g_clothResetPending && g_fightersValid) {
+        g_clothResetPending = false;
         if (g_fighterMeshesFight != g_fightCount)
             FindFighterMeshes();
         static FunctionRef teleport { "SkeletalMeshComponent", "ForceClothNextUpdateTeleportAndReset" };
@@ -431,7 +480,6 @@ void KeepClothWithTheFight()
             if (StillAlive(mesh, index))
                 Call(mesh, teleport, nullptr);
     }
-    wasSeeking = seeking;
 }
 
 // The world keeps a clock that time dilation doesn't touch, and the renderer hands it to materials. It has no property, so it's found by
@@ -499,6 +547,7 @@ void ApplyEngineTime()
         SetGlobalTimeDilation(static_cast<float>(wanted));
         applied = wanted;
     }
+    g_appliedDilation = wanted;
     SlowWorldClock(wanted);
 
     static bool capWritten = false;
@@ -555,6 +604,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     audio::OnGameTick(Clock());
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
+    switcher::OnGameTick();
     testcmd::OnGameTick();
 }
 
@@ -808,8 +858,20 @@ void SetSpeedKeys(std::vector<cine::SpeedKey> keys)
     g_speedKeys = std::move(keys);
 }
 
+void StopSeek()
+{
+    if (g_seekTarget.load(std::memory_order_relaxed) >= 0)
+        EndSeek();
+}
+
+void ReleaseExactFrames()
+{
+    SetExactFrames(false);
+}
+
 void SeekTo(double seconds)
 {
+    g_seekWarming = false;
     g_seekWaits = 0;
     g_seekJumped = false;
     g_seekToRound = false;
@@ -818,6 +880,7 @@ void SeekTo(double seconds)
 
 void SeekToRound(uint32_t frame)
 {
+    g_seekWarming = false;
     g_seekWaits = 0;
     g_seekJumped = false;
     g_seekToRound = true;
