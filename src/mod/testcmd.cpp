@@ -326,8 +326,18 @@ void Run(const std::string& line)
         for (void* light : ue::AllObjectsOf(cls)) {
             const std::string name = ue::NameOf(light);
             ++count;
-            if (name.rfind("PointLightComponent_", 0) != 0 && count > 3)
+            struct {
+                void* ReturnValue;
+            } owner { nullptr };
+            static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };
+            ue::Call(light, getOwner, &owner);
+            const std::string ownerClass = owner.ReturnValue ? ue::ClassNameOf(owner.ReturnValue) : "";
+            int ownerHiddenByte = -1;
+            uint8_t ownerHiddenMask = 0;
+            ue::BoolProperty(ue::FindClass("Actor"), "bHidden", ownerHiddenByte, ownerHiddenMask);
+            if (ownerClass != "PointLight" && ownerClass != "SpotLight" && count > 3)
                 continue;
+            mod::Log("[test] owner %s hidden %d", ownerClass.c_str(), owner.ReturnValue && ownerHiddenByte >= 0 ? (ue::Field<uint8_t>(owner.ReturnValue, ownerHiddenByte) & ownerHiddenMask) != 0 : -1);
             struct {
                 cine::Vec3 ReturnValue;
             } where {};

@@ -5,6 +5,7 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <audioclientactivationparams.h>
+#include <audiopolicy.h>
 // clang-format on
 
 #include <atomic>
@@ -221,6 +222,35 @@ Settings& Config()
     return g_settings;
 }
 
+float GameVolume()
+{
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    float volume = 1.0f;
+    IMMDeviceEnumerator* enumerator = nullptr;
+    IMMDevice* device = nullptr;
+    IAudioSessionManager* manager = nullptr;
+    ISimpleAudioVolume* simple = nullptr;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))
+        && SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device))
+        && SUCCEEDED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(&manager)))
+        && SUCCEEDED(manager->GetSimpleAudioVolume(nullptr, FALSE, &simple))) {
+        BOOL muted = FALSE;
+        simple->GetMasterVolume(&volume);
+        simple->GetMute(&muted);
+        if (muted)
+            volume = 0;
+    }
+    if (simple)
+        simple->Release();
+    if (manager)
+        manager->Release();
+    if (device)
+        device->Release();
+    if (enumerator)
+        enumerator->Release();
+    return volume;
+}
+
 bool Start(const std::filesystem::path& file)
 {
     if (g_running)
@@ -233,6 +263,9 @@ bool Start(const std::filesystem::path& file)
         std::lock_guard lock(g_textMutex);
         g_lastFile = file.string();
         g_lastError.clear();
+        // What Windows captures for one program is what comes out after its Volume Mixer slider.
+        if (GameVolume() < 0.01f)
+            g_lastError = "Windows' Volume Mixer has this game turned all the way down, so this recording will be silent.";
     }
     std::thread(Capture, file).detach();
     return true;

@@ -1,6 +1,7 @@
 #pragma once
 // Hooks the D3D12 swap chain so the editor can be drawn over the game and frames can be captured.
 #include <cstdint>
+#include <string>
 
 namespace overlay {
 
@@ -20,6 +21,9 @@ bool MouseOverGameView();
 
 // Mouse wheel ticks since the last call (the free camera's speed control).
 int TakeMouseWheel();
+
+// Makes sure the editor's font can show this text, such as a player's name in any script.
+void AddFontCharacters(const std::string& text);
 
 // The game's picture as a texture for the editor to draw, and its width over height. 0 before the first frame.
 uint64_t GameTexture();

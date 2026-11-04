@@ -16,6 +16,7 @@ void Stop();
 bool Running();
 double SecondsCaptured();
 bool HeardSound(); // anything louder than silence so far
+float GameVolume(); // this game's slider in Windows' Volume Mixer, 0 to 1
 std::string LastFile();
 std::string LastError();
 

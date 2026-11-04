@@ -122,6 +122,26 @@ std::string VersionText(uint32_t version)
     return text;
 }
 
+// The editor's text only runs left to right, so a name in Arabic letters is turned around to read correctly.
+std::string RightToLeftFixed(const std::string& text)
+{
+    std::vector<std::string> characters;
+    bool arabic = false;
+    for (size_t i = 0; i < text.size();) {
+        const unsigned char first = text[i];
+        const size_t length = first < 0x80 ? 1 : first < 0xE0 ? 2 : first < 0xF0 ? 3 : 4;
+        characters.push_back(text.substr(i, length));
+        arabic = arabic || first == 0xD8 || first == 0xD9 || first == 0xDA || first == 0xDB;
+        i += length;
+    }
+    if (!arabic)
+        return text;
+    std::string out;
+    for (auto it = characters.rbegin(); it != characters.rend(); ++it)
+        out += *it;
+    return out;
+}
+
 void ReplaysTab()
 {
     static std::vector<sharing::Slot> slots;
@@ -136,6 +156,13 @@ void ReplaysTab()
         slots = sharing::Slots();
         std::sort(slots.begin(), slots.end(), [](const sharing::Slot& a, const sharing::Slot& b) { return a.Played > b.Played; });
         files = sharing::SharedFiles();
+        std::string names;
+        for (sharing::Slot& slot : slots) {
+            slot.Player1 = RightToLeftFixed(slot.Player1);
+            slot.Player2 = RightToLeftFixed(slot.Player2);
+            names += slot.Player1 + slot.Player2;
+        }
+        overlay::AddFontCharacters(names);
     };
     if (!loaded) {
         loaded = true;
@@ -156,8 +183,10 @@ void ReplaysTab()
             if (search[0] && row.find(search) == std::string::npos)
                 continue;
             ImGui::PushID(slot.Index);
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.62f, 0.15f, 0.19f, 1));
             if (ImGui::Selectable(row.c_str(), selected == slot.Index))
                 selected = slot.Index;
+            ImGui::PopStyleColor();
             ImGui::PopID();
         }
     }
@@ -183,7 +212,7 @@ void ReplaysTab()
         if (ImGui::SmallButton("Load")) {
             std::string error;
             if (sharing::Import(file, error)) {
-                message = "Loaded. Open Replay > Downloaded Replays in the game. To keep it past this session, that's the game's own save: it stays only until you close the game.";
+                message = "Loaded. It's in the game's Replay > Downloaded Replays. If that screen is open, leave it and come back. It stays until you close the game.";
                 refresh();
             } else {
                 message = error;
@@ -430,7 +459,8 @@ void LightsGroup()
             BarWidth();
             ImGui::SliderFloat3("Offset", light.Offset, -1000.0f, 1000.0f, "%.0f");
             BarWidth();
-            ImGui::SliderFloat("Brightness", &light.Intensity, 0.0f, 100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Brightness", &light.Intensity, 100000.0f, 1000000000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+            Help("The game's stages run very bright: their own lights are between 30 and 100 million.");
             BarWidth();
             ImGui::SliderFloat("Reach", &light.Radius, 50.0f, 5000.0f, "%.0f cm");
             BarWidth();
@@ -647,9 +677,11 @@ void RecordTab()
     if (audio::Running())
         ImGui::TextColored(Accent, "Capturing: %.1f s%s", audio::SecondsCaptured(), audio::HeardSound() ? "" : " (silent so far)");
     const std::string audioError = audio::LastError();
-    if (!audioError.empty())
-        ImGui::TextColored(Accent, "%s", audioError.c_str());
-    else if (!audio::LastFile().empty() && !audio::Running())
+    if (!audioError.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Accent);
+        ImGui::TextWrapped("%s", audioError.c_str());
+        ImGui::PopStyleColor();
+    } else if (!audio::LastFile().empty() && !audio::Running())
         ImGui::TextColored(Dim, "Last: %s", std::filesystem::path(audio::LastFile()).filename().string().c_str());
 
     Section("System");

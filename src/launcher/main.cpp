@@ -322,8 +322,17 @@ void ReplaysTab()
     } else {
         ImGui::Text("%d replays, newest %s", static_cast<int>(g_app.Replays.size()), g_app.Replays.front().Modified.c_str());
     }
-    ImGui::TextWrapped("Exporting a replay to a file you can send to a friend, and loading one you received, is still being built. "
-                       "It needs the running game to finish.");
+    ImGui::TextWrapped("To send a replay to a friend, start a cinematic session and open the REPLAYS tab in the editor: pick a replay and press Export. "
+                       "A file you received goes in the shared_replays folder next to your recordings, and Load puts it in the game's Downloaded Replays. "
+                       "It stays there until you close the game. Both of you need the same game version, and the file holds both players' names.");
+    if (ImGui::Button("Open shared replays")) {
+        wchar_t profile[MAX_PATH] = L".";
+        GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
+        const fs::path folder = fs::path(profile) / "Videos" / "T8Cine" / "shared_replays";
+        std::error_code ignored;
+        fs::create_directories(folder, ignored);
+        OpenPath(folder.wstring());
+    }
 
     ImGui::Spacing();
     ImGui::Spacing();
@@ -426,8 +435,9 @@ void HelpTab()
     ImGui::TextColored(Accent, "Staying safe");
     ImGui::Separator();
     ImGui::TextWrapped("Bandai Namco's rules allow bans for unauthorized mods, and no mod can promise otherwise. T8Cine keeps mods off "
-                       "online play instead of hiding them: it only runs with Steam in Offline Mode, turns itself off if the game connects "
-                       "to the internet, and leaves the game folder clean when it closes. Don't copy skins or the mod into the game folder by hand.");
+                       "online play instead of hiding them: it only runs with Steam in Offline Mode, stops the game's internet connections "
+                       "while it runs, turns itself off if Steam goes online, and leaves the game folder clean when it closes. "
+                       "Don't copy skins or the mod into the game folder by hand.");
     ImGui::Spacing();
     if (g_app.Game.Found && ImGui::Button("Open the mod's log folder"))
         OpenPath(files::DataDir(g_app.Game).wstring());

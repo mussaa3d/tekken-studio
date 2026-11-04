@@ -13,6 +13,8 @@
 #include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
+#include <string>
 #include <vector>
 
 #include "mod/camera.h"
@@ -144,15 +146,44 @@ void ReleaseRenderTargets()
         }
 }
 
+struct WindowMessage {
+    HWND Window;
+    UINT Message;
+    WPARAM WParam;
+    LPARAM LParam;
+};
+std::mutex g_messageMutex;
+std::vector<WindowMessage> g_messages;
+
+void HandOverMessages()
+{
+    std::vector<WindowMessage> messages;
+    {
+        std::lock_guard lock(g_messageMutex);
+        messages.swap(g_messages);
+    }
+    for (const WindowMessage& m : messages)
+        ImGui_ImplWin32_WndProcHandler(m.Window, m.Message, m.WParam, m.LParam);
+}
+
 LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (guard::Tripped())
         return CallWindowProcW(g_originalWndProc, window, message, wParam, lParam);
 
+    // The engine tells Windows parts of its picture are title bar and window buttons, which would swallow clicks on the editor there
+    // and bring up the Snap menu.
+    if (message == WM_NCHITTEST && g_menuOpen)
+        return HTCLIENT;
+
     // During the UI test only the scripted mouse counts, not whatever the real one is doing.
     const bool scripted = g_harness.UiTest && message >= WM_MOUSEFIRST && message <= WM_MOUSELAST;
-    if (ImGui::GetCurrentContext() && !scripted)
-        ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam);
+    if (ImGui::GetCurrentContext() && !scripted) {
+        // Messages arrive on the game's thread and the editor draws on the render thread, so they wait here for the next frame.
+        std::lock_guard lock(g_messageMutex);
+        if (g_messages.size() < 4096)
+            g_messages.push_back({ window, message, wParam, lParam });
+    }
 
     if (message == WM_MOUSEWHEEL && (!g_menuOpen || g_gameViewHovered))
         g_wheel += GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
@@ -162,6 +193,57 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
     if ((g_menuOpen && (isMouse || isKey || message == WM_INPUT)) || (camera::WantsKeyboard() && (isKey || isMouse)))
         return message == WM_INPUT ? DefWindowProcW(window, message, wParam, lParam) : 0;
     return CallWindowProcW(g_originalWndProc, window, message, wParam, lParam);
+}
+
+// Player names come in any script. Loading whole Korean and Japanese fonts takes seconds and a lot of memory, so the editor font only
+// gets the characters that have actually turned up.
+float g_fontSize = 18.0f;
+std::mutex g_glyphMutex;
+std::string g_glyphText;
+bool g_glyphsChanged = false;
+ImVector<ImWchar> g_glyphRanges;
+
+void LoadFonts()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    ImFontConfig font;
+    font.OversampleH = 2;
+    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", g_fontSize, &font)) {
+        io.Fonts->AddFontDefault();
+        return;
+    }
+    std::string text;
+    {
+        std::lock_guard lock(g_glyphMutex);
+        text = g_glyphText;
+    }
+    if (text.empty())
+        return;
+    ImFontGlyphRangesBuilder builder;
+    builder.AddText(text.c_str());
+    g_glyphRanges.clear();
+    builder.BuildRanges(&g_glyphRanges);
+    ImFontConfig merge;
+    merge.MergeMode = true;
+    for (const char* path : { "C:\\Windows\\Fonts\\tahoma.ttf", "C:\\Windows\\Fonts\\malgun.ttf", "C:\\Windows\\Fonts\\YuGothR.ttc", "C:\\Windows\\Fonts\\msyh.ttc" })
+        if (std::filesystem::exists(path))
+            io.Fonts->AddFontFromFileTTF(path, g_fontSize, &merge, g_glyphRanges.Data);
+}
+
+void RebuildFontIfAsked()
+{
+    {
+        std::lock_guard lock(g_glyphMutex);
+        if (!g_glyphsChanged)
+            return;
+        g_glyphsChanged = false;
+    }
+    g_queue->Signal(g_fence, ++g_fenceValue);
+    WaitForFence(g_fenceValue);
+    ImGui_ImplDX12_InvalidateDeviceObjects();
+    LoadFonts();
+    ImGui_ImplDX12_CreateDeviceObjects();
 }
 
 bool CreateResources(IDXGISwapChain3* swapChain)
@@ -191,14 +273,11 @@ bool CreateResources(IDXGISwapChain3* swapChain)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
-    ImFontConfig font;
-    font.OversampleH = 2;
     // The editor packs a lot in, so text scales with the window.
-    const float fontSize = std::clamp(std::floor(g_desc.BufferDesc.Width / 106.0f), 13.0f, 42.0f);
-    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", fontSize, &font))
-        io.Fonts->AddFontDefault();
+    g_fontSize = std::clamp(std::floor(g_desc.BufferDesc.Width / 106.0f), 13.0f, 42.0f);
+    LoadFonts();
     menu::ApplyStyle();
-    ImGui::GetStyle().ScaleAllSizes(fontSize / 18.0f);
+    ImGui::GetStyle().ScaleAllSizes(g_fontSize / 18.0f);
 
     ImGui_ImplWin32_Init(g_window);
     ImGui_ImplDX12_InitInfo init;
@@ -224,6 +303,8 @@ void RenderMenu(Frame& frame)
     if (editor)
         CreateGameCopy(frame.BackBuffer);
 
+    RebuildFontIfAsked();
+    HandOverMessages();
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     if (g_harness.UiTest && !g_harnessUiDone)
@@ -495,6 +576,18 @@ bool Install()
     UnregisterClassW(windowClass.lpszClassName, windowClass.hInstance);
     mod::Log(ok ? "Overlay hooks installed" : "Couldn't find the D3D12 methods");
     return ok;
+}
+
+void AddFontCharacters(const std::string& text)
+{
+    std::lock_guard lock(g_glyphMutex);
+    bool asciiOnly = true;
+    for (const unsigned char c : text)
+        asciiOnly = asciiOnly && c < 0x80;
+    if (asciiOnly || g_glyphText.find(text) != std::string::npos)
+        return;
+    g_glyphText += text;
+    g_glyphsChanged = true;
 }
 
 bool MenuOpen()

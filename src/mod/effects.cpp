@@ -202,7 +202,7 @@ void UpdateHitEffects()
     }
     if (--g_effectRescan > 0)
         return;
-    g_effectRescan = 6;
+    g_effectRescan = 3;
     void* cls = ue::FindClass("NiagaraComponent");
     if (!cls)
         return;

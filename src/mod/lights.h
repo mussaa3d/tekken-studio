@@ -11,7 +11,7 @@ struct Light {
     bool Spot = false;
     Follow Follow = Follow::P1;
     float Offset[3] = { 150, -150, 180 };
-    float Intensity = 5000;
+    float Intensity = 50000000;
     float Radius = 1000;
     float Color[3] = { 1, 1, 1 };
 };
