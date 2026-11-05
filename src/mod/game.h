@@ -23,6 +23,7 @@ struct TimeControl {
     double Speed = 1.0;
     bool Paused = false;
     bool ClothFollowsFight = true; // jackets, straps and capes run at the fight's speed
+    double ClothMinSolve = 1.0 / 480.0; // seconds of fight time in the shortest cloth solve; at 1/960 and under, straps kink and float off the body
     bool BlendAllMeshes = true;    // straps, hair and costumes are physics bones on meshes of their own, and blend between steps as bodies do
     bool ExactFrames = true;       // and every solve the same length, so it lands the same every time
     bool SlowWorldClock = true; // also slow the clock materials can read, which ignores time dilation

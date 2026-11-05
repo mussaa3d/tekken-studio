@@ -416,6 +416,28 @@ void Run(const std::string& line)
             for (const std::string& property : ue::PropertyNames(cls))
                 mod::Log("[class]   prop %s", property.c_str());
         }
+    } else if (command == "cdoprop") {
+        // cdoprop <Class> <Property> [value]: reads, and can set, a float on a class's defaults and all its objects
+        std::string name, property;
+        double value = 0;
+        in >> name >> property;
+        const bool write = static_cast<bool>(in >> value);
+        void* cls = ue::FindClass(name);
+        const int offset = cls ? ue::PropertyOffset(cls, property) : -1;
+        if (offset >= 0) {
+            void* defaults = ue::Field<void*>(cls, ue::off::ClassDefaultObject);
+            mod::Log("[cdo] %s.%s default = %g", name.c_str(), property.c_str(), defaults ? ue::Field<float>(defaults, offset) : -1.0f);
+            std::vector<void*> objects = ue::AllObjectsOf(cls);
+            if (defaults)
+                objects.push_back(defaults);
+            for (void* object : objects) {
+                if (write)
+                    ue::Field<float>(object, offset) = static_cast<float>(value);
+            }
+            mod::Log("[cdo] %d objects", static_cast<int>(objects.size()));
+        } else {
+            mod::Log("[cdo] no %s.%s", name.c_str(), property.c_str());
+        }
     } else if (command == "bonesall") {
         in >> n;
         game::Time().BlendAllMeshes = n != 0;
@@ -425,6 +447,8 @@ void Run(const std::string& line)
     } else if (command == "clothfollow") {
         in >> n;
         game::Time().ClothFollowsFight = n != 0;
+    } else if (command == "clothmin") {
+        in >> game::Time().ClothMinSolve;
     } else if (command == "exactframes") {
         in >> n;
         game::Time().ExactFrames = n != 0;

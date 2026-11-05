@@ -531,6 +531,21 @@ void KeepClothWithTheFight()
         const double frame = wantExact ? StepSeconds : (g_recording ? 1.0 / g_recordingFps : std::max(g_lastRealDt, 1e-4));
         speed = stepped && g_lastAdvance <= 0 ? 1.0 : g_lastAdvance / frame; // Next frame moves a whole step
     }
+    // Solved in very short slices this cloth comes apart: straps kink and float off the body and whole panels shake. So in deep slow motion the
+    // time is saved up and spent in slices long enough for the solver to behave. A seek starts the saving over, so cloth lands the same every time.
+    static double saved = 0;
+    if (locked && !Seeking() && speed < 1.0) {
+        const double frame = wantExact ? StepSeconds : (g_recording ? 1.0 / g_recordingFps : std::max(g_lastRealDt, 1e-4));
+        saved += speed * frame;
+        if (saved >= g_time.ClothMinSolve) {
+            speed = saved / frame;
+            saved = 0;
+        } else {
+            speed = 0;
+        }
+    } else {
+        saved = 0;
+    }
     SetClothSpeed(static_cast<float>(std::clamp(speed, 0.0, 4.0)));
 
     // A seek's run-up starts the cloth over from the pose, so a moment looks the same however you got there.

@@ -15,3 +15,6 @@ Positions below are in the 1456x819 screenshot frame, at 1080p windowed.
 - Replay list: first row (700,236). In the details box, Play Replay is (726,504). Delete Replay is just below it at (726,606), so be careful.
 - Practice path: left side, then Return for the character, Return for the opponent, Return for a random stage.
 - Offline notice at the title screen: click OK at (728,477).
+- Send no key before the game is really in front: a key sent too early lands in whatever window has focus. Click the menus instead where you can.
+- A camera pose only suits one stage and moment. Read `view` from `state` in the game camera at that moment, then `pose` it, and check the shot before trusting a number: an empty greenscreen shot "matches" at 0.000%.
+- `tools\test_realtime.ps1` measures what you see, through ddagrab. Crop away anything on top of the game. Judge cloth by looking too: the broken cloth and the healthy cloth differ more in shape than in the numbers.
