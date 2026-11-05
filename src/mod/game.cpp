@@ -106,9 +106,11 @@ struct BoneTrack {
 
 std::array<void*, 2> g_fighters {};
 std::array<uint32_t, 2> g_fighterIndex {};
-std::array<std::atomic<void*>, 2> g_meshes {};
 std::array<Track, 2> g_actorTracks;
-std::array<BoneTrack, 2> g_boneTracks;
+// Every mesh the fighters own: bodies, and the hair, faces and costumes whose physics bones are straps and jacket tails.
+constexpr size_t MaxTrackedMeshes = 48;
+std::array<std::atomic<void*>, MaxTrackedMeshes> g_meshes {};
+std::array<BoneTrack, MaxTrackedMeshes> g_boneTracks;
 std::atomic<bool> g_fightersValid { false };
 int g_fightCount = 0;
 
@@ -365,6 +367,8 @@ void FindFighters()
     if (!cls)
         return;
     int found = 0;
+    for (auto& mesh : g_meshes)
+        mesh = nullptr;
     for (void* actor : AllObjectsOf(cls)) {
         if (!scan::IsReadable(actor, off::CharacterSide + 4))
             continue;
@@ -374,13 +378,16 @@ void FindFighters()
         g_fighters[side] = actor;
         g_fighterIndex[side] = Field<uint32_t>(actor, off::InternalIndex);
         ++found;
-
-        BoneTrack& track = g_boneTracks[side];
+    }
+    for (BoneTrack& track : g_boneTracks) {
         std::lock_guard lock(track.Lock);
         track.NewStep = false;
         track.Previous.clear();
         track.Target.clear();
-        g_meshes[side] = CharacterMesh(actor);
+    }
+    if (found >= 2) {
+        g_meshes[0] = CharacterMesh(g_fighters[0]);
+        g_meshes[1] = CharacterMesh(g_fighters[1]);
     }
     if (g_fighters[0] && g_fighters[1]) {
         g_fightersValid = true;
@@ -398,36 +405,10 @@ bool FightersStillAlive()
     return StillAlive(g_fighters[0], g_fighterIndex[0]) && StillAlive(g_fighters[1], g_fighterIndex[1]);
 }
 
-// A cloth solver straightens the cloth out once per simulated frame, however small the time step, so in slow motion or while paused it
-// keeps moving at full speed long after the fight has stopped. So whenever the fight's speed isn't the real speed, cloth gets exactly one
-// solve per step of the fight, and that solve gets one step's worth of time through the fighters' own time dilation. The cloth then
-// moves the same at any timescale and while recording.
-std::vector<std::pair<void*, uint32_t>> g_fighterMeshes;
-int g_fighterMeshesFight = -1;
 double g_appliedDilation = 1.0;
 
-void FindFighterMeshes()
-{
-    g_fighterMeshes.clear();
-    g_fighterMeshesFight = g_fightCount;
-    static FunctionRef getOwner { "ActorComponent", "GetOwner" };
-    void* cls = FindClass("SkeletalMeshComponent");
-    if (!cls)
-        return;
-    for (void* mesh : AllObjectsOf(cls)) {
-        if (Field<uint32_t>(mesh, off::ObjectFlags) & off::RF_ClassDefaultObject)
-            continue;
-        struct {
-            void* ReturnValue;
-        } owner { nullptr };
-        Call(mesh, getOwner, &owner);
-        if (owner.ReturnValue && (owner.ReturnValue == g_fighters[0] || owner.ReturnValue == g_fighters[1]))
-            g_fighterMeshes.emplace_back(mesh, Field<uint32_t>(mesh, off::InternalIndex));
-    }
-}
-
 // The cloth solver's result depends on the length of each of its steps. The engine can run on an exact frame length, and with that the same
-// steps of the fight give the same cloth every time. The fighters' cloth takes real time, not slowed time, so 60 Hz here is one fight step.
+// steps of the fight give the same cloth every time.
 void SetExactFrames(bool on)
 {
     void* engine = Engine().GEngine ? *Engine().GEngine : nullptr;
@@ -448,8 +429,86 @@ void SetExactFrames(bool on)
     }
 }
 
+// A fighter's meshes can load after the fight is found, so this looks again now and then. Only ever during a running fight: walking the
+// object list during a level load crashes the game.
+void TrackFighterMeshes()
+{
+    static FunctionRef getOwner { "ActorComponent", "GetOwner" };
+    void* cls = FindClass("SkeletalMeshComponent");
+    if (!cls)
+        return;
+    int count = 0;
+    for (void* mesh : AllObjectsOf(cls)) {
+        if (Field<uint32_t>(mesh, off::ObjectFlags) & off::RF_ClassDefaultObject)
+            continue;
+        struct {
+            void* ReturnValue;
+        } owner { nullptr };
+        Call(mesh, getOwner, &owner);
+        if (!owner.ReturnValue || (owner.ReturnValue != g_fighters[0] && owner.ReturnValue != g_fighters[1]))
+            continue;
+        size_t slot = 0;
+        while (slot < MaxTrackedMeshes && g_meshes[slot].load(std::memory_order_relaxed) && g_meshes[slot].load(std::memory_order_relaxed) != mesh)
+            ++slot;
+        if (slot < MaxTrackedMeshes)
+            g_meshes[slot].store(mesh, std::memory_order_relaxed);
+        ++count;
+    }
+    static int logged = -1;
+    if (count != logged) {
+        logged = count;
+        mod::Log("Pose blending on %d fighter meshes", count);
+    }
+}
+
+// Jackets, straps and capes are Catwalk cloth, the game's own solver, which ignores the world's time dilation and the engine's cloth settings.
+// It has a time dilation of its own, on each component, so that gets the fight's speed. All of them, whoever owns them, so people on the stage too.
+struct CatwalkCloth {
+    void* Object;
+    uint32_t Index;
+};
+std::vector<CatwalkCloth> g_cloth;
+
+void FindCatwalkCloth()
+{
+    g_cloth.clear();
+    void* cls = FindClass("CatwalkClothComponent");
+    if (!cls)
+        return;
+    for (void* cloth : AllObjectsOf(cls))
+        if (!(Field<uint32_t>(cloth, off::ObjectFlags) & off::RF_ClassDefaultObject))
+            g_cloth.push_back({ cloth, Field<uint32_t>(cloth, off::InternalIndex) });
+    static size_t logged = 0;
+    if (g_cloth.size() != logged) {
+        logged = g_cloth.size();
+        mod::Log("Cloth following the timescale: %zu pieces", logged);
+    }
+}
+
+void SetClothSpeed(float speed)
+{
+    static const int at = PropertyOffset(FindClass("CatwalkClothComponent"), "CwcTimeDilation");
+    if (at < 0)
+        return;
+    for (const CatwalkCloth& cloth : g_cloth)
+        if (StillAlive(cloth.Object, cloth.Index))
+            Field<float>(cloth.Object, at) = speed;
+}
+
 void KeepClothWithTheFight()
 {
+    // Only while a fight is really running: walking the object list during a level load crashes the game.
+    static int look = 0;
+    if (g_fightersValid && g_position.load(std::memory_order_relaxed) > 0 && g_positionMoved.load(std::memory_order_relaxed) && --look <= 0) {
+        look = 300;
+        TrackFighterMeshes();
+        FindCatwalkCloth();
+    }
+    if (!g_fightersValid) {
+        g_cloth.clear();
+        look = 0;
+    }
+
     static uint64_t seenSteps = 0;
     const uint64_t steps = g_steps.load(std::memory_order_relaxed);
     const bool stepped = steps != seenSteps;
@@ -457,10 +516,6 @@ void KeepClothWithTheFight()
 
     // Above 1x several steps share a frame, so cloth just runs normally there.
     const bool locked = g_time.ClothFollowsFight && g_fightersValid && (Seeking() || g_time.Paused || g_time.Speed <= 1.0 || g_recording);
-    const int wanted = !locked || stepped ? 1 : 0;
-    // Read back each frame: a level load or the game itself can change it behind our back.
-    if (CvarInt(L"p.ClothPhysics") != wanted)
-        ConsoleCommand(wanted ? L"p.ClothPhysics 1" : L"p.ClothPhysics 0");
 
     // Motion blur renders many frames per step, and those need the recorder's own rate.
     static bool exact = false;
@@ -470,15 +525,24 @@ void KeepClothWithTheFight()
         exact = wantExact;
     }
 
+    // How fast the fight went this frame, as a share of the time the frame took.
+    double speed = 1.0;
+    if (locked && !Seeking()) {
+        const double frame = wantExact ? StepSeconds : (g_recording ? 1.0 / g_recordingFps : std::max(g_lastRealDt, 1e-4));
+        speed = stepped && g_lastAdvance <= 0 ? 1.0 : g_lastAdvance / frame; // Next frame moves a whole step
+    }
+    SetClothSpeed(static_cast<float>(std::clamp(speed, 0.0, 4.0)));
+
     // A seek's run-up starts the cloth over from the pose, so a moment looks the same however you got there.
     if (g_clothResetPending && g_fightersValid) {
         g_clothResetPending = false;
-        if (g_fighterMeshesFight != g_fightCount)
-            FindFighterMeshes();
-        static FunctionRef teleport { "SkeletalMeshComponent", "ForceClothNextUpdateTeleportAndReset" };
-        for (const auto& [mesh, index] : g_fighterMeshes)
-            if (StillAlive(mesh, index))
-                Call(mesh, teleport, nullptr);
+        FindCatwalkCloth();
+        static FunctionRef reset { "CatwalkClothComponentBase", "ResetClothVertices" };
+        for (const CatwalkCloth& cloth : g_cloth)
+            if (StillAlive(cloth.Object, cloth.Index)) {
+                uint8_t params[32] = {};
+                Call(cloth.Object, reset, params);
+            }
     }
 }
 
@@ -666,8 +730,12 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
     oBones(component, mesh, anim, evaluate, spaceBases, boneSpace, root, curve, attributes);
     if (!g_time.Interpolate || !component || !spaceBases || guard::Tripped() || !g_fightersValid)
         return;
-    for (int i = 0; i < 2; ++i) {
-        if (component != g_meshes[i].load(std::memory_order_relaxed))
+    const size_t limit = g_time.BlendAllMeshes ? MaxTrackedMeshes : 2;
+    for (size_t i = 0; i < limit; ++i) {
+        void* tracked = g_meshes[i].load(std::memory_order_relaxed);
+        if (!tracked)
+            return;
+        if (component != tracked)
             continue;
         const int count = spaceBases->Num;
         if (count <= 0 || !spaceBases->Data)
@@ -866,6 +934,7 @@ void StopSeek()
 
 void ReleaseExactFrames()
 {
+    SetClothSpeed(1.0f);
     SetExactFrames(false);
 }
 

@@ -460,6 +460,26 @@ static void TestSessionFiles()
     Touch(game.Paks / "pakchunk0-Windows.pak", "game");
     Touch(game.Paks / "mods" / "Old HUD_P.pak", "pak");
     Touch(game.Paks / "mods" / "Old HUD_P.utoc", "toc");
+    // Each mode keeps its own game settings, and the first use of a mode carries on with what's there.
+    {
+        const fs::path profiles = root / "game_settings", live = root / "GameUserSettings.ini";
+        Touch(live, "normal settings");
+        files::SwitchGameSettings(profiles, live, "normal");
+        CHECK(files::ReadTextFile(live) == "normal settings");
+        files::SwitchGameSettings(profiles, live, "mvm");
+        CHECK(files::ReadTextFile(live) == "normal settings");
+        Touch(live, "mvm settings");
+        files::SwitchGameSettings(profiles, live, "normal");
+        CHECK(files::ReadTextFile(live) == "normal settings");
+        Touch(live, "normal changed");
+        files::SwitchGameSettings(profiles, live, "mvm");
+        CHECK(files::ReadTextFile(live) == "mvm settings");
+        files::SwitchGameSettings(profiles, live, "mvm");
+        CHECK(files::ReadTextFile(live) == "mvm settings");
+        files::SwitchGameSettings(profiles, live, "normal");
+        CHECK(files::ReadTextFile(live) == "normal changed");
+    }
+
     // Coming from the old name: settings and presets come along, leftover skins go.
     Touch(game.Win64 / "T8Cine" / "t8cine.ini", "old");
     Touch(game.Win64 / "T8Cine" / "presets" / "mine.t8look", "old");

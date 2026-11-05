@@ -139,7 +139,22 @@ void FlyInput()
     // Hold the right mouse button to look around. Sensitivity follows the zoom.
     static bool looking = false;
     static POINT anchor {};
-    if (LookButtonDown()) {
+    if (s.LookInput == LookInput::Keyboard) {
+        looking = false;
+        double keySpeed = s.KeyLookSpeed * (s.Fov / 45.0) * dt;
+        if (Down(VK_SHIFT))
+            keySpeed *= 3;
+        if (Down(VK_CONTROL))
+            keySpeed *= 0.25;
+        if (Down(VK_RIGHT))
+            g_flyRotation.Yaw += keySpeed;
+        if (Down(VK_LEFT))
+            g_flyRotation.Yaw -= keySpeed;
+        if (Down(VK_UP))
+            g_flyRotation.Pitch = std::min(g_flyRotation.Pitch + keySpeed, 89.0);
+        if (Down(VK_DOWN))
+            g_flyRotation.Pitch = std::max(g_flyRotation.Pitch - keySpeed, -89.0);
+    } else if (!overlay::MenuOpen() || LookButtonDown()) {
         POINT cursor;
         GetCursorPos(&cursor);
         if (looking) {
@@ -569,6 +584,13 @@ void OnCameraUpdate(void* manager)
     }
     // The view keeps the full count of turns for new keys. The engine only needs to know where the camera points.
     rotation.Yaw = cine::WrapAngle(rotation.Yaw);
+}
+
+void ToggleLookInput()
+{
+    Settings& s = g_settings;
+    s.LookInput = s.LookInput == LookInput::Mouse ? LookInput::Keyboard : LookInput::Mouse;
+    mod::Log("Free camera looks with the %s", s.LookInput == LookInput::Mouse ? "mouse" : "keyboard");
 }
 
 void ToggleFree()

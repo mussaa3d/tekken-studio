@@ -14,8 +14,14 @@ enum class Mode { Game, Free, Dolly, Attach };
 // Classic = always the fixed side-on framing, whatever the game does.
 enum class Filter { Off, Cinematics, Classic };
 
+// How the free camera looks around. Mouse: with the editor closed the mouse just looks, and with it open you hold the right button.
+// Keyboard: the arrow keys look, and the mouse stays free.
+enum class LookInput { Mouse, Keyboard };
+
 struct Settings {
     Mode Mode = Mode::Game;
+    LookInput LookInput = LookInput::Mouse;
+    double KeyLookSpeed = 60; // degrees per second at 45 degrees FOV
     Filter Filter = Filter::Off;
     double FlySpeed = 300;    // cm per real second
     double LookSpeed = 0.12;  // degrees per mouse pixel at 45 degrees FOV
@@ -64,6 +70,7 @@ void MarkNewStep();
 void OnFightFound();
 void OnFightJump(); // a replay jumped: the camera mustn't blend or read a cut across it
 
+void ToggleLookInput();
 void ToggleFree();
 void ToggleDolly();
 void SetFreePose(cine::Vec3 location, cine::Rot rotation, double fov);

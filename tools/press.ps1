@@ -1,7 +1,7 @@
 # Test helper: presses keys the way a keyboard does, for what the desktop tools can't send, like Insert. Names: insert, f5..f9, or a character.
 param([string[]]$Keys, [int]$HoldMs = 80)
 Add-Type -Name K -Namespace T8 -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra); [DllImport("user32.dll")] public static extern uint MapVirtualKeyW(uint code, uint type);'
-$map = @{ insert = 0x2D; f5 = 0x74; f6 = 0x75; f7 = 0x76; f8 = 0x77; f9 = 0x78; period = 0xBE; lbracket = 0xDB; rbracket = 0xDD }
+$map = @{ insert = 0x2D; f4 = 0x73; up = 0x26; down = 0x28; left = 0x25; right = 0x27; f5 = 0x74; f6 = 0x75; f7 = 0x76; f8 = 0x77; f9 = 0x78; period = 0xBE; lbracket = 0xDB; rbracket = 0xDD }
 foreach ($key in ($Keys -split ',')) {
     $vk = if ($map.ContainsKey($key)) { $map[$key] } else { [int][char]$key.ToUpper() }
     $extended = if ($key -eq 'insert') { 1 } else { 0 }

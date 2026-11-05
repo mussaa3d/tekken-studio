@@ -55,6 +55,10 @@ GameInstall FindGame(const SteamState& steam);
 // ----- Session files
 fs::path DataDir(const GameInstall& game);      // <Win64>\tekken8mvm
 fs::path SkinMountDir(const GameInstall& game); // <Paks>\~tekken8mvm
+// The game's own settings (graphics, resolution and so on), one set for cinematic sessions and one for normal play. Saves the file away for
+// the mode it was last used in and brings in the one for this mode. The first time a mode is used it just carries on with what's there.
+void SwitchGameSettings(const fs::path& profilesDir, const fs::path& liveFile, const std::string& mode);
+fs::path GameSettingsFile();
 void MoveFromOldName(const GameInstall& game);  // this tool used to be called T8Cine: brings its settings along
 
 struct InstallResult {

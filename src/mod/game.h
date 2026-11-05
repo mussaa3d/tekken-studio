@@ -22,7 +22,8 @@ void RunOnGameThread(std::function<void()> task);
 struct TimeControl {
     double Speed = 1.0;
     bool Paused = false;
-    bool ClothFollowsFight = true; // cloth gets one solve per fight step, so it moves the same at any speed
+    bool ClothFollowsFight = true; // jackets, straps and capes run at the fight's speed
+    bool BlendAllMeshes = true;    // straps, hair and costumes are physics bones on meshes of their own, and blend between steps as bodies do
     bool ExactFrames = true;       // and every solve the same length, so it lands the same every time
     bool SlowWorldClock = true; // also slow the clock materials can read, which ignores time dilation
     bool ScaleEffects = true; // also slow particles, cloth and materials through the world's time dilation

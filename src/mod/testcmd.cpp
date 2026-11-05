@@ -402,6 +402,26 @@ void Run(const std::string& line)
         for (const replay::SavedPoint& point : replay::SavedPoints())
             if (point.Type == replay::TypeRoundStart && point.Round == n)
                 game::SeekToRound(point.Frame);
+    } else if (command == "classinfo") {
+        // classinfo <Class>: logs the functions and properties a class adds, and those of its parents up to Actor components
+        std::string name;
+        in >> name;
+        for (const void* cls = ue::FindClass(name); cls; cls = ue::Field<void*>(cls, ue::off::SuperStruct)) {
+            const std::string level = ue::NameOf(cls);
+            if (level == "ActorComponent" || level == "Actor" || level == "Object" || level == "SceneComponent")
+                break;
+            mod::Log("[class] %s", level.c_str());
+            for (void* field = ue::Field<void*>(cls, ue::off::Children); field; field = ue::Field<void*>(field, ue::off::FieldNext))
+                mod::Log("[class]   fn %s", ue::NameOf(field).c_str());
+            for (const std::string& property : ue::PropertyNames(cls))
+                mod::Log("[class]   prop %s", property.c_str());
+        }
+    } else if (command == "bonesall") {
+        in >> n;
+        game::Time().BlendAllMeshes = n != 0;
+    } else if (command == "lookinput") {
+        in >> n;
+        camera::Config().LookInput = static_cast<camera::LookInput>(n);
     } else if (command == "clothfollow") {
         in >> n;
         game::Time().ClothFollowsFight = n != 0;

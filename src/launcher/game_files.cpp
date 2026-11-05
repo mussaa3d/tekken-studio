@@ -258,6 +258,37 @@ std::vector<std::string> OtherMods(const GameInstall& game)
     return found;
 }
 
+void SwitchGameSettings(const fs::path& profilesDir, const fs::path& liveFile, const std::string& mode)
+{
+    std::error_code error;
+    fs::create_directories(profilesDir, error);
+    const fs::path activeFile = profilesDir / "active.txt";
+    std::string active = ReadTextFile(activeFile);
+    active.erase(std::remove_if(active.begin(), active.end(), [](unsigned char c) { return std::isspace(c) != 0; }), active.end());
+    if (active.empty())
+        active = "normal";
+    if (active == mode)
+        return;
+    const std::string name = liveFile.filename().string();
+    if (fs::exists(liveFile, error)) {
+        fs::create_directories(profilesDir / active, error);
+        fs::copy_file(liveFile, profilesDir / active / name, fs::copy_options::overwrite_existing, error);
+        if (error)
+            return; // nothing's been changed, and the file is still safe where it is
+    }
+    if (fs::exists(profilesDir / mode / name, error)) {
+        fs::copy_file(profilesDir / mode / name, liveFile, fs::copy_options::overwrite_existing, error);
+        if (error)
+            return;
+    }
+    std::ofstream(activeFile, std::ios::trunc) << mode << "\n";
+}
+
+fs::path GameSettingsFile()
+{
+    return SaveGamesDir().parent_path() / "Config" / "Windows" / "GameUserSettings.ini";
+}
+
 void MoveFromOldName(const GameInstall& game)
 {
     std::error_code error;

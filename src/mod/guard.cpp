@@ -189,7 +189,6 @@ void TurnOff(const std::string& reason)
     mod::Log("Online guard: %s. Turning the mod off.", reason.c_str());
     game::RunOnGameThread([] {
         ue::SetGlobalTimeDilation(1.0f);
-        ue::ConsoleCommand(L"p.ClothPhysics 1");
         game::ReleaseExactFrames();
     });
     Sleep(250); // let the game thread put time dilation back

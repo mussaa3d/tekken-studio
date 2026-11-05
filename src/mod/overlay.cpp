@@ -671,6 +671,8 @@ void OnGameTick()
 
     if (pressed(VK_INSERT))
         ToggleMenu();
+    if (pressed(VK_F4))
+        camera::ToggleLookInput();
     if (pressed(VK_F5))
         camera::ToggleFree();
     if (pressed(VK_F6))

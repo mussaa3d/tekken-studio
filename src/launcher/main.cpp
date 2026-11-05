@@ -149,6 +149,11 @@ void Refresh()
         g_app.OtherMods = files::OtherMods(g_app.Game);
 }
 
+void UseGameSettings(const char* mode)
+{
+    files::SwitchGameSettings(files::DataDir(g_app.Game) / "game_settings", files::GameSettingsFile(), mode);
+}
+
 void LaunchCinematic()
 {
     std::vector<fs::path> skins;
@@ -163,6 +168,7 @@ void LaunchCinematic()
         files::RemoveMod(g_app.Game);
         return;
     }
+    UseGameSettings("mvm");
     OpenPath(std::wstring(L"steam://rungameid/") + files::AppId);
     g_app.State = Session::WaitingForGame;
     g_app.ModSession = true;
@@ -177,6 +183,7 @@ void LaunchNormal()
         SetStatus(result.Message, true);
         return;
     }
+    UseGameSettings("normal");
     OpenPath(std::wstring(L"steam://rungameid/") + files::AppId);
     g_app.State = Session::WaitingForGame;
     g_app.ModSession = false;
@@ -188,6 +195,7 @@ void EndSession()
 {
     if (g_app.ModSession) {
         const files::InstallResult result = files::RemoveMod(g_app.Game);
+        UseGameSettings("normal"); // starting the game from Steam next time is normal play
         SetStatus(result.Ok ? "Game closed. The mod and skins are out of the game folder." : result.Message, !result.Ok);
     } else {
         SetStatus("Game closed.");
@@ -616,6 +624,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
         const auto result = files::RemoveMod(g_app.Game);
         SetStatus(result.Ok ? "Cleaned up mod files left from the last session." : result.Message, !result.Ok);
     }
+    if (g_app.Game.Found && !GameProcessRunning())
+        UseGameSettings("normal"); // in case a session ended with nothing here to put them back
 
     WNDCLASSEXW windowClass = { sizeof(windowClass) };
     windowClass.style = CS_CLASSDC;
