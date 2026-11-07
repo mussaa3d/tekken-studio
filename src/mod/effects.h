@@ -24,6 +24,10 @@ void OnFightFound();
 void OnGameTick();
 bool DramaPlaying(); // a rage art or heat smash cinematic is running
 
+// Game thread: the actor that owns a component, and whether it's part of a fighter (their meshes, props and effects).
+void* OwnerOf(void* component);
+bool IsFighterPart(void* owner);
+
 // Test only, game thread: writes the class of every widget on screen to the log.
 void LogVisibleWidgets();
 

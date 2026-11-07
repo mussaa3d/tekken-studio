@@ -38,6 +38,22 @@ bool StillAlive(void* object, uint32_t index)
     return object && ObjectAt(index) == object;
 }
 
+void KeepAlive(void* object, bool keep)
+{
+    // FUObjectItem: the object, then its internal flags, where RootSet is bit 30 on UE 5.2.
+    constexpr int32_t RootSet = 1 << 30;
+    void* array = Engine().GObjects;
+    if (!object || !array)
+        return;
+    const uint32_t index = Field<uint32_t>(object, off::InternalIndex);
+    if (ObjectAt(index) != object)
+        return;
+    auto chunks = Field<uint8_t**>(array, ArrayChunks);
+    uint8_t* item = chunks[index / ElementsPerChunk] + (index % ElementsPerChunk) * ObjectItemSize;
+    auto& flags = *reinterpret_cast<int32_t*>(item + 8);
+    flags = keep ? (flags | RootSet) : (flags & ~RootSet);
+}
+
 // While a level loads or unloads, a slot can hold an object whose class pointer is already garbage. Reading that would take
 // the game down, so the class chain is walked under an exception guard first.
 bool ClassChainIsSound(const void* object)

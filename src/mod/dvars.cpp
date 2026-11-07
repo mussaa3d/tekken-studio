@@ -47,7 +47,26 @@ std::vector<Slider> MakeSliders()
         s.Logarithmic = logarithmic;
         return s;
     };
+    const auto choice = [](const char* label, const wchar_t* name, std::vector<std::string> choices, float value) {
+        Slider s;
+        s.Group = "Quality";
+        s.Label = label;
+        s.Cvar = name;
+        s.Min = 0;
+        s.Max = static_cast<float>(choices.size() - 1);
+        s.Default = s.Value = value;
+        s.Whole = true;
+        s.Choices = std::move(choices);
+        return s;
+    };
+    const std::vector<std::string> levels = { "Low", "Medium", "High", "Epic", "Cinematic" };
     return {
+        choice("Global illumination", L"r.DynamicGlobalIlluminationMethod", { "None", "Lumen", "Screen space" }, 1),
+        choice("Global illumination quality", L"sg.GlobalIlluminationQuality", levels, 3),
+        choice("Reflections", L"r.ReflectionMethod", { "None", "Lumen", "Screen space" }, 1),
+        choice("Reflection quality", L"sg.ReflectionQuality", levels, 3),
+        choice("Shadow quality", L"sg.ShadowQuality", levels, 3),
+        choice("Anti-aliasing", L"r.AntiAliasingMethod", { "None", "FXAA", "TAA", "MSAA", "TSR" }, 2),
         stage("Fog", "Density", Kind::FogDensity, 0.0f, 0.5f, 0.02f, true),
         stage("Fog", "Height falloff", Kind::FogFalloff, 0.001f, 2.0f, 0.2f, true),
         stage("Fog", "Start distance", Kind::FogStartDistance, 0.0f, 10000.0f, 0.0f),

@@ -26,6 +26,7 @@ struct Slider {
     bool Overridden = false; // false = the game's own value
     bool Whole = false;      // whole numbers only
     bool Logarithmic = false;
+    std::vector<std::string> Choices; // named settings instead of a slider; Value is the index
 };
 
 std::vector<Slider>& All();

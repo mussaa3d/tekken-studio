@@ -21,5 +21,6 @@ std::array<Light, MaxLights>& Rig();
 
 void OnFightFound();
 void OnGameTick();
+bool IsRigLight(const void* component); // one of the rig's own lights, which the stage's light switches leave alone
 
 } // namespace lights

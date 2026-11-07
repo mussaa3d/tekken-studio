@@ -14,12 +14,17 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Preview shot:** goes to the first camera key, flies the path and stops on the last key.
 - **Record shot:** the same, recording from the first key's exact frame to the last key's.
 - **Round buttons:** R1, R2, R3 and so on beside the timescale jump straight to a round of the replay.
-- **Streams:** several files at once that line up frame for frame: picture, greenscreen (green or blue), stage only, fighters on black, depth. Every look also shows on screen, so you can see it before recording.
+- **Streams:** several files at once that line up frame for frame: picture, greenscreen (green or blue), stage only, fighters on black, depth, effects on black. Every look also shows on screen, so you can see it before recording.
 - **Depth:** the game's real depth buffer as a smooth grey picture with clean silhouettes, near things white and far things dark. Near, far and curve sliders set how it falls off.
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
 - **Attached camera:** fix the camera to a bone, orbit it, or watch it from wherever you fly.
 - **Fighter POV:** look out of either fighter's eyes (CAMERA > Attach to fighter > Style: Fighter POV). Their head is hidden so it doesn't fill the picture, and you can keep the horizon level.
+- **Lighting, stage and frame** (VISUALS tab), after [TekkenOverlay](https://github.com/TekkenOverlay/TekkenOverlay)'s display settings and simplified stages, rebuilt here:
+  - **Lighting:** switch the stage's lights off (the sun included), take the key light off the fighters, or colour the light on them. The fighters' light is mostly a colour the stage's `BP_CharacterLightController` puts on their materials, so the tint goes through that and touches only the fighters.
+  - **Quality:** global illumination (none, Lumen, screen space), reflections, their quality, shadow quality and anti-aliasing. The x beside one puts the game's own back.
+  - **Stage:** a plain stage, every stage mesh in the engine's grey material, and no camera shake.
+  - **Frame:** the game's own shape, fill the screen with no black bars, or a fixed aspect ratio such as 2.39:1, which the recording keeps.
 - **Change replay from inside a replay:** in the REPLAYS tab, pick one and press **Play this replay**, or double-click it. It takes about 20 seconds.
 - **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight: at 0.01x a jacket strap moves at 0.01 speed. In very deep slow motion cloth moves in small hops rather than a perfect glide (about 5 a second at 0.023x), because its solver comes apart in slices shorter than 1/480 s of fight time. Rewinding to a moment gives the same clothes every time.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.

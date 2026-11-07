@@ -23,6 +23,7 @@
 #include "mod/replay.h"
 #include "mod/scan.h"
 #include "mod/pakmods.h"
+#include "mod/scene.h"
 #include "mod/switcher.h"
 #include "mod/testcmd.h"
 #include "mod/ue.h"
@@ -398,6 +399,7 @@ void FindFighters()
         effects::OnFightFound();
         dvars::OnFightFound();
         lights::OnFightFound();
+        scene::OnFightFound();
     }
 }
 
@@ -679,6 +681,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     ApplyEngineTime();
     KeepClothWithTheFight();
     effects::OnGameTick();
+    scene::OnGameTick();
     dvars::OnGameTick();
     lights::OnGameTick();
     audio::OnGameTick(Clock());
@@ -701,6 +704,8 @@ void DetourFightStart(void* a, void* b, void* c)
 
 void DetourCamera(void* manager, float dt)
 {
+    if (!guard::Tripped())
+        scene::BeforeCameraUpdate(manager);
     oCamera(manager, dt);
     if (!guard::Tripped())
         camera::OnCameraUpdate(manager);
@@ -711,6 +716,7 @@ void DetourProjection(void* view, uint8_t constraint, void* a, void* b)
     if (!guard::Tripped()) {
         float& fov = Field<float>(view, off::ViewInfoFov);
         fov = camera::ProjectionFov(fov);
+        scene::AdjustView(view);
     }
     oProjection(view, constraint, a, b);
 }

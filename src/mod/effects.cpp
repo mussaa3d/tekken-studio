@@ -574,6 +574,16 @@ void OnGameTick()
     UpdateHud();
 }
 
+void* OwnerOf(void* component)
+{
+    return ComponentOwner(component);
+}
+
+bool IsFighterPart(void* owner)
+{
+    return BelongsToFighter(owner) || IsFightEffect(owner);
+}
+
 void LogVisibleWidgets()
 {
     void* userWidget = ue::FindClass("UserWidget");

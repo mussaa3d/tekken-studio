@@ -13,6 +13,7 @@
 #include "mod/log.h"
 #include "mod/postfx.h"
 #include "mod/recorder.h"
+#include "mod/scene.h"
 
 namespace presets {
 
@@ -62,6 +63,16 @@ void WriteLook(Ini& ini)
     const effects::Settings& e = effects::Config();
     ini.SetBool("fx.hide_hud", e.HideHud);
     ini.SetBool("fx.hide_hit_labels", e.HideHitLabels);
+    const scene::Settings& sc = scene::Config();
+    ini.SetBool("scene.no_character_lights", sc.NoCharacterLights);
+    ini.SetBool("scene.no_stage_lights", sc.NoStageLights);
+    ini.SetBool("scene.tint_character_lights", sc.TintCharacterLights);
+    for (int i = 0; i < 3; ++i)
+        ini.SetNumber("scene.character_light_" + std::to_string(i), sc.CharacterLightColor[i]);
+    ini.SetBool("scene.plain_stage", sc.PlainStage);
+    ini.SetBool("scene.no_camera_shake", sc.NoCameraShake);
+    ini.SetNumber("scene.frame", static_cast<int>(sc.Frame));
+    ini.SetNumber("scene.aspect_ratio", sc.AspectRatio);
     ini.SetBool("fx.no_hit", e.NoHitEffects);
     ini.SetBool("fx.fog_hides_mist", e.FogHidesMist);
     ini.SetBool("fx.no_drama", e.NoDramaManager);
@@ -133,6 +144,16 @@ void ReadLook(const Ini& ini)
     effects::Settings& e = effects::Config();
     e.HideHud = ini.GetBool("fx.hide_hud", e.HideHud);
     e.HideHitLabels = ini.GetBool("fx.hide_hit_labels", e.HideHitLabels);
+    scene::Settings& sc = scene::Config();
+    sc.NoCharacterLights = ini.GetBool("scene.no_character_lights", sc.NoCharacterLights);
+    sc.NoStageLights = ini.GetBool("scene.no_stage_lights", sc.NoStageLights);
+    sc.TintCharacterLights = ini.GetBool("scene.tint_character_lights", sc.TintCharacterLights);
+    for (int i = 0; i < 3; ++i)
+        sc.CharacterLightColor[i] = static_cast<float>(ini.GetNumber("scene.character_light_" + std::to_string(i), sc.CharacterLightColor[i]));
+    sc.PlainStage = ini.GetBool("scene.plain_stage", sc.PlainStage);
+    sc.NoCameraShake = ini.GetBool("scene.no_camera_shake", sc.NoCameraShake);
+    sc.Frame = static_cast<scene::Frame>(static_cast<int>(ini.GetNumber("scene.frame", static_cast<int>(sc.Frame))));
+    sc.AspectRatio = static_cast<float>(ini.GetNumber("scene.aspect_ratio", sc.AspectRatio));
     e.NoHitEffects = ini.GetBool("fx.no_hit", e.NoHitEffects);
     e.FogHidesMist = ini.GetBool("fx.fog_hides_mist", e.FogHidesMist);
     e.NoDramaManager = ini.GetBool("fx.no_drama", e.NoDramaManager);

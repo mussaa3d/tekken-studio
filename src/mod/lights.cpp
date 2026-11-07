@@ -140,6 +140,14 @@ void Destroy(Live& live)
 
 } // namespace
 
+bool IsRigLight(const void* component)
+{
+    for (const Live& live : g_live)
+        if (live.Component && live.Component == component)
+            return true;
+    return false;
+}
+
 std::array<Light, MaxLights>& Rig()
 {
     return g_rig;

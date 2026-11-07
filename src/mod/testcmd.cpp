@@ -23,6 +23,7 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/savetrace.h"
+#include "mod/scene.h"
 #include "mod/sharing.h"
 #include "mod/switcher.h"
 #include "mod/ue.h"
@@ -575,6 +576,41 @@ void Run(const std::string& line)
         for (const auto& [name, count] : found)
             mod::Log("[widgets] %d x %s", count, name.c_str());
         mod::Log("[widgets] end");
+    } else if (command == "lc") {
+        // lc <property> [r g b a]: reads, or writes, a colour on every character light controller
+        std::string property;
+        in >> property;
+        float value[4];
+        const bool write = static_cast<bool>(in >> value[0] >> value[1] >> value[2] >> value[3]);
+        void* cls = ue::FindClass("BP_CharacterLightController_C");
+        const int at = cls ? ue::PropertyOffset(cls, property) : -1;
+        for (void* controller : cls && at >= 0 ? ue::AllObjectsOf(cls) : std::vector<void*>()) {
+            if (ue::Field<uint32_t>(controller, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+                continue;
+            float* colour = &ue::Field<float>(controller, at);
+            if (write)
+                std::copy(value, value + 4, colour);
+            mod::Log("[lc] %p %s = %g %g %g %g", controller, property.c_str(), colour[0], colour[1], colour[2], colour[3]);
+        }
+    } else if (command == "scene") {
+        // scene <charlights|stagelights|tint|plain|shake|frame|aspect> <value>
+        std::string what;
+        in >> what >> a;
+        scene::Settings& sc = scene::Config();
+        if (what == "charlights")
+            sc.NoCharacterLights = a != 0;
+        else if (what == "stagelights")
+            sc.NoStageLights = a != 0;
+        else if (what == "tint")
+            sc.TintCharacterLights = a != 0;
+        else if (what == "plain")
+            sc.PlainStage = a != 0;
+        else if (what == "shake")
+            sc.NoCameraShake = a != 0;
+        else if (what == "frame")
+            sc.Frame = static_cast<scene::Frame>(static_cast<int>(a));
+        else if (what == "aspect")
+            sc.AspectRatio = static_cast<float>(a);
     } else if (command == "hudlist") {
         effects::LogVisibleWidgets();
     } else if (command == "hitlabels") {

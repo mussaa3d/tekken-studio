@@ -29,6 +29,7 @@
 #include "mod/postfx.h"
 #include "mod/pakmods.h"
 #include "mod/presets.h"
+#include "mod/scene.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/sharing.h"
@@ -484,6 +485,25 @@ void DvarGroup(const char* group)
         ImGui::PushID(slider.Label.c_str());
         BarWidth();
         ImGuiSliderFlags flags = slider.Logarithmic ? ImGuiSliderFlags_Logarithmic : 0;
+        if (!slider.Choices.empty()) {
+            int choice = static_cast<int>(slider.Value);
+            const char* shown = slider.Overridden && choice >= 0 && choice < static_cast<int>(slider.Choices.size()) ? slider.Choices[choice].c_str() : "game";
+            if (ImGui::BeginCombo(slider.Label.c_str(), shown)) {
+                for (int i = 0; i < static_cast<int>(slider.Choices.size()); ++i)
+                    if (ImGui::Selectable(slider.Choices[i].c_str(), slider.Overridden && i == choice)) {
+                        slider.Value = static_cast<float>(i);
+                        dvars::Changed(slider);
+                    }
+                ImGui::EndCombo();
+            }
+            if (slider.Overridden) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("x"))
+                    dvars::Reset(slider);
+            }
+            ImGui::PopID();
+            continue;
+        }
         const char* format = slider.Whole ? "%.0f" : (slider.Max <= 2 ? "%.3f" : "%.1f");
         if (ImGui::SliderFloat(slider.Label.c_str(), &slider.Value, slider.Min, slider.Max, slider.Overridden ? format : "game", flags)) {
             if (slider.Whole)
@@ -627,6 +647,58 @@ void VisualsTab()
             tint.SunOverridden = true;
             dvars::TintChanged();
         }
+    }
+
+    if (Group("Lighting")) {
+        scene::Settings& s = scene::Config();
+        const scene::Counts counts = scene::LastCounts();
+        ImGui::Checkbox("Character lights off", &s.NoCharacterLights);
+        Help("Takes the stage's key light off the fighters, and their own spot lights. They're still lit by the sky and the stage around them.");
+        ImGui::Checkbox("Stage lights off", &s.NoStageLights);
+        Help("Every other light, the sun included. Your lighting rig's lights stay on.");
+        ImGui::Checkbox("Colour the light on the fighters", &s.TintCharacterLights);
+        ImGui::SameLine();
+        ImGui::ColorEdit3("##charlight", s.CharacterLightColor, ImGuiColorEditFlags_NoInputs);
+        if (s.NoCharacterLights || s.NoStageLights || s.TintCharacterLights)
+            ImGui::TextColored(Dim, "%d character lights, %d stage lights on this stage", counts.CharacterLights, counts.StageLights);
+    }
+
+    if (Group("Quality")) {
+        DvarGroup("Quality");
+        Help("How the engine lights and smooths the picture, as TekkenOverlay's display settings change it. x puts the game's own back.");
+    }
+
+    if (Group("Stage")) {
+        scene::Settings& s = scene::Config();
+        ImGui::Checkbox("Plain stage", &s.PlainStage);
+        Help("Every stage mesh in the engine's plain grey material, like TekkenOverlay's simplified stages. The fighters and effects keep theirs. Untick to get the stage back.");
+        if (s.PlainStage)
+            ImGui::TextColored(Dim, "%d stage meshes plain", scene::LastCounts().PlainMeshes);
+        ImGui::Checkbox("No camera shake", &s.NoCameraShake);
+        changed = ImGui::Checkbox("No particles (stage and fight)", &e.NoParticles) || changed;
+        if (changed)
+            effects::RequestRefresh();
+    }
+
+    if (Group("Frame")) {
+        scene::Settings& s = scene::Config();
+        int frame = static_cast<int>(s.Frame);
+        BarWidth();
+        if (ImGui::Combo("Shape", &frame, "The game's own Fill the screen (no black bars) Fixed aspect ratio "))
+            s.Frame = static_cast<scene::Frame>(frame);
+        if (s.Frame == scene::Frame::Fixed) {
+            BarWidth();
+            ImGui::SliderFloat("Aspect ratio", &s.AspectRatio, 1.0f, 3.0f, "%.2f : 1");
+            for (const float preset : { 1.78f, 2.0f, 2.39f, 2.76f }) {
+                char label[16];
+                snprintf(label, sizeof(label), "%.2f##ar", preset);
+                if (ImGui::SmallButton(label))
+                    s.AspectRatio = preset;
+                ImGui::SameLine();
+            }
+            ImGui::NewLine();
+        }
+        Help("Fill the screen takes away the bars the game adds on screens that aren't 16:9. A fixed aspect ratio adds bars of its own, such as 2.39 for a cinema look, and they're in the recording too.");
     }
 
     if (Group("Lighting rig"))

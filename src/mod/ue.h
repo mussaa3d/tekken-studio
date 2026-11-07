@@ -86,6 +86,8 @@ Globals& Engine();
 uint32_t ObjectCount();
 void* ObjectAt(uint32_t index);
 bool StillAlive(void* object, uint32_t index);
+// Keeps an object from being garbage collected while nothing else refers to it (the engine's root set), or lets it go again.
+void KeepAlive(void* object, bool keep);
 std::string NameOf(const void* object);
 std::string ClassNameOf(const void* object);
 bool IsA(const void* object, const void* cls);
