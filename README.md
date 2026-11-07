@@ -34,8 +34,13 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Replay sharing:** export a replay to a file, send it to a friend, and they load it. No servers involved.
 - **Replay vault:** snapshot your own saves on this PC, tagged with the game build, and restore them.
 
+## Install
+Run `tekken8mvm-0.1-setup.exe`. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
+
+The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
+
 ## Use
-1. Run `dist\tekken8mvm.exe`. It needs [ffmpeg](https://ffmpeg.org) on your PATH for recording.
+1. Start **tekken8mvm** from the Start menu (or run `dist\tekken8mvm.exe` from a build).
 2. In Steam, choose **Steam > Go Offline**.
 3. Click **Start cinematic session**. Keep the launcher open: it cleans up when the game closes.
 4. In the game, open a replay: **Replay > My Replays & Tips**, then pick one.
@@ -112,7 +117,7 @@ Don't play online with the mod or skins in the game folder.
 If the mod stops working, `tekken8mvm\tekken8mvm.log` in the game's `Win64` folder names the pattern that no longer matches. Put a new one in `tekken8mvm\signatures.ini` as `Name = AA BB ?? CC`; there's no rebuild needed. `tools\check_patterns.py` checks them against the exe. If only the rewinding patterns stop matching, the timeline falls back to counting steps and everything else keeps working.
 
 ## Build
-Needs Visual Studio 2022 Build Tools. Run `build.cmd`. Tests: `build\tekken8mvm_tests.exe` and `tools\harness\run_all.ps1`. `tools\` also has the scripts used to test against the real game, with `test_commands = 1` in `tekken8mvm\tekken8mvm.ini`.
+Needs Visual Studio 2022 Build Tools. Run `build.cmd`. `installer\build_installer.cmd` builds the tool and then the installer into `release\`, and needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). Tests: `build\tekken8mvm_tests.exe` and `tools\harness\run_all.ps1`. `tools\` also has the scripts used to test against the real game, with `test_commands = 1` in `tekken8mvm\tekken8mvm.ini`.
 
 ## Credits and license
 GPL-3.0. Engine notes, patterns and the method for smooth motion come from the [Tekken Overlay rebuild](https://github.com/parsaes80/tekken-overlay-rebuild), based on KulaGGin's Tekken Overlay. OpenDojo's research notes helped with the game's subsystems.
