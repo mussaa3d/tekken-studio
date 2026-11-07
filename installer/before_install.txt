@@ -1,0 +1,13 @@
+tekken8mvm: cinematic tools for Tekken 8 replays. Free camera, slow motion, camera paths, effect switches and recording.
+
+What you need
+- Tekken 8 on Steam, already installed.
+- Steam in Offline Mode whenever you use tekken8mvm. The launcher won't start a session while Steam is online.
+- For recording: ffmpeg. This installer can download it for you on the next pages.
+
+Offline only
+Bandai Namco can ban accounts for unauthorized mods, and no mod can promise you're safe. tekken8mvm doesn't hide from anything. It
+stays off online play instead: it only runs with Steam offline, it stops the game's connections while it runs, and it takes itself out of
+the game folder when the game closes. Never play online with it in the game folder.
+
+Uninstalling takes the mod out of the game folder first. Your recordings, skins and saved replays stay where they are.

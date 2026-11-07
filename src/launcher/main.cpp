@@ -100,8 +100,13 @@ fs::path VaultDir()
     return g_app.Home / "replay-vault";
 }
 
+// The installer puts its own ffmpeg next to the launcher. Otherwise the one on PATH.
 std::string FindFfmpeg()
 {
+    std::error_code ignored;
+    const fs::path bundled = g_app.Home / "ffmpeg" / "bin" / "ffmpeg.exe";
+    if (fs::exists(bundled, ignored))
+        return bundled.string();
     wchar_t path[MAX_PATH];
     if (SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH, path, nullptr))
         return fs::path(path).string();
@@ -598,7 +603,7 @@ LRESULT WINAPI WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
 } // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* commandLine, int show)
 {
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
@@ -626,6 +631,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int show)
     }
     if (g_app.Game.Found && !GameProcessRunning())
         UseGameSettings("normal"); // in case a session ended with nothing here to put them back
+
+    // The uninstaller runs this first, so nothing of the mod is left in the game folder once the launcher is gone.
+    if (commandLine && wcsstr(commandLine, L"--cleanup"))
+        return GameProcessRunning() ? 1 : 0;
 
     WNDCLASSEXW windowClass = { sizeof(windowClass) };
     windowClass.style = CS_CLASSDC;
