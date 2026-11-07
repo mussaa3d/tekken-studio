@@ -6,6 +6,8 @@ namespace effects {
 
 struct Settings {
     bool HideHud = false;
+    bool HideHitLabels = false; // the words that pop up on hits (Counter and so on) and the frame data panel, which are one widget; the effects and the rest of the HUD stay
+    char HitLabelWidgets[160] = "practice_info"; // the widget classes those words are, comma separated, matched against the class name
     bool NoHitEffects = false;   // hides hit sparks and the glows of rage arts and heat
     bool FogHidesMist = true;    // choosing a fog colour also hides the map's own mist and drifting particles
     bool NoDramaManager = false; // cancels the screen effects a rage art or heat smash puts over the picture
@@ -21,6 +23,9 @@ Settings& Config();
 void OnFightFound();
 void OnGameTick();
 bool DramaPlaying(); // a rage art or heat smash cinematic is running
+
+// Test only, game thread: writes the class of every widget on screen to the log.
+void LogVisibleWidgets();
 
 // Applied on the next game tick.
 void RequestRefresh();

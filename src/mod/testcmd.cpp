@@ -575,6 +575,15 @@ void Run(const std::string& line)
         for (const auto& [name, count] : found)
             mod::Log("[widgets] %d x %s", count, name.c_str());
         mod::Log("[widgets] end");
+    } else if (command == "hudlist") {
+        effects::LogVisibleWidgets();
+    } else if (command == "hitlabels") {
+        // hitlabels <0|1> [class words, comma separated]
+        in >> n;
+        e.HideHitLabels = n != 0;
+        const std::string words = Rest(in);
+        if (!words.empty())
+            strncpy_s(e.HitLabelWidgets, words.c_str(), _TRUNCATE);
     } else if (command == "census") {
         // What's on this stage that moves or tints the picture, grouped by who owns it.
         static ue::FunctionRef getOwner { "ActorComponent", "GetOwner" };

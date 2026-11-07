@@ -22,6 +22,7 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/scan.h"
+#include "mod/pakmods.h"
 #include "mod/switcher.h"
 #include "mod/testcmd.h"
 #include "mod/ue.h"
@@ -684,6 +685,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
     switcher::OnGameTick();
+    pakmods::OnGameTick();
     testcmd::OnGameTick();
 }
 

@@ -44,22 +44,34 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 
 To make a shot: pause, go to a moment on the ruler, press F5 and fly the camera, press K for a key, move along the timeline, and add more keys. Then press **Preview shot** to watch it and **Record shot** to record it.
 
-| Key | Does |
+While the editor is open it has the keyboard, and the game gets none of it. With the editor closed every key goes to the game (Escape opens its menu and so on), and Insert is the only key the mod listens for. The free camera flies only from the editor.
+
+| Key (editor open) | Does |
 |---|---|
-| Insert | Editor |
+| Insert | Open or close the editor |
+| Space or F8 | Play and pause |
+| Left, Right | Back and forward 1 s (Shift 5 s, Ctrl 1 frame) |
+| `,` `.` | Back and forward 1 frame |
+| Up, Down, or `[` `]` | Faster, slower |
+| Home | Start of the timeline |
 | F4 | Free camera looks with the mouse or the arrow keys |
 | F5 | Free camera |
 | F6 | Play dolly path |
 | F7 | Record |
-| F8 | Pause |
-| `.` | Next frame |
-| `[` `]` | Slower, faster |
 | F9 | Hide the HUD |
 | K | Add a dolly key (free camera on) |
 
-Free camera: `WASD` fly, `Q` `E` down and up, hold right mouse to look, `Shift` faster, `Ctrl` slower, `F4` switches looking between the mouse and the arrow keys (with the mouse, the editor needs the right button held), wheel or `Z` `C` roll, `R` level, `Ctrl`+wheel or `+` `-` zoom, `Shift`+wheel sets speed. In the editor, the wheel only does this with the mouse over the game picture.
+With the free camera looking with the arrow keys (F4), the arrows look around, and `,` `.` move along the timeline. The editor's **Keys** menu lists all of these.
 
-A paused editor stops the game's own menus too, including the one at the end of a replay. Unpause (F8) if a game menu stops responding.
+Free camera: `WASD` fly, `Q` `E` down and up, hold right mouse over the picture to look, `Shift` faster, `Ctrl` slower, `F4` switches looking between the mouse and the arrow keys, wheel or `Z` `C` roll, `R` level, `Ctrl`+wheel or `+` `-` zoom, `Shift`+wheel sets speed.
+
+**View > Hide hit labels and frame data** hides the words that pop up on hits (Counter and so on) and the frame data panel, which the game draws as one widget. The effects, health bars and input list stay.
+
+**Mods** (REPLAYS tab) lists your own pak mods and switches them off and on while the game runs, through the game's own pak manager. Whatever is already loaded, like HUD pictures, stays until the game loads it again. A mod you switch off stays off the next time the game starts, until you switch it back on there.
+
+The **Effects on black** stream keeps only the fight's particle effects (sparks, trails, smoke, and anything a fighter carries as an effect, like Bryan's weapon) on black, with the stage and fighters hidden. Turn on the depth stream next to it for a matching depth pass. Effects behind a fighter show through, since the fighter isn't there to hide them.
+
+A paused editor stops the game's own menus too, including the one at the end of a replay. Unpause (Space or F8 in the editor) if a game menu stops responding.
 
 ## Sharing replays
 In the editor's REPLAYS tab, pick a replay and press **Export**. The `.t8replay` file goes in `shared_replays` next to your recordings. Send it to a friend, who puts it in the same folder and presses **Load**. It then shows up in the game's **Replay > Downloaded Replays**. If that screen is open, leave it and come back.

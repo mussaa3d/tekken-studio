@@ -241,6 +241,11 @@ void OnGameTick()
             Enter(Stage::ToList, "Going back to the replay list");
         break;
     case Stage::ToList:
+        // The Yes can land while the question is still opening. If it's still up, Yes is already picked, so confirm it again.
+        if (look && keysDone && now - g_stageStart > 2500 && WidgetShown("WBP_UI_Dialog_C")) {
+            g_keys = { 'M' };
+            g_stageStart = now - 1000;
+        }
         if (look && WidgetShown("WBP_UI_Replay_List_C")) {
             g_keys = { 0, 0 };
             Enter(Stage::TabClick, "Finding the replay in the list");

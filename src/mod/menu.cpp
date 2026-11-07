@@ -27,6 +27,7 @@
 #include "mod/log.h"
 #include "mod/overlay.h"
 #include "mod/postfx.h"
+#include "mod/pakmods.h"
 #include "mod/presets.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
@@ -213,6 +214,34 @@ void ReplaysTab()
             ImGui::TextColored(Dim, "%s", switcher::Status().c_str());
         }
         Help("Leaves this replay and starts the one you picked, through the game's own screens, in about 30 seconds. Don't touch the keyboard until it's done. Double-click a row does the same. It needs the game's list sorted by New.");
+    }
+
+    Section("Mods");
+    {
+        const std::vector<pakmods::Mod> mods = pakmods::List();
+        if (mods.empty())
+            ImGui::TextColored(Dim, "No pak mods in the game's Paks folders.");
+        const bool ready = pakmods::Available();
+        ImGui::BeginDisabled(!ready);
+        for (const pakmods::Mod& mod : mods) {
+            bool on = mod.Mounted;
+            ImGui::PushID(mod.Name.c_str());
+            if (ImGui::Checkbox(mod.Name.c_str(), &on))
+                pakmods::SetMounted(mod.Name, on);
+            if (mod.Busy) {
+                ImGui::SameLine();
+                ImGui::TextColored(Dim, "...");
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndDisabled();
+        if (!ready && !mods.empty())
+            ImGui::TextColored(Dim, "%s", pakmods::LastMessage().empty() ? "Finding the game's pak manager..." : pakmods::LastMessage().c_str());
+        else if (!pakmods::LastMessage().empty())
+            ImGui::TextWrapped("%s", pakmods::LastMessage().c_str());
+        if (ImGui::SmallButton("Look again##paks"))
+            pakmods::Rescan();
+        Help("Switches your own pak mods off and on while the game runs. Something already on screen, like a fighter's outfit or the HUD, changes when the game loads it again: play this replay again or switch to another one. HUD pictures stay in memory until the game restarts. A mod you switch off stays off the next time the game starts, until you switch it on here.");
     }
 
     Section("Share a replay");
@@ -666,7 +695,7 @@ void RecordTab()
 
     Section("Streams");
     ImGui::TextWrapped("Each one on makes its own file. With several on, each moment renders once per stream, and the files line up frame for frame.");
-    const char* looks = "Picture\0Greenscreen\0Stage only\0Fighters on black\0Depth\0";
+    const char* looks = "Picture\0Greenscreen\0Stage only\0Fighters on black\0Depth\0Effects on black\0";
     for (int i = 0; i < recorder::MaxStreams; ++i) {
         recorder::Stream& stream = s.Streams[i];
         ImGui::PushID(i);
@@ -688,7 +717,7 @@ void RecordTab()
     Section("Preview a look");
     int preview = static_cast<int>(s.Preview);
     BarWidth();
-    if (ImGui::Combo("Look now", &preview, "Picture\0Greenscreen\0Stage only\0Fighters on black\0Depth\0"))
+    if (ImGui::Combo("Look now", &preview, "Picture\0Greenscreen\0Stage only\0Fighters on black\0Depth\0Effects on black\0"))
         s.Preview = static_cast<recorder::Look>(preview);
     int keyColour = s.BlueKey ? 1 : 0;
     BarWidth();
@@ -1185,7 +1214,32 @@ void MenuBar()
     }
     if (ImGui::BeginMenu("View")) {
         ImGui::MenuItem("Hide the HUD", "F9", &effects::Config().HideHud);
+        ImGui::MenuItem("Hide hit labels and frame data", nullptr, &effects::Config().HideHitLabels);
         ImGui::MenuItem("Follow the playhead", nullptr, &g_timeline.Follow);
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Keys")) {
+        // While the editor is open it has the keyboard. Closed, every key goes to the game except Insert.
+        static const char* const keys[][2] = {
+            { "Insert", "Open or close the editor. Closed, the game has the keyboard" },
+            { "Space", "Play and pause" },
+            { "Left  Right", "Back and forward 1 s (Shift 5 s, Ctrl 1 frame)" },
+            { ",  .", "Back and forward 1 frame" },
+            { "Up  Down", "Faster and slower" },
+            { "Home", "Start of the timeline" },
+            { "F4", "Free camera looks with the mouse or the arrow keys" },
+            { "F5  F6", "Free camera, dolly path" },
+            { "F7", "Record" },
+            { "F9", "Hide the HUD" },
+            { "K", "Add a camera key (free camera)" },
+            { "WASD  Q E", "Fly; hold right mouse over the picture to look" },
+        };
+        for (const auto& key : keys) {
+            ImGui::TextUnformatted(key[0]);
+            ImGui::SameLine(110);
+            ImGui::TextColored(Dim, "%s", key[1]);
+        }
+        ImGui::TextColored(Dim, "With the free camera on the arrow keys (F4), the arrows look around.");
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Tools")) {
@@ -1529,7 +1583,7 @@ void Draw()
     const char* hint = nullptr;
     switch (camera::Config().Mode) {
     case camera::Mode::Free:
-        hint = "FREE CAM   hold right mouse to look, WASD to fly, K to add a key";
+        hint = "FREE CAM   hold right mouse to look, WASD to fly, K to add a key, Space to play";
         break;
     case camera::Mode::Dolly:
         hint = "DOLLY   playing the camera path";

@@ -74,7 +74,7 @@ void ToggleLookInput();
 void ToggleFree();
 void ToggleDolly();
 void SetFreePose(cine::Vec3 location, cine::Rot rotation, double fov);
-bool WantsKeyboard(); // the free camera is flying, so WASD should not reach the game
+bool WantsKeyboard(); // the free camera is on, so K adds a key in the editor
 
 struct View {
     cine::Vec3 Location;

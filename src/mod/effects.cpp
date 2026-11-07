@@ -70,9 +70,40 @@ bool IsHudClass(void* cls, void* userWidget)
     return hud;
 }
 
+// The hit labels: widgets whose class name has one of the words the settings list.
+bool IsLabelClass(void* cls, const std::vector<std::string>& words)
+{
+    const std::string name = Lower(ue::NameOf(cls));
+    for (const std::string& word : words)
+        if (!word.empty() && name.find(word) != std::string::npos)
+            return true;
+    return false;
+}
+
+std::vector<std::string> LabelWords()
+{
+    std::vector<std::string> words;
+    std::string word;
+    for (const char c : std::string(g_settings.HitLabelWidgets) + ",") {
+        if (c == ',') {
+            if (!word.empty())
+                words.push_back(Lower(word));
+            word.clear();
+        } else if (c != ' ') {
+            word += c;
+        }
+    }
+    return words;
+}
+
 void UpdateHud()
 {
-    if (!g_settings.HideHud) {
+    // 2 hides the whole HUD, 1 only the hit labels.
+    const int mode = g_settings.HideHud ? 2 : (g_settings.HideHitLabels ? 1 : 0);
+    static int shownMode = 0;
+    static std::string shownWords;
+    const std::string words = g_settings.HitLabelWidgets;
+    if (mode != shownMode || (mode == 1 && words != shownWords)) {
         if (g_hudApplied) {
             for (const HudWidget& widget : g_hidden)
                 if (ue::StillAlive(widget.Object, widget.Index))
@@ -81,9 +112,13 @@ void UpdateHud()
             g_hudClassCache.clear();
             g_hudApplied = false;
         }
-        return;
+        shownMode = mode;
+        shownWords = words;
     }
+    if (mode == 0)
+        return;
     g_hudApplied = true;
+    const std::vector<std::string> labelWords = mode == 1 ? LabelWords() : std::vector<std::string>();
 
     void* userWidget = ue::FindClass("UserWidget");
     const uint32_t count = ue::ObjectCount();
@@ -99,7 +134,7 @@ void UpdateHud()
         if (!object || !ue::ClassChainIsSound(object) || (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject))
             continue;
         void* cls = ue::Field<void*>(object, ue::off::ClassPrivate);
-        if (!cls || !IsHudClass(cls, userWidget))
+        if (!cls || !(mode == 2 ? IsHudClass(cls, userWidget) : (ue::IsChildOf(cls, userWidget) && IsLabelClass(cls, labelWords))))
             continue;
         const bool known = std::any_of(g_hidden.begin(), g_hidden.end(),
                                        [&](const HudWidget& w) { return w.Object == object && w.Index == index; });
@@ -301,7 +336,7 @@ struct HiddenComponent {
     uint32_t Index;
 };
 std::vector<HiddenComponent> g_hiddenComponents;
-enum class Hide { Nothing, Stage, Fighters };
+enum class Hide { Nothing, Stage, Fighters, AllButEffects };
 Hide g_hiding = Hide::Nothing;
 int g_hideRescan = 0;
 
@@ -364,6 +399,25 @@ bool IsFightEffect(void* owner)
     return owner && cls && ue::IsA(owner, cls);
 }
 
+// Sparks, trails, auras and the glow of heat and rage arts: particle systems the fight owns, not the stage's own.
+// Measured on a hit: the sparks are pooled systems with no owner, or on PolarisNiagaraActor. The stage's clouds and mist are on plain
+// NiagaraActor and its breakable walls on their own blueprints, so those go. Only particle systems count: Bryan's weapon is a mesh the
+// effect manager holds on to.
+bool IsFightEffectComponent(void* component, void* owner)
+{
+    static void* niagara = ue::FindClass("NiagaraComponent");
+    static void* cascade = ue::FindClass("ParticleSystemComponent");
+    if (!(niagara && ue::IsA(component, niagara)) && !(cascade && ue::IsA(component, cascade)))
+        return false;
+    if (!owner || IsFightEffect(owner))
+        return true;
+    const std::string ownerClass = Lower(ue::ClassNameOf(owner));
+    if (ownerClass.find("stage") != std::string::npos || ownerClass.find("niagarauiactor") != std::string::npos)
+        return false;
+    return BelongsToFighter(owner) || ownerClass.find("polarisniagara") != std::string::npos || ownerClass.find("effect") != std::string::npos
+        || ownerClass.find("character") != std::string::npos;
+}
+
 void HideComponents(Hide what)
 {
     void* primitive = ue::FindClass("PrimitiveComponent");
@@ -378,9 +432,14 @@ void HideComponents(Hide what)
     int count = 0;
     for (void* component : ue::AllObjectsOf(primitive)) {
         void* owner = ComponentOwner(component);
-        const bool fighterPart = BelongsToFighter(owner) || IsFightEffect(owner);
-        if (fighterPart == (what == Hide::Stage))
-            continue;
+        if (what == Hide::AllButEffects) {
+            if (IsFightEffectComponent(component, owner))
+                continue;
+        } else {
+            const bool fighterPart = BelongsToFighter(owner) || IsFightEffect(owner);
+            if (fighterPart == (what == Hide::Stage))
+                continue;
+        }
         const uint32_t index = ue::Field<uint32_t>(component, ue::off::InternalIndex);
         // Leave alone anything the game itself had hidden, so showing it again doesn't pop it into view.
         if (hiddenByte >= 0 && (ue::Field<uint8_t>(component, hiddenByte) & hiddenMask))
@@ -419,9 +478,10 @@ void ApplyFlags()
     if (!viewport)
         return;
     const recorder::Pass pass = recorder::ActivePass();
-    const bool hideStage = pass == recorder::Pass::Greenscreen || pass == recorder::Pass::FightersOnBlack;
+    const bool effectsOnly = pass == recorder::Pass::EffectsOnBlack;
+    const bool hideStage = pass == recorder::Pass::Greenscreen || pass == recorder::Pass::FightersOnBlack || effectsOnly;
     const bool hideFighters = pass == recorder::Pass::StageOnly;
-    ApplyHiding(hideStage ? Hide::Stage : (hideFighters ? Hide::Fighters : Hide::Nothing));
+    ApplyHiding(effectsOnly ? Hide::AllButEffects : (hideStage ? Hide::Stage : (hideFighters ? Hide::Fighters : Hide::Nothing)));
 
     const auto apply = [&](ShowFlag& flag, bool off) {
         uint32_t& word = ue::Field<uint32_t>(viewport, ue::off::ViewportShowFlags + flag.WordOffset);
@@ -437,7 +497,7 @@ void ApplyFlags()
             flag.Applied = false;
         }
     };
-    apply(g_fogFlag, pass == recorder::Pass::FightersOnBlack || pass == recorder::Pass::Greenscreen);
+    apply(g_fogFlag, hideStage);
     for (ShowFlag& flag : g_showFlags) {
         const bool wanted = (flag.Option && g_settings.*flag.Option) || (flag.HiddenWithStage && hideStage) || (flag.HiddenWithFighters && hideFighters);
         apply(flag, wanted);
@@ -512,6 +572,28 @@ void OnGameTick()
     if (g_dump.exchange(false))
         Dump();
     UpdateHud();
+}
+
+void LogVisibleWidgets()
+{
+    void* userWidget = ue::FindClass("UserWidget");
+    if (!userWidget)
+        return;
+    static ue::FunctionRef visible { "Widget", "IsVisible" };
+    std::map<std::string, int> found;
+    for (void* widget : ue::AllObjectsOf(userWidget)) {
+        if (ue::Field<uint32_t>(widget, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+            continue;
+        struct {
+            bool ReturnValue;
+        } params { false };
+        ue::Call(widget, visible, &params);
+        if (params.ReturnValue)
+            ++found[ue::ClassNameOf(widget)];
+    }
+    for (const auto& [name, count] : found)
+        mod::Log("[hud] %d x %s", count, name.c_str());
+    mod::Log("[hud] end");
 }
 
 void RequestRefresh()

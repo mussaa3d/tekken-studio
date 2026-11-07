@@ -191,7 +191,8 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
 
     const bool isMouse = message >= WM_MOUSEFIRST && message <= WM_MOUSELAST;
     const bool isKey = message >= WM_KEYFIRST && message <= WM_KEYLAST;
-    if ((g_menuOpen && (isMouse || isKey || message == WM_INPUT)) || (camera::WantsKeyboard() && (isKey || isMouse)))
+    // The editor owns the keyboard and mouse while it's open. Closed, everything goes to the game, the free camera included.
+    if (g_menuOpen && (isMouse || isKey || message == WM_INPUT))
         return message == WM_INPUT ? DefWindowProcW(window, message, wParam, lParam) : 0;
     return CallWindowProcW(g_originalWndProc, window, message, wParam, lParam);
 }
@@ -658,39 +659,98 @@ int TakeMouseWheel()
 
 void OnGameTick()
 {
-    if (!IsGameForeground() || KeyboardTakenByUi())
+    static bool previous[256] = {};
+    static double heldSince[256] = {};
+    static double repeatedAt[256] = {};
+    const double now = GetTickCount64() / 1000.0;
+    const bool usable = IsGameForeground() && !KeyboardTakenByUi();
+    const auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
+    // Every key is read every tick, so a key that was held while the editor was closed doesn't fire when it opens.
+    bool edges[256] = {};
+    bool repeats[256] = {};
+    static const int keys[] = { VK_INSERT, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_OEM_COMMA,
+                                VK_OEM_PERIOD, VK_OEM_4, VK_OEM_6, VK_HOME, 'K' };
+    for (const int key : keys) {
+        const bool isDown = usable && down(key);
+        edges[key] = isDown && !previous[key];
+        if (edges[key]) {
+            heldSince[key] = now;
+            repeatedAt[key] = now;
+        }
+        // Held keys repeat, like typing: a pause, then quickly.
+        repeats[key] = edges[key] || (isDown && now - heldSince[key] > 0.4 && now - repeatedAt[key] > 0.08);
+        if (repeats[key])
+            repeatedAt[key] = now;
+        previous[key] = isDown;
+    }
+    if (!usable)
         return;
 
-    static bool previous[256] = {};
-    const auto pressed = [](int key) {
-        const bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
-        const bool edge = down && !previous[key];
-        previous[key] = down;
-        return edge;
+    // With the editor closed the game has the keyboard, and Insert is the only key the mod listens for.
+    if (edges[VK_INSERT])
+        ToggleMenu();
+    if (!g_menuOpen)
+        return;
+
+    game::TimeControl& t = game::Time();
+    const bool shift = down(VK_SHIFT), control = down(VK_CONTROL);
+    // The free camera looking with the arrow keys keeps them; the timeline then has , and . only.
+    const bool arrowsLook = camera::Config().Mode == camera::Mode::Free && camera::Config().LookInput == camera::LookInput::Keyboard;
+
+    // Seeks pile up while one is still running, so holding a key keeps going from where the last one is headed.
+    static double target = 0;
+    const auto seekBy = [&](double seconds) {
+        const double from = game::Seeking() ? target : game::Clock();
+        target = std::max(from + seconds, 0.0);
+        game::SeekTo(target);
     };
 
-    if (pressed(VK_INSERT))
-        ToggleMenu();
-    if (pressed(VK_F4))
+    if (edges[VK_SPACE] || edges[VK_F8])
+        t.Paused = !t.Paused;
+    if (repeats[VK_OEM_PERIOD]) {
+        if (t.Paused && !game::Seeking())
+            game::StepOneFrame();
+        else
+            seekBy(game::StepSeconds);
+    }
+    if (repeats[VK_OEM_COMMA])
+        seekBy(-game::StepSeconds);
+    if (!arrowsLook) {
+        const double jump = shift ? 5.0 : (control ? game::StepSeconds : 1.0);
+        if (repeats[VK_LEFT])
+            seekBy(-jump);
+        if (repeats[VK_RIGHT])
+            seekBy(jump);
+        if (repeats[VK_UP]) {
+            t.Speed = std::min(t.Speed * 2.0, 4.0);
+            t.UseSpeedRamp = false;
+        }
+        if (repeats[VK_DOWN]) {
+            t.Speed = std::max(t.Speed * 0.5, 0.01);
+            t.UseSpeedRamp = false;
+        }
+    }
+    if (repeats[VK_OEM_4]) {
+        t.Speed = std::max(t.Speed * 0.5, 0.01);
+        t.UseSpeedRamp = false;
+    }
+    if (repeats[VK_OEM_6]) {
+        t.Speed = std::min(t.Speed * 2.0, 4.0);
+        t.UseSpeedRamp = false;
+    }
+    if (edges[VK_HOME])
+        seekBy(-game::Clock());
+    if (edges[VK_F4])
         camera::ToggleLookInput();
-    if (pressed(VK_F5))
+    if (edges[VK_F5])
         camera::ToggleFree();
-    if (pressed(VK_F6))
+    if (edges[VK_F6])
         camera::ToggleDolly();
-    if (pressed(VK_F7))
+    if (edges[VK_F7])
         recorder::Toggle();
-    if (pressed(VK_F8))
-        game::Time().Paused = !game::Time().Paused;
-    if (pressed(VK_F9))
+    if (edges[VK_F9])
         effects::Config().HideHud = !effects::Config().HideHud;
-    if (pressed(VK_OEM_PERIOD))
-        game::StepOneFrame();
-    if (pressed(VK_OEM_4))
-        game::Time().Speed = std::max(game::Time().Speed * 0.5, 0.01);
-    if (pressed(VK_OEM_6))
-        game::Time().Speed = std::min(game::Time().Speed * 2.0, 4.0);
-    // K sits on the game's default attack keys, so it only adds a key while the free camera owns the keyboard.
-    if (pressed('K') && camera::WantsKeyboard())
+    if (edges['K'] && camera::WantsKeyboard())
         camera::AddKeyAtCurrentView();
 }
 

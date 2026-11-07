@@ -327,6 +327,8 @@ Pass PassForLook(Look look)
         return Pass::FightersOnBlack;
     case Look::Depth:
         return Pass::Depth;
+    case Look::EffectsOnBlack:
+        return Pass::EffectsOnBlack;
     default:
         return Pass::Picture;
     }
@@ -506,6 +508,8 @@ const char* LookName(Look look)
         return "Fighters on black";
     case Look::Depth:
         return "Depth";
+    case Look::EffectsOnBlack:
+        return "Effects on black";
     default:
         return "Picture";
     }
@@ -522,6 +526,8 @@ Settings& Config()
         g_settings.Streams[2].Look = Look::StageOnly;
         strcpy_s(g_settings.Streams[3].Name, "depth");
         g_settings.Streams[3].Look = Look::Depth;
+        strcpy_s(g_settings.Streams[4].Name, "effects");
+        g_settings.Streams[4].Look = Look::EffectsOnBlack;
         return true;
     }();
     (void)initialized;

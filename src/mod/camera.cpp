@@ -99,8 +99,11 @@ void FlyInput()
     const double now = RealSeconds();
     const double dt = std::clamp(now - last, 0.0, 0.1);
     last = now;
-    if (!GameHasFocus() || overlay::KeyboardTakenByUi())
+    // The camera flies only from the editor. With it closed, the keyboard and mouse belong to the game and the camera stays put.
+    if (!GameHasFocus() || overlay::KeyboardTakenByUi() || !overlay::MenuOpen()) {
+        overlay::TakeMouseWheel();
         return;
+    }
 
     Settings& s = g_settings;
     double speed = s.FlySpeed;

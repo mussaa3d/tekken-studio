@@ -27,18 +27,18 @@ struct Codec {
 };
 const std::vector<Codec>& Codecs();
 
-enum class Look { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth };
+enum class Look { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth, EffectsOnBlack };
 const char* LookName(Look look);
 
 // What the game should show for the frame being rendered.
-enum class Pass { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth };
+enum class Pass { Picture, Greenscreen, StageOnly, FightersOnBlack, Depth, EffectsOnBlack };
 
 struct Stream {
     char Name[24] = "";
     Look Look = Look::Picture;
     bool Enabled = false;
 };
-constexpr int MaxStreams = 4;
+constexpr int MaxStreams = 5;
 
 struct Settings {
     int Fps = 60;
