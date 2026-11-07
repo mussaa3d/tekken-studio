@@ -616,6 +616,12 @@ bool MenuOpen()
 void ToggleMenu()
 {
     g_menuOpen = !g_menuOpen;
+    // Closed, the game has the keyboard and nothing would undo the editor's pause, which freezes the game's own menus and replay
+    // controls too. So closing the editor hands the game back running. A recording keeps its own hold on time.
+    if (!g_menuOpen && game::Time().Paused && !recorder::Active()) {
+        game::Time().Paused = false;
+        mod::Log("Editor closed: the game runs again");
+    }
 }
 
 bool IsGameForeground()

@@ -49,7 +49,7 @@ The installer isn't signed, so Windows SmartScreen may say it's from an unknown 
 
 To make a shot: pause, go to a moment on the ruler, press F5 and fly the camera, press K for a key, move along the timeline, and add more keys. Then press **Preview shot** to watch it and **Record shot** to record it.
 
-While the editor is open it has the keyboard, and the game gets none of it. With the editor closed every key goes to the game (Escape opens its menu and so on), and Insert is the only key the mod listens for. The free camera flies only from the editor.
+While the editor is open it has the keyboard, and the game gets none of it. With the editor closed every key goes to the game (Escape opens its menu and so on), and Insert is the only key the mod listens for. The free camera flies only from the editor. Closing the editor also lifts its pause (unless it's recording), since the game's own controls can't move a game the editor holds still.
 
 | Key (editor open) | Does |
 |---|---|
