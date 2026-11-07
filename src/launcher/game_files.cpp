@@ -226,10 +226,49 @@ fs::path SkinMountDir(const GameInstall& game)
     return game.Paks / "~tekken8mvm";
 }
 
+namespace {
+
+// Reads a file the way a loaded DLL allows: the game, or a virus scanner looking at a new file, keeps it open, and a plain read
+// can be refused then. False if it can't be opened at all.
+bool ReadShared(const fs::path& path, std::string& contents)
+{
+    contents.clear();
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+    LARGE_INTEGER size {};
+    bool ok = GetFileSizeEx(file, &size) && size.QuadPart < (1ll << 30);
+    if (ok) {
+        contents.resize(static_cast<size_t>(size.QuadPart));
+        DWORD read = 0;
+        ok = contents.empty() || (ReadFile(file, contents.data(), static_cast<DWORD>(contents.size()), &read, nullptr) && read == contents.size());
+    }
+    CloseHandle(file);
+    return ok;
+}
+
+bool HasMarker(const std::string& contents)
+{
+    return contents.find(Marker) != std::string::npos || contents.find(OldMarker) != std::string::npos;
+}
+
+// A DLL the game has just let go of can stay busy for a moment, so each step gets a few tries over about five seconds.
+template <typename Step> bool WithRetries(Step step)
+{
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        if (step())
+            return true;
+        Sleep(500);
+    }
+    return false;
+}
+
+} // namespace
+
 bool IsOurDll(const fs::path& path)
 {
-    const std::string contents = ReadTextFile(path);
-    return contents.find(Marker) != std::string::npos || contents.find(OldMarker) != std::string::npos;
+    std::string contents;
+    return ReadShared(path, contents) && HasMarker(contents);
 }
 
 bool ModFilesPresent(const GameInstall& game)
@@ -314,14 +353,24 @@ InstallResult InstallMod(const GameInstall& game, const fs::path& modDll, const 
         return Fail("The game folder isn't there yet: " + game.Win64.string());
 
     const fs::path target = game.Win64 / "dinput8.dll";
-    if (fs::exists(target, error) && !IsOurDll(target)) {
-        fs::rename(target, game.Win64 / BackupName, error);
-        if (error)
-            return Fail("Couldn't set aside the other dinput8.dll: " + error.message());
+    if (fs::exists(target, error)) {
+        // Only a dinput8.dll that's surely another mod's gets set aside. One that can't be read yet is waited for, not guessed at.
+        std::string contents;
+        if (!WithRetries([&] { return ReadShared(target, contents); }))
+            return Fail("The game folder's dinput8.dll is in use, so the game is probably still closing. Wait a few seconds and try again.");
+        if (!HasMarker(contents) && !WithRetries([&] {
+                error.clear();
+                fs::rename(target, game.Win64 / BackupName, error);
+                return !error;
+            }))
+            return Fail("Couldn't set aside the other dinput8.dll (" + error.message() + "). If the game is still closing, wait a few seconds and try again.");
     }
-    fs::copy_file(modDll, target, fs::copy_options::overwrite_existing, error);
-    if (error)
-        return Fail("Couldn't copy the mod in (is the game running?): " + error.message());
+    if (!WithRetries([&] {
+            error.clear();
+            fs::copy_file(modDll, target, fs::copy_options::overwrite_existing, error);
+            return !error;
+        }))
+        return Fail("Couldn't copy the mod in (is the game still running?): " + error.message());
 
     fs::create_directories(DataDir(game), error);
     for (const fs::path& folder : skinFolders) {
@@ -345,11 +394,12 @@ InstallResult RemoveMod(const GameInstall& game)
     fs::remove(DataDir(game) / "session.lock", error);
 
     const fs::path target = game.Win64 / "dinput8.dll";
-    if (fs::exists(target, error) && IsOurDll(target)) {
-        fs::remove(target, error);
-        if (error)
-            return Fail("Couldn't remove the mod (is the game still running?): " + error.message());
-    }
+    if (fs::exists(target, error) && IsOurDll(target) && !WithRetries([&] {
+            error.clear();
+            fs::remove(target, error);
+            return !error;
+        }))
+        return Fail("Couldn't remove the mod (is the game still running?): " + error.message());
     if (fs::exists(game.Win64 / BackupName, error) && !fs::exists(target, error)) {
         fs::rename(game.Win64 / BackupName, target, error);
         if (error)

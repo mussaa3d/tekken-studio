@@ -1,4 +1,6 @@
 // Checks that need no game: run tekken8mvm_tests.exe; it prints failures and exits non-zero if any.
+#include <windows.h>
+
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -455,6 +457,26 @@ static void TestSessionFiles()
     result = files::RemoveMod(game);
     CHECK(result.Ok);
     CHECK(files::ReadTextFile(game.Win64 / "dinput8.dll") == "someone else's mod");
+
+    // Our DLL held open the way a running game holds it (reading allowed, writing not) is still known as ours and is never moved
+    // aside as someone else's. The real report: "Couldn't set aside the other dinput8.dll: Access is denied."
+    fs::remove(game.Win64 / "dinput8.dll");
+    result = files::InstallMod(game, built, {});
+    CHECK(result.Ok);
+    {
+        HANDLE held = CreateFileW((game.Win64 / "dinput8.dll").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        CHECK(held != INVALID_HANDLE_VALUE);
+        CHECK(files::IsOurDll(game.Win64 / "dinput8.dll"));
+        result = files::InstallMod(game, built, {});
+        CHECK(!result.Ok);
+        CHECK(result.Message.find("set aside") == std::string::npos);
+        CHECK(!fs::exists(game.Win64 / "dinput8.dll.tekken8mvm-backup"));
+        CloseHandle(held);
+    }
+    result = files::RemoveMod(game);
+    CHECK(result.Ok);
+    CHECK(!fs::exists(game.Win64 / "dinput8.dll"));
+    Touch(game.Win64 / "dinput8.dll", "someone else's mod");
 
     // Other mods are reported and left alone; the game's own paks and our session folder aren't other mods.
     Touch(game.Paks / "pakchunk0-Windows.pak", "game");
