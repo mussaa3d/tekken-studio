@@ -1,6 +1,7 @@
 #include "mod/presets.h"
 
 #include <algorithm>
+#include <mutex>
 #include <cstdio>
 #include <filesystem>
 
@@ -53,6 +54,8 @@ void WriteLook(Ini& ini)
     ini.SetBool("time.blend", t.Interpolate);
     ini.SetNumber("camera.path_style", static_cast<double>(static_cast<int>(camera::Config().PathStyle)));
     ini.SetBool("time.ramp", t.UseSpeedRamp);
+    ini.SetBool("time.no_game_slowmo", t.NoGameSlowMotion);
+    ini.SetBool("camera.thirds", camera::Config().RuleOfThirds);
 
     const camera::Settings& c = camera::Config();
     ini.SetNumber("camera.filter", static_cast<int>(c.Filter));
@@ -70,6 +73,7 @@ void WriteLook(Ini& ini)
     for (int i = 0; i < 3; ++i)
         ini.SetNumber("scene.character_light_" + std::to_string(i), sc.CharacterLightColor[i]);
     ini.SetBool("scene.plain_stage", sc.PlainStage);
+    ini.SetBool("fog.from_camera", dvars::Tint().FogFromCamera);
     ini.SetBool("scene.no_camera_shake", sc.NoCameraShake);
     ini.SetNumber("scene.frame", static_cast<int>(sc.Frame));
     ini.SetNumber("scene.aspect_ratio", sc.AspectRatio);
@@ -134,6 +138,8 @@ void ReadLook(const Ini& ini)
     t.Interpolate = ini.GetBool("time.blend", t.Interpolate);
     camera::Config().PathStyle = static_cast<cine::PathStyle>(std::clamp(static_cast<int>(ini.GetNumber("camera.path_style", static_cast<int>(camera::Config().PathStyle))), 0, 2));
     t.UseSpeedRamp = ini.GetBool("time.ramp", t.UseSpeedRamp);
+    t.NoGameSlowMotion = ini.GetBool("time.no_game_slowmo", t.NoGameSlowMotion);
+    camera::Config().RuleOfThirds = ini.GetBool("camera.thirds", camera::Config().RuleOfThirds);
 
     camera::Settings& c = camera::Config();
     c.Filter = static_cast<camera::Filter>(static_cast<int>(ini.GetNumber("camera.filter", static_cast<int>(c.Filter))));
@@ -151,6 +157,7 @@ void ReadLook(const Ini& ini)
     for (int i = 0; i < 3; ++i)
         sc.CharacterLightColor[i] = static_cast<float>(ini.GetNumber("scene.character_light_" + std::to_string(i), sc.CharacterLightColor[i]));
     sc.PlainStage = ini.GetBool("scene.plain_stage", sc.PlainStage);
+    dvars::Tint().FogFromCamera = ini.GetBool("fog.from_camera", dvars::Tint().FogFromCamera);
     sc.NoCameraShake = ini.GetBool("scene.no_camera_shake", sc.NoCameraShake);
     sc.Frame = static_cast<scene::Frame>(static_cast<int>(ini.GetNumber("scene.frame", static_cast<int>(sc.Frame))));
     sc.AspectRatio = static_cast<float>(ini.GetNumber("scene.aspect_ratio", sc.AspectRatio));
@@ -236,9 +243,8 @@ std::vector<std::string> SavedPresets()
     return ListFiles(Folder("presets"), ".t8preset");
 }
 
-bool SaveShot(const std::string& name)
+void WriteShot(Ini& ini)
 {
-    Ini ini;
     WriteLook(ini);
     const auto keys = camera::Keys();
     ini.SetNumber("path.count", static_cast<double>(keys.size()));
@@ -256,14 +262,10 @@ bool SaveShot(const std::string& name)
         snprintf(row, sizeof(row), "%.6f %.6f", speed[i].Time, speed[i].Speed);
         ini.Set("ramp." + std::to_string(i), row);
     }
-    return ini.Save(Folder("shots") / (name + ".t8shot"));
 }
 
-bool LoadShot(const std::string& name)
+void ReadShot(const Ini& ini)
 {
-    Ini ini;
-    if (!ini.Load(Folder("shots") / (name + ".t8shot")))
-        return false;
     ReadLook(ini);
 
     std::vector<cine::CameraKey> keys;
@@ -286,7 +288,129 @@ bool LoadShot(const std::string& name)
             speed.push_back(key);
     }
     game::SetSpeedKeys(std::move(speed));
+}
+
+bool SaveShot(const std::string& name)
+{
+    Ini ini;
+    WriteShot(ini);
+    return ini.Save(Folder("shots") / (name + ".t8shot"));
+}
+
+bool LoadShot(const std::string& name)
+{
+    Ini ini;
+    if (!ini.Load(Folder("shots") / (name + ".t8shot")))
+        return false;
+    ReadShot(ini);
     return true;
+}
+
+// ----- Undo. The editor's state is written down the same way a shot is, and a change shows up as a difference from the last copy.
+namespace {
+std::mutex g_undoMutex;
+std::vector<Ini> g_undo, g_redo;
+Ini g_undoCurrent;
+bool g_undoReady = false;
+constexpr size_t MaxUndo = 64;
+
+Ini CaptureForUndo()
+{
+    Ini ini;
+    WriteShot(ini);
+    if (game::Time().UseSpeedRamp)
+        ini.Set("time.speed", ""); // the ramp moves it every frame
+    return ini;
+}
+} // namespace
+
+void UndoWatch(bool settled)
+{
+    // Not while something is being dragged, so one drag is one step.
+    static int wait = 0;
+    if (!settled || --wait > 0)
+        return;
+    wait = 6;
+    Ini now = CaptureForUndo();
+    std::lock_guard lock(g_undoMutex);
+    if (!g_undoReady) {
+        g_undoCurrent = std::move(now);
+        g_undoReady = true;
+        return;
+    }
+    if (now.Values() == g_undoCurrent.Values())
+        return;
+    g_undo.push_back(std::move(g_undoCurrent));
+    if (g_undo.size() > MaxUndo)
+        g_undo.erase(g_undo.begin());
+    g_redo.clear();
+    g_undoCurrent = std::move(now);
+}
+
+static bool StepUndo(std::vector<Ini>& from, std::vector<Ini>& to)
+{
+    std::lock_guard lock(g_undoMutex);
+    if (from.empty())
+        return false;
+    to.push_back(std::move(g_undoCurrent));
+    g_undoCurrent = std::move(from.back());
+    from.pop_back();
+    Ini wanted = g_undoCurrent;
+    if (wanted.Get("time.speed").empty())
+        wanted.SetNumber("time.speed", game::Time().Speed);
+    ReadShot(wanted);
+    return true;
+}
+
+bool Undo()
+{
+    return StepUndo(g_undo, g_redo);
+}
+
+bool Redo()
+{
+    return StepUndo(g_redo, g_undo);
+}
+
+void ResetAll()
+{
+    camera::Config() = {};
+    camera::ClearKeys();
+    game::SetSpeedKeys({});
+    game::Time() = {};
+    effects::Config() = {};
+    effects::RequestRefresh();
+    scene::Config() = {};
+    lights::Rig() = {};
+    postfx::FocusConfig() = {};
+    for (postfx::Control& control : postfx::All()) {
+        control.On = false;
+        control.Value = control.Default;
+    }
+    for (dvars::Slider& slider : dvars::All())
+        if (slider.Overridden)
+            dvars::Reset(slider);
+    dvars::Tint() = {};
+    dvars::TintChanged();
+
+    // The recording setup, but not where it saves or which ffmpeg it uses.
+    recorder::Settings& r = recorder::Config();
+    const recorder::Settings fresh;
+    r.Fps = fresh.Fps;
+    r.CodecIndex = fresh.CodecIndex;
+    r.SettleFrames = fresh.SettleFrames;
+    r.MotionSamples = fresh.MotionSamples;
+    r.ShutterDegrees = fresh.ShutterDegrees;
+    r.Preview = fresh.Preview;
+    r.BlueKey = fresh.BlueKey;
+    r.GreenDarkness = fresh.GreenDarkness;
+    r.DepthNear = fresh.DepthNear;
+    r.DepthFar = fresh.DepthFar;
+    r.DepthCurve = fresh.DepthCurve;
+    r.UseRange = false;
+    for (int i = 0; i < recorder::MaxStreams; ++i)
+        r.Streams[i].Enabled = i == 0;
+    mod::Log("Reset: everything back to how it starts");
 }
 
 std::vector<std::string> SavedShots()

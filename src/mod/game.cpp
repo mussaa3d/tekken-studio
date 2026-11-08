@@ -81,6 +81,7 @@ int g_seekWaits = 0;
 bool g_seekJumped = false;
 bool g_seekToRound = false;
 bool g_seekWarming = false;
+bool g_seekFromStart = false; // landing on the replay's first point and letting it play, intro and all
 bool g_clothResetPending = false;
 double g_lastRealDt = StepSeconds;
 double g_lastAdvance = StepSeconds;
@@ -201,9 +202,23 @@ void FollowFight()
         ForgetMotion();
 }
 
+// What GetGameSpeedTotal multiplies together: two floats on the battle's owner object. They're how the game slows the fight at a KO (0.01).
+void** g_gameSpeedOwner = nullptr;
+constexpr uintptr_t GameSpeedFactors = 0x1570;
+
+void HoldGameSpeed()
+{
+    if (!g_time.NoGameSlowMotion || !g_gameSpeedOwner || !*g_gameSpeedOwner)
+        return;
+    auto* factors = reinterpret_cast<float*>(static_cast<uint8_t*>(*g_gameSpeedOwner) + GameSpeedFactors);
+    factors[0] = factors[1] = 1.0f;
+}
+
 void RunStep()
 {
+    HoldGameSpeed();
     oTick(StepSeconds);
+    HoldGameSpeed();
     g_steps.fetch_add(1, std::memory_order_relaxed);
     FollowFight();
     camera::MarkNewStep();
@@ -227,7 +242,7 @@ void RunSeek(double target)
     g_alpha.store(0, std::memory_order_relaxed);
     g_lastAdvance = 32 * StepSeconds;
 
-    const int64_t wanted = std::llround((target + g_clockZero.load(std::memory_order_relaxed)) / StepSeconds);
+    const int64_t wanted = g_seekFromStart ? 0 : std::llround((target + g_clockZero.load(std::memory_order_relaxed)) / StepSeconds);
     if (g_position.load(std::memory_order_relaxed) == wanted) {
         EndSeek();
         return;
@@ -241,6 +256,13 @@ void RunSeek(double target)
             return;
         }
         RunStep();
+        return;
+    }
+    // The very start: the jump is done, and the intro plays from here at normal speed instead of being run through.
+    if (g_seekFromStart && g_seekJumped) {
+        g_seekFromStart = false;
+        g_clothResetPending = true;
+        EndSeek();
         return;
     }
     // The game's transition after a jump runs inside its step too, and the fight doesn't move until it's over.
@@ -625,7 +647,8 @@ void ApplyEngineTime()
             wanted = g_time.Speed;
     }
     // Restoring a saved point puts the game's own time back to normal, so this can't only be done on a change.
-    if (wanted != 1.0 || applied != 1.0) {
+    // The game sets its own dilation for big hits (0.1) and KOs (0.01). The option writes over it every tick.
+    if (wanted != 1.0 || applied != 1.0 || g_time.NoGameSlowMotion) {
         SetGlobalTimeDilation(static_cast<float>(wanted));
         applied = wanted;
     }
@@ -785,7 +808,7 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
 struct Addresses {
     uintptr_t GEngine = 0, FpsVariable = 0, GObjects = 0, AppendString = 0, GameModeTick = 0, TekkenTick = 0, FightStart = 0,
               DoUpdateCamera = 0, SetActorLocationAndRotation = 0, PerformAnimationProcessing = 0, CalculateProjection = 0, ReplayInput = 0, ReplayRewindSite = 0,
-              BattleRoundRead = 0;
+              BattleRoundRead = 0, GameSpeedOwner = 0;
 };
 
 // Rip-relative statics carry the operand offset; functions match at their first byte. Any entry can be
@@ -813,6 +836,7 @@ const Entry kEntries[] = {
     { "CalculateProjection", "48 8B C4 48 89 58 ?? 57 48 81 EC ?? ?? ?? ?? F6 41", 0, false, false, &Addresses::CalculateProjection },
     { "ReplayInput", "48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 50 48 8B F9 48 8B 2D ?? ?? ?? ?? 48 85 ED 0F 84", 0, false, false, &Addresses::ReplayInput },
     { "ReplayRewindSite", "E8 ?? ?? ?? ?? 45 33 C0 33 D2 48 8B C8 E8 ?? ?? ?? ?? 8B D8 4C 8B 0F 45 33 C0 8B D0 48 8B CF 41 FF 91 ?? ?? ?? ?? 85 DB 74 2D", 0, false, false, &Addresses::ReplayRewindSite },
+    { "GameSpeedOwner", "48 8B 0D ?? ?? ?? ?? 48 85 C9 0F 85 ?? ?? ?? ?? F3 0F 10 05 ?? ?? ?? ?? C3", 3, true, false, &Addresses::GameSpeedOwner },
     { "BattleRoundRead", "E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 8B 88 ?? ?? ?? ?? 89 4D 24", 0, false, false, &Addresses::BattleRoundRead },
 };
 
@@ -885,6 +909,7 @@ bool Initialize()
     g_hooks.Camera = Install(addresses.DoUpdateCamera, reinterpret_cast<void*>(&DetourCamera), oCamera, "DoUpdateCamera");
     g_hooks.Actors = Install(addresses.SetActorLocationAndRotation, reinterpret_cast<void*>(&DetourActor), oActor, "SetActorLocationAndRotation");
     g_hooks.Bones = Install(addresses.PerformAnimationProcessing, reinterpret_cast<void*>(&DetourBones), oBones, "PerformAnimationProcessing");
+    g_gameSpeedOwner = reinterpret_cast<void**>(addresses.GameSpeedOwner);
     g_hooks.Fov = Install(addresses.CalculateProjection, reinterpret_cast<void*>(&DetourProjection), oProjection, "CalculateProjection");
     mod::Log("Hooks: tick %d, gamemode %d, camera %d, actors %d, bones %d, fight %d, fov %d", g_hooks.Tick, g_hooks.GameMode, g_hooks.Camera,
              g_hooks.Actors, g_hooks.Bones, g_hooks.FightStart, g_hooks.Fov);
@@ -961,8 +986,19 @@ void ReleaseExactFrames()
     SetExactFrames(false);
 }
 
+void SeekToStart()
+{
+    g_seekWarming = false;
+    g_seekWaits = 0;
+    g_seekJumped = false;
+    g_seekToRound = true;
+    g_seekFromStart = true;
+    g_seekTarget = 0.0;
+}
+
 void SeekTo(double seconds)
 {
+    g_seekFromStart = false;
     g_seekWarming = false;
     g_seekWaits = 0;
     g_seekJumped = false;
@@ -972,6 +1008,7 @@ void SeekTo(double seconds)
 
 void SeekToRound(uint32_t frame)
 {
+    g_seekFromStart = false;
     g_seekWarming = false;
     g_seekWaits = 0;
     g_seekJumped = false;

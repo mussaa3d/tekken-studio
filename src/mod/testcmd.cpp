@@ -8,6 +8,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "mod/audio.h"
 #include "mod/camera.h"
@@ -78,6 +79,44 @@ void WriteState()
     out.close();
     std::error_code ignored;
     std::filesystem::rename(mod::DataDir() / "state.tmp", mod::DataDir() / "state.txt", ignored);
+}
+
+// Test only: logs the game's own idea of its speed whenever it changes.
+int g_speedTrace = 0;
+
+double GameSpeedValue(const char* cls, const char* function)
+{
+    void* owner = ue::FindClass(cls);
+    void* fn = owner ? ue::FindFunction(owner, function) : nullptr;
+    if (!fn)
+        return -1;
+    const int worldAt = ue::PropertyOffset(fn, "WorldContextObject");
+    const int returnAt = ue::PropertyOffset(fn, "ReturnValue");
+    if (returnAt < 0)
+        return -2;
+    uint8_t params[128] = {};
+    if (worldAt >= 0)
+        *reinterpret_cast<void**>(params + worldAt) = ue::World();
+    ue::FunctionRef ref { cls, function };
+    if (!ue::Call(nullptr, ref, params))
+        return -3;
+    return *reinterpret_cast<float*>(params + returnAt);
+}
+
+void SpeedTrace()
+{
+    if (!g_speedTrace)
+        return;
+    static double last[3] = { -9, -9, -9 };
+    const double now[3] = { GameSpeedValue("GameplayStatics", "GetGlobalTimeDilation"), GameSpeedValue("PolarisBlueprintLibrary", "GetGameSpeedTotal"),
+                            GameSpeedValue("PolarisBlueprintLibrary", "GetFrameSkip") };
+    if (now[0] != last[0] || now[1] != last[1] || now[2] != last[2]) {
+        int round = -1;
+        uint32_t frame = 0;
+        replay::Position(round, frame);
+        mod::Log("[speed] frame %u: dilation %g, game speed %g, frame skip %g", frame, now[0], now[1], now[2]);
+    }
+    std::copy(now, now + 3, last);
 }
 
 std::string Rest(std::istringstream& in)
@@ -611,6 +650,57 @@ void Run(const std::string& line)
             sc.Frame = static_cast<scene::Frame>(static_cast<int>(a));
         else if (what == "aspect")
             sc.AspectRatio = static_cast<float>(a);
+    } else if (command == "subprop") {
+        // subprop <Class> <Property> [float]: reads, and can write, a value on every object of a class
+        std::string name, property;
+        float value = 0;
+        in >> name >> property;
+        const bool write = static_cast<bool>(in >> value);
+        void* cls = ue::FindClass(name);
+        const int at = cls ? ue::PropertyOffset(cls, property) : -1;
+        for (void* object : cls && at >= 0 ? ue::AllObjectsOf(cls) : std::vector<void*>()) {
+            if (write && !(ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject))
+                ue::Field<float>(object, at) = value;
+            mod::Log("[prop] %s %s.%s = %g (int %d, byte %d)", ue::NameOf(object).c_str(), name.c_str(), property.c_str(), ue::Field<float>(object, at), ue::Field<int>(object, at), ue::Field<uint8_t>(object, at));
+        }
+    } else if (command == "fninfo") {
+        // fninfo <Class> <Function>: the function's parameters
+        std::string name, function;
+        in >> name >> function;
+        void* fn = ue::FindFunction(ue::FindClass(name), function);
+        mod::Log("[fn] %s.%s %p", name.c_str(), function.c_str(), fn);
+        if (fn)
+            for (const std::string& property : ue::PropertyNames(fn))
+                mod::Log("[fn]   %s", property.c_str());
+    } else if (command == "speedtrace") {
+        in >> g_speedTrace;
+    } else if (command == "displayset") {
+        // displayset <row> <option>: sets one row of the replay's display settings
+        int choices[switcher::DisplayRows];
+        std::fill(std::begin(choices), std::end(choices), -1);
+        in >> n >> m;
+        choices[std::clamp(n, 0, switcher::DisplayRows - 1)] = m;
+        std::string error;
+        if (!switcher::ApplyDisplay(choices, error))
+            mod::Log("[test] displayset: %s", error.c_str());
+    } else if (command == "slowmo") {
+        in >> n;
+        t.NoGameSlowMotion = n != 0;
+    } else if (command == "reset") {
+        presets::ResetAll();
+    } else if (command == "undo") {
+        mod::Log("[test] undo: %d", presets::Undo() ? 1 : 0);
+    } else if (command == "fogcam") {
+        in >> n;
+        dvars::Tint().FogFromCamera = n != 0;
+    } else if (command == "thirds") {
+        in >> n;
+        c.RuleOfThirds = n != 0;
+    } else if (command == "focusmode") {
+        in >> n;
+        postfx::FocusConfig().Mode = static_cast<postfx::Focus>(n);
+    } else if (command == "start") {
+        game::SeekToStart();
     } else if (command == "hudlist") {
         effects::LogVisibleWidgets();
     } else if (command == "hitlabels") {
@@ -689,6 +779,7 @@ void OnGameTick()
 {
     if (!g_enabled)
         return;
+    SpeedTrace();
     static int frames = 0;
     if (++frames < 6)
         return;

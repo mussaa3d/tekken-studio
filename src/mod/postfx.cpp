@@ -43,7 +43,7 @@ std::vector<Control> MakeControls()
         one("Lens", "Film grain", "FilmGrainIntensity", 0.0f, 1.0f, 0.0f),
         one("Lens", "Colour fringe", "SceneFringeIntensity", 0.0f, 5.0f, 0.0f),
         one("Lens", "Engine motion blur", "MotionBlurAmount", 0.0f, 1.0f, 0.5f),
-        one("Depth of field", "Focus distance", "DepthOfFieldFocalDistance", 10.0f, 5000.0f, 400.0f),
+        one("Depth of field", "Focus distance", "DepthOfFieldFocalDistance", 1.0f, 5000.0f, 400.0f),
         one("Depth of field", "Aperture (f-stop)", "DepthOfFieldFstop", 0.1f, 32.0f, 2.8f),
         one("Depth of field", "Sensor width", "DepthOfFieldSensorWidth", 1.0f, 100.0f, 24.0f),
     };
@@ -131,6 +131,8 @@ void Apply(void* manager, cine::Vec3 cameraLocation)
                 value = static_cast<float>(cine::Length(p2 - cameraLocation));
             else if (g_focus.Mode == Focus::BetweenFighters && have1 && have2)
                 value = static_cast<float>(cine::Length(cine::Lerp(p1, p2, 0.5) - cameraLocation));
+            else if (g_focus.Mode == Focus::Camera)
+                value = 1.0f; // sharp at the lens, softer the further from it
             control.Value = value;
             on = true;
         }

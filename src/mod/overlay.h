@@ -11,6 +11,9 @@ bool MenuOpen();
 void ToggleMenu();
 bool IsGameForeground();
 
+// Whether a key or mouse button is held: from the window's own messages, and from Windows where it answers.
+bool KeyDown(int virtualKey);
+
 // A text box has the keyboard, so typed letters mustn't fly the camera or trigger hotkeys.
 bool KeyboardTakenByUi();
 
@@ -50,6 +53,7 @@ namespace menu {
 void ApplyStyle();
 void Draw();
 void DrawOsd();
+void ShowNotice(const char* text);
 void SetTab(int tab);
 constexpr int TabCount = 4;
 bool RunUiTest(); // true once it has finished

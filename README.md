@@ -25,6 +25,11 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
   - **Quality:** global illumination (none, Lumen, screen space), reflections, their quality, shadow quality and anti-aliasing. The x beside one puts the game's own back.
   - **Stage:** a plain stage, every stage mesh in the engine's grey material, and no camera shake.
   - **Frame:** the game's own shape, fill the screen with no black bars, or a fixed aspect ratio such as 2.39:1, which the recording keeps.
+- **Replay display (VISUALS tab):** the game's own display settings for replays from inside the editor: command history, HUD, health info, in-battle status (the combo counter), attack and frame info, hit properties (the High, Mid and Low text), the tips and version info. Pick what you want and press **Apply to the replay**: the tool opens the replay's menu and sets them, with your mouse moving by itself for a few seconds.
+- **Undo:** Ctrl+Z and Ctrl+Y undo and redo your settings, camera path and speed ramp, up to 64 steps. **File > Reset the mod** puts every setting back to how it starts.
+- **From the camera:** the depth stream now starts at the camera (Depth near 0), autofocus has **From the camera**, and **Fog starts at the camera** thickens the fog only with distance from you.
+- **Rule of thirds:** guides over the picture (View menu), never in a recording.
+- **No slow motion on big hits and KOs** (Time group) holds the game's own slowdowns at normal speed. At a KO the fighters still hold their pose for a moment, because that's part of the fight, but the world and effects keep moving.
 - **Change replay from inside a replay:** in the REPLAYS tab, pick one and press **Play this replay**, or double-click it. It takes about 20 seconds.
 - **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight: at 0.01x a jacket strap moves at 0.01 speed. In very deep slow motion cloth moves in small hops rather than a perfect glide (about 5 a second at 0.023x), because its solver comes apart in slices shorter than 1/480 s of fight time. Rewinding to a moment gives the same clothes every time.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.
@@ -40,7 +45,7 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
 - **Replay vault:** snapshot your own saves on this PC, tagged with the game build, and restore them.
 
 ## Install
-Run `tekken8mvm-0.1-setup.exe`. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
+Run `tekken8mvm-1.0-setup.exe`. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
 
 The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
 
@@ -63,7 +68,8 @@ While the editor is open it has the keyboard, and the game gets none of it. With
 | Left, Right | Back and forward 1 s (Shift 5 s, Ctrl 1 frame) |
 | `,` `.` | Back and forward 1 frame |
 | Up, Down, or `[` `]` | Faster, slower |
-| Home | Start of the timeline |
+| Home | The very start of the replay, intro included |
+| Ctrl+Z, Ctrl+Y | Undo, redo |
 | F4 | Free camera looks with the mouse or the arrow keys |
 | F5 | Free camera |
 | F6 | Play dolly path |

@@ -22,7 +22,7 @@ constexpr ULONGLONG KeyHoldMs = 120, KeyGapMs = 350;
 constexpr ULONGLONG ScreenTimeoutMs = 45000; // the winner's scene can be long
 constexpr double SceneSpeed = 4.0;
 
-enum class Stage { Idle, ToMatchEnd, EndMenu, ToList, TabClick, Rows, WaitForFight };
+enum class Stage { Idle, ToMatchEnd, EndMenu, ToList, TabClick, Rows, WaitForFight, Display };
 
 Stage g_stage = Stage::Idle;
 std::deque<int> g_keys;
@@ -87,6 +87,44 @@ void Fail(const char* why)
     }
 }
 
+// One thing at a time on the game's replay menu, with room between them for its animations.
+struct Act {
+    enum Kind { Key, Move, Press, Release, Wait } What;
+    int KeyCode = 0;
+    float X = 0, Y = 0; // in the 1456x819 frame of the game's picture
+    ULONGLONG Ms = 0;
+};
+std::deque<Act> g_acts;
+ULONGLONG g_actAt = 0;
+bool g_reopenEditor = false;
+
+POINT ClientPoint(float x, float y)
+{
+    HWND window = GetForegroundWindow();
+    RECT client {};
+    GetClientRect(window, &client);
+    POINT point { static_cast<LONG>(client.right * x / 1456.0f), static_cast<LONG>(client.bottom * y / 819.0f) };
+    ClientToScreen(window, &point);
+    return point;
+}
+
+void MouseButton(bool down)
+{
+    INPUT input = {};
+    input.type = INPUT_MOUSE;
+    input.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+    SendInput(1, &input, sizeof(INPUT));
+}
+
+// The game only follows the mouse when it sees it move, so each click comes after a small move onto the spot.
+void QueueClick(float x, float y)
+{
+    g_acts.push_back({ Act::Move, 0, x - 8, y - 3, 500 });
+    g_acts.push_back({ Act::Move, 0, x, y, 500 });
+    g_acts.push_back({ Act::Press, 0, x, y, 40 }); // measured: 40 ms chooses, while 0 and 120 ms close the list without choosing
+    g_acts.push_back({ Act::Release, 0, x, y, 800 });
+}
+
 void QueueRows()
 {
     for (int i = 0; i < g_row; ++i)
@@ -116,6 +154,66 @@ void ClickTab()
 }
 
 } // namespace
+
+const DisplayRow& DisplayRowInfo(int row)
+{
+    static const DisplayRow rows[DisplayRows] = {
+        { "Player command history", 2 }, { "Opponent command history", 2 }, { "HUD", 2 }, { "Health info", 2 }, { "In-battle status (combo counter)", 2 },
+        { "Player attack info", 2 }, { "Opponent attack info", 2 }, { "Player frame info", 4 }, { "Opponent frame info", 4 }, { "Hit properties (High, Mid, Low)", 2 },
+        { "Recommended punishment", 3 }, { "Recommended sample combos", 3 }, { "High moves you can duck under", 3 }, { "Throw commands", 3 }, { "Version info", 2 },
+    };
+    return rows[row];
+}
+
+const char* DisplayOption(int row, int option)
+{
+    static const char* const shown[] = { "Display", "Hide" };
+    static const char* const frame[] = { "Show details", "Simple display", "Show frame advantage", "Hide" };
+    static const char* const tips[] = { "Display while paused", "Display without pausing", "Hide" };
+    const int count = DisplayRowInfo(row).Options;
+    if (option < 0 || option >= count)
+        return "";
+    return count == 4 ? frame[option] : (count == 3 ? tips[option] : shown[option]);
+}
+
+bool ApplyDisplay(const int (&choices)[DisplayRows], std::string& error)
+{
+    if (g_stage != Stage::Idle) {
+        error = "The tool is busy with the game's screens";
+        return false;
+    }
+    if (!replay::CanJump()) {
+        error = "Open a replay first";
+        return false;
+    }
+    bool any = false;
+    for (int row = 0; row < DisplayRows; ++row)
+        any = any || choices[row] >= 0;
+    if (!any) {
+        error = "Choose something to change first";
+        return false;
+    }
+    g_reopenEditor = overlay::MenuOpen();
+    if (g_reopenEditor)
+        overlay::ToggleMenu();
+    game::Time().Paused = false;
+
+    // Measured at 1456x819: rows are 34 apart from 137, and a row's list opens at the row with its choices 34 apart.
+    g_acts.clear();
+    g_acts.push_back({ Act::Wait, 0, 0, 0, 500 });
+    g_acts.push_back({ Act::Key, 'B', 0, 0, 1800 });
+    for (int row = 0; row < DisplayRows; ++row) {
+        if (choices[row] < 0)
+            continue;
+        const float y = 137.0f + 34.0f * row;
+        QueueClick(650, y);
+        QueueClick(1010, y + 34.0f * choices[row]);
+    }
+    g_acts.push_back({ Act::Key, 'K', 0, 0, 900 });
+    g_actAt = 0;
+    Enter(Stage::Display, "Setting the replay's display options");
+    return true;
+}
 
 bool Start(int slot, std::string& error)
 {
@@ -174,6 +272,7 @@ bool Start(int slot, std::string& error)
 
 void Cancel()
 {
+    g_acts.clear();
     if (g_stage != Stage::Idle)
         Fail("Cancelled");
 }
@@ -222,6 +321,34 @@ void OnGameTick()
     const bool look = now >= nextLook;
     if (look)
         nextLook = now + 250;
+    if (g_stage == Stage::Display) {
+        if (g_heldKey || now < g_actAt)
+            return;
+        if (g_acts.empty()) {
+            g_stage = Stage::Idle;
+            g_status.clear();
+            mod::Log("Display options: done");
+            if (g_reopenEditor && !overlay::MenuOpen())
+                overlay::ToggleMenu();
+            return;
+        }
+        const Act act = g_acts.front();
+        g_acts.pop_front();
+        g_actAt = now + act.Ms;
+        if (act.What == Act::Key) {
+            SendKey(act.KeyCode, true);
+            g_heldKey = act.KeyCode;
+            g_nextKeyAt = now + KeyHoldMs + 80;
+        } else if (act.What == Act::Move) {
+            const POINT point = ClientPoint(act.X, act.Y);
+            SetCursorPos(point.x, point.y);
+        } else if (act.What == Act::Press) {
+            MouseButton(true);
+        } else if (act.What == Act::Release) {
+            MouseButton(false);
+        }
+        return;
+    }
     if (now - g_stageStart > ScreenTimeoutMs && g_stage != Stage::WaitForFight) {
         Fail("The game's screens didn't come up. Nothing was changed.");
         return;

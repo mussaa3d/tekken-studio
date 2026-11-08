@@ -469,6 +469,8 @@ void TimeGroup()
     ImGui::Checkbox("Speed ramp from the timeline", &t.UseSpeedRamp);
     ImGui::Checkbox("Blend motion between game steps", &t.Interpolate);
     Help("The game only moves in 60 Hz steps. Blending poses between steps is what makes slow motion smooth.");
+    ImGui::Checkbox("No slow motion on big hits and KOs", &t.NoGameSlowMotion);
+    Help("The game slows the world for a moment on some hits, and almost stops it at a KO. This keeps it at the timescale you set.");
     ImGui::Checkbox("Slow the effects too", &t.ScaleEffects);
     Help("Sparks, cloth and materials follow the timescale through the engine's time dilation.");
     float cap = static_cast<float>(t.FpsCap);
@@ -596,6 +598,41 @@ void VisualsTab()
         changed |= ImGui::Checkbox("No vignette", &e.NoVignette);
     }
 
+    if (Group("Replay display")) {
+        static int choices[switcher::DisplayRows];
+        static const bool ready = [] {
+            std::fill(std::begin(choices), std::end(choices), -1);
+            return true;
+        }();
+        (void)ready;
+        ImGui::TextColored(Dim, "The game's own display settings for replays.");
+        for (int row = 0; row < switcher::DisplayRows; ++row) {
+            const switcher::DisplayRow& info = switcher::DisplayRowInfo(row);
+            ImGui::PushID(row);
+            BarWidth();
+            if (ImGui::BeginCombo(info.Label, choices[row] < 0 ? "Leave as it is" : switcher::DisplayOption(row, choices[row]))) {
+                if (ImGui::Selectable("Leave as it is", choices[row] < 0))
+                    choices[row] = -1;
+                for (int option = 0; option < info.Options; ++option)
+                    if (ImGui::Selectable(switcher::DisplayOption(row, option), option == choices[row]))
+                        choices[row] = option;
+                ImGui::EndCombo();
+            }
+            ImGui::PopID();
+        }
+        const bool busy = switcher::Running();
+        ImGui::BeginDisabled(busy);
+        if (ImGui::Button("Apply to the replay")) {
+            std::string error;
+            if (switcher::ApplyDisplay(choices, error))
+                std::fill(std::begin(choices), std::end(choices), -1);
+            else
+                Notice(error.c_str());
+        }
+        ImGui::EndDisabled();
+        Help("Opens the replay's own menu and sets these for you, which takes a few seconds with your mouse moving by itself. Don't touch the mouse or keyboard until the editor comes back. The game keeps them for your next replays too.");
+    }
+
     if (Group("Rage art and heat effects")) {
         changed |= ImGui::Checkbox("Hide hit sparks and glows", &e.NoHitEffects);
         Help("Hides the sparks of hits and the glows of rage arts and heat as they appear. Untick to get them back.");
@@ -612,7 +649,7 @@ void VisualsTab()
         ImGui::TextColored(Dim, "Needs Depth of field quality above 0 under Engine.");
         int focus = static_cast<int>(postfx::FocusConfig().Mode);
         BarWidth();
-        if (ImGui::Combo("Autofocus", &focus, "Off\0On P1\0On P2\0Between them\0"))
+        if (ImGui::Combo("Autofocus", &focus, "Off\0On P1\0On P2\0Between them\0From the camera\0"))
             postfx::FocusConfig().Mode = static_cast<postfx::Focus>(focus);
         PostFxGroup("Depth of field");
     }
@@ -635,6 +672,8 @@ void VisualsTab()
                 dvars::TintChanged();
             }
         }
+        ImGui::Checkbox("Fog starts at the camera", &tint.FogFromCamera);
+        Help("Moves the fog with the camera and takes its height falloff away, so it thickens only with distance from you. Fly up or down and it stays the same.");
         ImGui::Checkbox("Hide the map's mist and drifting particles with it", &effects::Config().FogHidesMist);
         Help("The map's mist is made of particles, which fog settings don't reach. This hides them while a fog colour is on. Hit sparks stay.");
     }
@@ -684,7 +723,7 @@ void VisualsTab()
         scene::Settings& s = scene::Config();
         int frame = static_cast<int>(s.Frame);
         BarWidth();
-        if (ImGui::Combo("Shape", &frame, "The game's own Fill the screen (no black bars) Fixed aspect ratio "))
+        if (ImGui::Combo("Shape", &frame, "The game's own\0Fill the screen (no black bars)\0Fixed aspect ratio\0"))
             s.Frame = static_cast<scene::Frame>(frame);
         if (s.Frame == scene::Frame::Fixed) {
             BarWidth();
@@ -902,6 +941,31 @@ double YToSpeed(float y, float top, float height)
 {
     const double u = std::clamp(static_cast<double>(top + height - y) / height, 0.0, 1.0);
     return std::exp(std::log(MinSpeed) + u * (std::log(MaxSpeed) - std::log(MinSpeed)));
+}
+
+// Guides over the picture. They're drawn with the editor, after the frame is captured, so they never end up in a recording.
+void DrawThirds(ImDrawList* draw, ImVec2 min, ImVec2 max)
+{
+    const scene::Settings& s = scene::Config();
+    if (s.Frame == scene::Frame::Fixed) {
+        // Inside the bars a fixed aspect ratio adds.
+        const float width = max.x - min.x, height = max.y - min.y;
+        if (s.AspectRatio > width / height) {
+            const float inset = (height - width / s.AspectRatio) * 0.5f;
+            min.y += inset;
+            max.y -= inset;
+        } else {
+            const float inset = (width - height * s.AspectRatio) * 0.5f;
+            min.x += inset;
+            max.x -= inset;
+        }
+    }
+    const ImU32 colour = IM_COL32(255, 255, 255, 110);
+    for (int i = 1; i <= 2; ++i) {
+        const float x = min.x + (max.x - min.x) * i / 3.0f, y = min.y + (max.y - min.y) * i / 3.0f;
+        draw->AddLine({ x, min.y }, { x, max.y }, colour);
+        draw->AddLine({ min.x, y }, { max.x, y }, colour);
+    }
 }
 
 void DrawDiamond(ImDrawList* draw, ImVec2 c, float r, ImU32 fill, ImU32 outline)
@@ -1258,6 +1322,10 @@ void ControlBar(ImVec2 position, ImVec2 size)
     bool hasFirstRound = false;
     for (const replay::SavedPoint& point : points)
         hasFirstRound = hasFirstRound || (point.Type == replay::TypeRoundStart && point.Round <= 1);
+    ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 4);
+    if (ImGui::SmallButton("Start"))
+        game::SeekToStart();
+    ++roundsShown;
     if (!points.empty() && !hasFirstRound)
         roundButton(1, points.front().Frame);
     for (const replay::SavedPoint& point : points)
@@ -1279,15 +1347,24 @@ void MenuBar()
 {
     if (!ImGui::BeginMainMenuBar())
         return;
+    bool wantReset = false;
     if (ImGui::BeginMenu("File")) {
         if (ImGui::MenuItem("Hide editor", "Insert"))
             overlay::ToggleMenu();
+        if (ImGui::MenuItem("Undo", "Ctrl+Z"))
+            Notice(presets::Undo() ? "Undone" : "Nothing to undo");
+        if (ImGui::MenuItem("Redo", "Ctrl+Y"))
+            Notice(presets::Redo() ? "Redone" : "Nothing to redo");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset the mod..."))
+            wantReset = true;
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
         ImGui::MenuItem("Hide the HUD", "F9", &effects::Config().HideHud);
         ImGui::MenuItem("Hide hit labels and frame data", nullptr, &effects::Config().HideHitLabels);
         ImGui::MenuItem("Follow the playhead", nullptr, &g_timeline.Follow);
+        ImGui::MenuItem("Rule of thirds", nullptr, &camera::Config().RuleOfThirds);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Keys")) {
@@ -1298,7 +1375,8 @@ void MenuBar()
             { "Left  Right", "Back and forward 1 s (Shift 5 s, Ctrl 1 frame)" },
             { ",  .", "Back and forward 1 frame" },
             { "Up  Down", "Faster and slower" },
-            { "Home", "Start of the timeline" },
+            { "Home", "The very start of the replay" },
+            { "Ctrl+Z  Ctrl+Y", "Undo and redo" },
             { "F4", "Free camera looks with the mouse or the arrow keys" },
             { "F5  F6", "Free camera, dolly path" },
             { "F7", "Record" },
@@ -1324,10 +1402,26 @@ void MenuBar()
         ImGui::TextUnformatted("Layout after IWXMVM. Engine notes from the Tekken Overlay rebuild.");
         ImGui::EndMenu();
     }
-    const char* label = "tekken8mvm 0.1  |  TEKKEN 8";
+    const char* label = "tekken8mvm 1.0  |  TEKKEN 8";
     ImGui::SameLine(ImGui::GetIO().DisplaySize.x - ImGui::CalcTextSize(label).x - ImGui::GetStyle().WindowPadding.x * 2);
     ImGui::TextColored(Dim, "%s", label);
     ImGui::EndMainMenuBar();
+
+    if (wantReset)
+        ImGui::OpenPopup("Reset the mod?");
+    if (ImGui::BeginPopupModal("Reset the mod?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Every setting goes back to how it starts, and the camera path and speed ramp are cleared.");
+        ImGui::TextColored(Dim, "Saved presets and shots, your recordings and your pak mods stay. Ctrl+Z brings it back.");
+        if (ImGui::Button("Reset")) {
+            presets::ResetAll();
+            Notice("Reset");
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
 }
 
 void RightPanel(ImVec2 position, ImVec2 size)
@@ -1673,6 +1767,10 @@ void Draw()
         background->AddText(at, IM_COL32(255, 255, 255, 235), hint);
     }
 
+    if (camera::Config().RuleOfThirds)
+        DrawThirds(ImGui::GetBackgroundDrawList(), viewMin, viewMax);
+    presets::UndoWatch(!ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left));
+
     g_layout.ViewCenter = { viewWidth * 0.5f, menuHeight + viewHeight * 0.5f };
     g_layout.PanelCenter = { (viewWidth + display.x) * 0.5f, menuHeight + viewHeight * 0.5f };
 
@@ -1682,8 +1780,15 @@ void Draw()
     Timeline({ 0, timelineTop }, { display.x, std::max(display.y - timelineTop, 1.0f) });
 }
 
+void ShowNotice(const char* text)
+{
+    Notice(text);
+}
+
 void DrawOsd()
 {
+    if (camera::Config().RuleOfThirds)
+        DrawThirds(ImGui::GetForegroundDrawList(), { 0, 0 }, ImGui::GetIO().DisplaySize);
     std::string text;
     const game::TimeControl& t = game::Time();
     if (camera::Config().Mode == camera::Mode::Free)

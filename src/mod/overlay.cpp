@@ -23,6 +23,7 @@
 #include "mod/game.h"
 #include "mod/guard.h"
 #include "mod/log.h"
+#include "mod/presets.h"
 #include "mod/recorder.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -167,6 +168,39 @@ void HandOverMessages()
         ImGui_ImplWin32_WndProcHandler(m.Window, m.Message, m.WParam, m.LParam);
 }
 
+// GetAsyncKeyState can answer nothing inside the game's process while Windows sees the key, so keys are also followed from the window's messages.
+std::atomic<bool> g_windowKeys[256];
+
+void NoteKey(UINT message, WPARAM wParam)
+{
+    const auto set = [](int key, bool down) {
+        if (key >= 0 && key < 256)
+            g_windowKeys[key] = down;
+    };
+    switch (message) {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+        set(static_cast<int>(wParam), true);
+        break;
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        set(static_cast<int>(wParam), false);
+        break;
+    case WM_RBUTTONDOWN:
+        set(VK_RBUTTON, true);
+        break;
+    case WM_RBUTTONUP:
+        set(VK_RBUTTON, false);
+        break;
+    case WM_KILLFOCUS:
+        for (auto& key : g_windowKeys)
+            key = false;
+        break;
+    default:
+        break;
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (guard::Tripped())
@@ -188,6 +222,8 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
 
     if (message == WM_MOUSEWHEEL && (!g_menuOpen || g_gameViewHovered))
         g_wheel += GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
+
+    NoteKey(message, wParam);
 
     const bool isMouse = message >= WM_MOUSEFIRST && message <= WM_MOUSELAST;
     const bool isKey = message >= WM_KEYFIRST && message <= WM_KEYLAST;
@@ -608,6 +644,13 @@ void AddFontCharacters(const std::string& text)
     g_glyphsChanged = true;
 }
 
+bool KeyDown(int virtualKey)
+{
+    if (virtualKey >= 0 && virtualKey < 256 && g_windowKeys[virtualKey])
+        return true;
+    return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+}
+
 bool MenuOpen()
 {
     return g_menuOpen;
@@ -670,12 +713,12 @@ void OnGameTick()
     static double repeatedAt[256] = {};
     const double now = GetTickCount64() / 1000.0;
     const bool usable = IsGameForeground() && !KeyboardTakenByUi();
-    const auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
+    const auto down = [](int key) { return KeyDown(key); };
     // Every key is read every tick, so a key that was held while the editor was closed doesn't fire when it opens.
     bool edges[256] = {};
     bool repeats[256] = {};
     static const int keys[] = { VK_INSERT, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_OEM_COMMA,
-                                VK_OEM_PERIOD, VK_OEM_4, VK_OEM_6, VK_HOME, 'K' };
+                                VK_OEM_PERIOD, VK_OEM_4, VK_OEM_6, VK_HOME, 'K', 'Z', 'Y' };
     for (const int key : keys) {
         const bool isDown = usable && down(key);
         edges[key] = isDown && !previous[key];
@@ -745,7 +788,11 @@ void OnGameTick()
         t.UseSpeedRamp = false;
     }
     if (edges[VK_HOME])
-        seekBy(-game::Clock());
+        game::SeekToStart();
+    if (edges['Z'] && control)
+        menu::ShowNotice(presets::Undo() ? "Undone" : "Nothing to undo");
+    if (edges['Y'] && control)
+        menu::ShowNotice(presets::Redo() ? "Redone" : "Nothing to redo");
     if (edges[VK_F4])
         camera::ToggleLookInput();
     if (edges[VK_F5])

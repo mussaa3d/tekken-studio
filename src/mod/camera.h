@@ -34,6 +34,7 @@ struct Settings {
     double NormalFov = 65;       // the game's lens during normal fighting
     bool PathOnRealTime = false; // true: the dolly plays in real seconds even while the game is paused
     cine::PathStyle PathStyle = cine::PathStyle::Smooth;
+    bool RuleOfThirds = false; // guides over the picture, never in a recording
 };
 Settings& Config();
 

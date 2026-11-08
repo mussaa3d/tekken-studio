@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(tekken8mvm LANGUAGES C CXX)
+project(tekken8mvm LANGUAGES C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,14 +20,14 @@ add_library(tekken8mvm_mod SHARED
     src/mod/proxy.cpp src/mod/dllmain.cpp src/mod/scan.cpp src/mod/ue.cpp src/mod/game.cpp
     src/mod/camera.cpp src/mod/effects.cpp src/mod/guard.cpp src/mod/recorder.cpp src/mod/overlay.cpp src/mod/depth.cpp src/mod/switcher.cpp
     src/mod/menu.cpp src/mod/savetrace.cpp src/mod/dvars.cpp src/mod/postfx.cpp src/mod/lights.cpp src/mod/audio.cpp
-    src/mod/presets.cpp src/mod/replay.cpp src/mod/sharing.cpp src/mod/testcmd.cpp src/mod/pakmods.cpp src/mod/scene.cpp src/common/config.cpp
+    src/mod/presets.cpp src/mod/replay.cpp src/mod/sharing.cpp src/mod/testcmd.cpp src/mod/pakmods.cpp src/mod/scene.cpp src/mod/inputblock.cpp src/common/version.rc src/common/config.cpp
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx12.cpp)
 set_target_properties(tekken8mvm_mod PROPERTIES OUTPUT_NAME dinput8)
 target_include_directories(tekken8mvm_mod PRIVATE src ${IMGUI} ${IMGUI}/backends)
 target_link_libraries(tekken8mvm_mod PRIVATE minhook d3d12 dxgi iphlpapi ws2_32 mmdevapi ole32 shell32 bcrypt)
 
 # ----- the launcher: installs the mod only for a cinematic session, and removes it afterwards
-add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp
+add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp src/common/version.rc
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx11.cpp)
 target_include_directories(tekken8mvm PRIVATE src ${IMGUI} ${IMGUI}/backends)
 target_link_libraries(tekken8mvm PRIVATE d3d11 d3dcompiler dxgi shell32 ole32 dwmapi)

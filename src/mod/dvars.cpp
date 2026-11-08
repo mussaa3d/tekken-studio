@@ -1,11 +1,13 @@
 #include "mod/dvars.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <map>
 #include <mutex>
 #include <sstream>
 
+#include "mod/camera.h"
 #include "mod/log.h"
 #include "mod/ue.h"
 
@@ -67,6 +69,14 @@ std::vector<Slider> MakeSliders()
         choice("Reflection quality", L"sg.ReflectionQuality", levels, 3),
         choice("Shadow quality", L"sg.ShadowQuality", levels, 3),
         choice("Anti-aliasing", L"r.AntiAliasingMethod", { "None", "FXAA", "TAA", "MSAA", "TSR" }, 2),
+        choice("Anti-aliasing quality", L"sg.AntiAliasingQuality", levels, 3),
+        choice("View distance", L"sg.ViewDistanceQuality", levels, 3),
+        choice("Post processing", L"sg.PostProcessQuality", levels, 3),
+        choice("Textures", L"sg.TextureQuality", levels, 3),
+        choice("Effects", L"sg.EffectsQuality", levels, 3),
+        choice("Foliage", L"sg.FoliageQuality", levels, 3),
+        choice("Shading", L"sg.ShadingQuality", levels, 3),
+        choice("Vertical sync", L"r.VSync", { "Off", "On" }, 0),
         stage("Fog", "Density", Kind::FogDensity, 0.0f, 0.5f, 0.02f, true),
         stage("Fog", "Height falloff", Kind::FogFalloff, 0.001f, 2.0f, 0.2f, true),
         stage("Fog", "Start distance", Kind::FogStartDistance, 0.0f, 10000.0f, 0.0f),
@@ -448,6 +458,74 @@ void TintChanged()
     g_tintPending = true;
 }
 
+// The fog's origin at the camera's height and its falloff gone: it then depends only on how far a point is from the camera.
+void UpdateFogFromCamera()
+{
+    struct Moved {
+        void* Fog;
+        uint32_t Index;
+        cine::Vec3 Location;
+    };
+    static std::vector<Moved> moved;
+    static bool on = false;
+
+    static ue::FunctionRef getLocation { "SceneComponent", "K2_GetComponentLocation" };
+    static ue::FunctionRef setLocation { "SceneComponent", "K2_SetWorldLocation" };
+    static ue::FunctionRef setMobility { "SceneComponent", "SetMobility" };
+    const auto place = [&](void* fog, cine::Vec3 location) {
+        alignas(16) uint8_t params[0x400] = {}; // room for the FHitResult output the function also takes
+        *reinterpret_cast<cine::Vec3*>(params) = location;
+        ue::Call(fog, setLocation, params);
+    };
+
+    const auto slidersFollow = [](bool follow) {
+        for (Slider& slider : All()) {
+            if (slider.Kind != Kind::FogFalloff && slider.Kind != Kind::FogStartDistance)
+                continue;
+            if (follow) {
+                slider.Value = slider.Kind == Kind::FogFalloff ? slider.Min : 0.0f;
+                Changed(slider);
+            } else {
+                Reset(slider);
+            }
+        }
+    };
+
+    if (!g_colors.FogFromCamera) {
+        if (on) {
+            for (const Moved& m : moved)
+                if (ue::StillAlive(m.Fog, m.Index))
+                    place(m.Fog, m.Location);
+            moved.clear();
+            slidersFollow(false);
+            on = false;
+        }
+        return;
+    }
+    if (!on) {
+        slidersFollow(true);
+        on = true;
+    }
+    const camera::View view = camera::LastView();
+    if (!view.Valid)
+        return;
+    ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
+        const uint32_t index = ue::Field<uint32_t>(fog, ue::off::InternalIndex);
+        cine::Vec3 location;
+        ue::Call(fog, getLocation, &location);
+        const bool known = std::any_of(moved.begin(), moved.end(), [&](const Moved& m) { return m.Fog == fog && m.Index == index; });
+        if (!known) {
+            moved.push_back({ fog, index, location });
+            struct {
+                uint8_t Mobility;
+            } movable { 2 };
+            ue::Call(fog, setMobility, &movable); // a static fog won't move otherwise
+        }
+        location.Z = view.Location.Z;
+        place(fog, location);
+    });
+}
+
 void OnFightFound()
 {
     g_originals.clear();
@@ -458,6 +536,7 @@ void OnFightFound()
 
 void OnGameTick()
 {
+    UpdateFogFromCamera();
     std::vector<int> pending;
     bool tint = false, refresh = false;
     {

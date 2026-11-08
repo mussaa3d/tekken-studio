@@ -40,6 +40,7 @@ struct Colors {
     float Sun[3] = { 1, 1, 1 };
     bool FogOverridden = false;
     bool SunOverridden = false;
+    bool FogFromCamera = false; // the fog rides along at the camera's height with no falloff, so only distance from the camera thickens it
 };
 Colors& Tint();
 void TintChanged();

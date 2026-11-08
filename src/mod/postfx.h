@@ -25,7 +25,7 @@ struct Control {
 
 std::vector<Control>& All();
 
-enum class Focus { Manual, P1, P2, BetweenFighters };
+enum class Focus { Manual, P1, P2, BetweenFighters, Camera };
 struct FocusSettings {
     Focus Mode = Focus::Manual;
 };

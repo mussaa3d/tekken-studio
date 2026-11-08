@@ -72,7 +72,7 @@ double RealSeconds()
 
 bool Down(int key)
 {
-    return (GetAsyncKeyState(key) & 0x8000) != 0;
+    return overlay::KeyDown(key);
 }
 
 bool GameHasFocus()
@@ -128,7 +128,7 @@ void FlyInput()
         move = move - Vec3 { 0, 0, 1 };
     g_flyLocation = g_flyLocation + move * (speed * dt);
 
-    if (Down('Z'))
+    if (Down('Z') && !Down(VK_CONTROL)) // Ctrl+Z is undo
         s.Roll -= 40 * dt;
     if (Down('C'))
         s.Roll += 40 * dt;

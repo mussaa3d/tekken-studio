@@ -17,6 +17,7 @@
 #include "mod/game.h"
 #include "mod/guard.h"
 #include "mod/log.h"
+#include "mod/inputblock.h"
 #include "mod/overlay.h"
 #include "mod/recorder.h"
 #include "mod/savetrace.h"
@@ -122,6 +123,7 @@ DWORD WINAPI GameThread(void*)
     for (int attempt = 0; attempt < 120; ++attempt) {
         if (game::Initialize()) {
             overlay::Install();
+            inputblock::Install();
             guard::Start();
             Ini ini;
             ini.Load(mod::DataDir() / "tekken8mvm.ini");

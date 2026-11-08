@@ -52,7 +52,7 @@ struct Settings {
     Look Preview = Look::Picture; // the look on screen while not recording
     bool BlueKey = false;     // the keyed look is blue instead of green
     int GreenDarkness = 16;   // how dark, out of 255, the empty background can be for the keyed look when the depth buffer can't be read
-    float DepthNear = 100, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
+    float DepthNear = 0, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
     bool UseRange = false;    // start and stop by themselves at the timeline's range
     double RangeIn = 0, RangeOut = 10; // seconds on the fight clock
 };

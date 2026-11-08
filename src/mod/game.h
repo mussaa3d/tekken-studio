@@ -27,6 +27,7 @@ struct TimeControl {
     bool BlendAllMeshes = true;    // straps, hair and costumes are physics bones on meshes of their own, and blend between steps as bodies do
     bool ExactFrames = true;       // and every solve the same length, so it lands the same every time
     bool SlowWorldClock = true; // also slow the clock materials can read, which ignores time dilation
+    bool NoGameSlowMotion = false; // the game's own slow motion on big hits and KOs stays at normal speed
     bool ScaleEffects = true; // also slow particles, cloth and materials through the world's time dilation
     bool Interpolate = true;  // blend poses between the 60 Hz steps, which is what makes slow motion smooth
     double FpsCap = 0;        // 0 = leave the game's own cap alone
@@ -52,6 +53,7 @@ void SeekTo(double seconds);
 void StopSeek();
 void ReleaseExactFrames();
 void SeekToRound(uint32_t frame); // the saved point a round starts from, which is just after its intro
+void SeekToStart(); // the very start of the replay, and it plays from there with its intro at normal speed
 bool Seeking();
 
 // How fast things are really going, measured over the last second.
