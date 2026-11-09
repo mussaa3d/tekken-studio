@@ -693,6 +693,14 @@ void Run(const std::string& line)
                 mod::Log("[fn]   %s", property.c_str());
     } else if (command == "speedtrace") {
         in >> g_speedTrace;
+    } else if (command == "keepstatus") {
+        in >> n;
+        e.KeepBattleStatus = n != 0;
+    } else if (command == "statusitem") {
+        // statusitem <item> <0|1>
+        in >> n >> m;
+        replaydisplay::StatusShown(std::clamp(n, 0, replaydisplay::StatusItems - 1)) = m != 0;
+        replaydisplay::Changed();
     } else if (command == "display") {
         // display <row> <-1|0|1>
         in >> n >> m;

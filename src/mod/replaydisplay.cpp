@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <deque>
 #include <string>
+#include <vector>
 
 #include "mod/log.h"
 #include "mod/ue.h"
@@ -35,6 +36,29 @@ const Row g_rows[Rows] = {
 };
 
 int g_choices[Rows] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+
+// The status text: one border per item, in the left and right info widgets. The game only fades them in and out, so hiding a border sticks.
+struct StatusItem {
+    const char* Label;
+    const char* Borders[2];
+};
+const StatusItem g_statusItems[StatusItems] = {
+    { "Hit combo", { "Border_Combo", "Border_Combo_P1" } },
+    { "Damage", { "Border_Damage", nullptr } },
+    { "Counter hit", { "Border_Counter", nullptr } },
+    { "Clean hit", { "Border_Clean", nullptr } },
+    { "Punish", { "Border_Punish", nullptr } },
+    { "Tornado", { "Border_Tornado", nullptr } },
+};
+bool g_statusShown[StatusItems] = { true, true, true, true, true, true };
+
+struct FoundBorder {
+    void* Object;
+    uint32_t Index;
+    int Item;
+    bool HiddenByUs;
+};
+std::vector<FoundBorder> g_borders;
 
 // The panel widget is there before the fight is, but not always when the fight is found, so a new fight tries a few times.
 constexpr int TriesPerFight = 8;
@@ -114,7 +138,65 @@ void Apply()
     }
 }
 
+// Live borders only: the same names also exist on each widget's template, which isn't under a live practice widget.
+void FindBorders()
+{
+    void* borderClass = ue::FindClass("Border");
+    void* practice = ue::FindClass("PolarisUMGPractice");
+    if (!borderClass || !practice)
+        return;
+    std::vector<FoundBorder> found;
+    for (void* border : ue::AllObjectsOf(borderClass)) {
+        if (ue::Field<uint32_t>(border, ue::off::ObjectFlags) & 0x30)
+            continue;
+        const std::string name = ue::NameOf(border);
+        int item = -1;
+        for (int i = 0; i < StatusItems && item < 0; ++i)
+            for (const char* candidate : g_statusItems[i].Borders)
+                if (candidate && name == candidate)
+                    item = i;
+        if (item < 0)
+            continue;
+        void* owner = ue::Field<void*>(border, 0x20);
+        owner = owner ? ue::Field<void*>(owner, 0x20) : nullptr;
+        const std::string ownerClass = owner ? ue::ClassNameOf(owner) : std::string();
+        if (ownerClass != "WBP_UI_Practice_Info_L_S2_C" && ownerClass != "WBP_UI_Practice_Info_R_S2_C")
+            continue;
+        bool live = false;
+        for (void* outer = owner; outer && !live; outer = ue::Field<void*>(outer, 0x20))
+            live = ue::IsA(outer, practice);
+        if (live)
+            found.push_back({ border, ue::Field<uint32_t>(border, ue::off::InternalIndex), item, ue::WidgetVisibility(border) == ue::SlateVisibility::Hidden });
+    }
+    g_borders = std::move(found);
+}
+
+void KeepItems()
+{
+    std::erase_if(g_borders, [](const FoundBorder& border) { return !ue::StillAlive(border.Object, border.Index); });
+    for (FoundBorder& border : g_borders) {
+        if (!g_statusShown[border.Item]) {
+            if (ue::WidgetVisibility(border.Object) != ue::SlateVisibility::Hidden)
+                ue::SetWidgetVisibility(border.Object, ue::SlateVisibility::Hidden);
+            border.HiddenByUs = true;
+        } else if (border.HiddenByUs) {
+            ue::SetWidgetVisibility(border.Object, ue::SlateVisibility::Visible);
+            border.HiddenByUs = false;
+        }
+    }
+}
+
 } // namespace
+
+const char* StatusLabel(int item)
+{
+    return g_statusItems[item].Label;
+}
+
+bool& StatusShown(int item)
+{
+    return g_statusShown[item];
+}
 
 const char* Label(int row)
 {
@@ -135,6 +217,7 @@ void Changed()
 void ClearChoices()
 {
     std::fill(std::begin(g_choices), std::end(g_choices), -1);
+    std::fill(std::begin(g_statusShown), std::end(g_statusShown), true);
 }
 
 void OnFightFound()
@@ -145,6 +228,7 @@ void OnFightFound()
 
 void OnGameTick()
 {
+    KeepItems();
     if (g_tries.load(std::memory_order_relaxed) <= 0)
         return;
     const ULONGLONG now = GetTickCount64();
@@ -152,6 +236,8 @@ void OnGameTick()
         return;
     g_nextTryAt = now + TryGapMs;
     g_tries.fetch_sub(1, std::memory_order_relaxed);
+    if (std::any_of(std::begin(g_statusShown), std::end(g_statusShown), [](bool shown) { return !shown; }) || !g_borders.empty())
+        FindBorders();
     if (std::any_of(std::begin(g_choices), std::end(g_choices), [](int choice) { return choice >= 0; }))
         Apply();
 }

@@ -9,6 +9,11 @@ const char* Label(int row);
 // -1 leaves the row to the game, 0 hides it, 1 shows it.
 int& Choice(int row);
 void Changed();
+
+// The pieces of the in-battle status, each on or off.
+constexpr int StatusItems = 6;
+const char* StatusLabel(int item);
+bool& StatusShown(int item);
 void ClearChoices();
 
 void OnFightFound();

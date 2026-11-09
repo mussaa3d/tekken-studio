@@ -68,6 +68,9 @@ void WriteLook(Ini& ini)
 
     const effects::Settings& e = effects::Config();
     ini.SetBool("fx.hide_hud", e.HideHud);
+    ini.SetBool("fx.keep_battle_status", e.KeepBattleStatus);
+    for (int item = 0; item < replaydisplay::StatusItems; ++item)
+        ini.SetBool("replay_status." + std::to_string(item), replaydisplay::StatusShown(item));
     ini.SetBool("fx.hide_hit_labels", e.HideHitLabels);
     const scene::Settings& sc = scene::Config();
     ini.SetBool("scene.no_character_lights", sc.NoCharacterLights);
@@ -155,6 +158,9 @@ void ReadLook(const Ini& ini)
 
     effects::Settings& e = effects::Config();
     e.HideHud = ini.GetBool("fx.hide_hud", e.HideHud);
+    e.KeepBattleStatus = ini.GetBool("fx.keep_battle_status", e.KeepBattleStatus);
+    for (int item = 0; item < replaydisplay::StatusItems; ++item)
+        replaydisplay::StatusShown(item) = ini.GetBool("replay_status." + std::to_string(item), replaydisplay::StatusShown(item));
     e.HideHitLabels = ini.GetBool("fx.hide_hit_labels", e.HideHitLabels);
     scene::Settings& sc = scene::Config();
     sc.NoCharacterLights = ini.GetBool("scene.no_character_lights", sc.NoCharacterLights);

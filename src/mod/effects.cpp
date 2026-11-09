@@ -47,13 +47,19 @@ std::string Lower(std::string text)
     return text;
 }
 
-bool IsHudClass(void* cls, void* userWidget)
+bool IsHudClass(void* cls, void* userWidget, bool keepStatus)
 {
     const auto it = g_hudClassCache.find(cls);
     if (it != g_hudClassCache.end())
         return it->second;
     bool hud = false;
     if (ue::IsChildOf(cls, userWidget)) {
+        // The in-battle status sits in these two, inside the practice widget that holds the other panels. Those panels are widgets of their own, so they still go.
+        const std::string own = Lower(ue::NameOf(cls));
+        if (keepStatus && (own == "wbp_ui_practice_s2_c" || own == "wbp_ui_practice_info_l_s2_c" || own == "wbp_ui_practice_info_r_s2_c")) {
+            g_hudClassCache[cls] = false;
+            return false;
+        }
         for (void* c = cls; c && c != userWidget; c = ue::Field<void*>(c, ue::off::SuperStruct)) {
             const std::string name = Lower(ue::NameOf(c));
             for (const char* word : kNotHudWords)
@@ -98,8 +104,8 @@ std::vector<std::string> LabelWords()
 
 void UpdateHud()
 {
-    // 2 hides the whole HUD, 1 only the hit labels.
-    const int mode = g_settings.HideHud ? 2 : (g_settings.HideHitLabels ? 1 : 0);
+    // 3 hides the HUD but leaves the in-battle status, 2 hides all of it, 1 only the hit labels.
+    const int mode = g_settings.HideHud ? (g_settings.KeepBattleStatus ? 3 : 2) : (g_settings.HideHitLabels ? 1 : 0);
     static int shownMode = 0;
     static std::string shownWords;
     const std::string words = g_settings.HitLabelWidgets;
@@ -134,7 +140,7 @@ void UpdateHud()
         if (!object || !ue::ClassChainIsSound(object) || (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject))
             continue;
         void* cls = ue::Field<void*>(object, ue::off::ClassPrivate);
-        if (!cls || !(mode == 2 ? IsHudClass(cls, userWidget) : (ue::IsChildOf(cls, userWidget) && IsLabelClass(cls, labelWords))))
+        if (!cls || !(mode >= 2 ? IsHudClass(cls, userWidget, mode == 3) : (ue::IsChildOf(cls, userWidget) && IsLabelClass(cls, labelWords))))
             continue;
         const bool known = std::any_of(g_hidden.begin(), g_hidden.end(),
                                        [&](const HudWidget& w) { return w.Object == object && w.Index == index; });

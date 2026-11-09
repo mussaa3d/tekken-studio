@@ -6,6 +6,7 @@ namespace effects {
 
 struct Settings {
     bool HideHud = false;
+    bool KeepBattleStatus = false; // with the HUD hidden, leaves the combo, damage, counter, clean, punish and tornado text
     bool HideHitLabels = false; // the words that pop up on hits (Counter and so on) and the frame data panel, which are one widget; the effects and the rest of the HUD stay
     char HitLabelWidgets[160] = "practice_info"; // the widget classes those words are, comma separated, matched against the class name
     bool NoHitEffects = false;   // hides hit sparks and the glows of rage arts and heat

@@ -592,6 +592,8 @@ void VisualsTab()
     ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
     if (Group("HUD and screen")) {
         ImGui::Checkbox("Hide the HUD (F9)", &e.HideHud);
+        ImGui::Checkbox("Keep the in-battle status", &e.KeepBattleStatus);
+        Help("With the HUD hidden, this leaves the hit combo, damage, counter, clean, punish and tornado text on screen. Choose which of them under Replay display.");
         changed |= ImGui::Checkbox("No bloom", &e.NoBloom);
         changed |= ImGui::Checkbox("No motion blur", &e.NoMotionBlur);
         changed |= ImGui::Checkbox("No depth of field", &e.NoDepthOfField);
@@ -609,6 +611,10 @@ void VisualsTab()
             }
         }
         Help("Changes straight away and holds through the rounds. Leave to the game gives the row back to the game's own setting from the next replay you open.");
+        ImGui::TextColored(Dim, "In-battle status");
+        for (int item = 0; item < replaydisplay::StatusItems; ++item)
+            if (ImGui::Checkbox(replaydisplay::StatusLabel(item), &replaydisplay::StatusShown(item)))
+                replaydisplay::Changed();
     }
 
     if (Group("Rage art and heat effects")) {

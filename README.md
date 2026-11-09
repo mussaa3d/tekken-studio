@@ -26,6 +26,7 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
   - **Stage:** a plain stage, every stage mesh in the engine's grey material, and no camera shake.
   - **Frame:** the game's own shape, fill the screen with no black bars, or a fixed aspect ratio such as 2.39:1, which the recording keeps.
 - **Replay display (VISUALS tab):** hide or show the game's replay panels from the editor, straight away and with no menus: command history, health numbers, the combo counter, attack info, frame info and frame advantage. Each row can also be left to the game's own setting.
+- **Only the in-battle status:** tick **Hide the HUD** and **Keep the in-battle status** (HUD and screen) to clear everything except the hit combo, damage, counter, clean, punish and tornado text. Each of those has its own tick under Replay display.
 - **Undo:** Ctrl+Z and Ctrl+Y undo and redo your settings, camera path and speed ramp, up to 64 steps. **File > Reset the mod** puts every setting back to how it starts.
 - **From the camera:** the depth stream now starts at the camera (Depth near 0), autofocus has **From the camera**, and **Fog starts at the camera** thickens the fog only with distance from you.
 - **Rule of thirds:** guides over the picture (View menu), never in a recording.
