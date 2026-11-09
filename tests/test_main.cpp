@@ -11,6 +11,7 @@
 #include "common/config.h"
 #include "common/framemath.h"
 #include "common/guardlogic.h"
+#include "common/lookmath.h"
 #include "launcher/game_files.h"
 #include "mod/scan.h"
 
@@ -556,6 +557,24 @@ static void TestSessionFiles()
     fs::remove_all(root);
 }
 
+static void TestLookBlend()
+{
+    const LookValues a { { "sky.sun_yaw", "0" }, { "fx.hide_hud", "0" }, { "dvar.Fog", "0.1" }, { "only.a", "5" }, { "sky.hdri_file", "one.hdr" } };
+    const LookValues b { { "sky.sun_yaw", "90" }, { "fx.hide_hud", "1" }, { "dvar.Fog", "0.3" }, { "only.b", "7" }, { "sky.hdri_file", "two.hdr" } };
+    const auto smooth = [](const std::string& key) { return key.rfind("sky.sun", 0) == 0 || key.rfind("dvar.", 0) == 0; };
+    LookValues mid = BlendLook(a, b, 0.5, smooth);
+    double v = 0;
+    CHECK(LookNumber(mid["sky.sun_yaw"], v) && Near(v, 45));
+    CHECK(LookNumber(mid["dvar.Fog"], v) && Near(v, 0.2));
+    CHECK(mid["fx.hide_hud"] == "0"); // a switch holds until the next key
+    CHECK(mid["sky.hdri_file"] == "one.hdr");
+    CHECK(mid.count("only.a") == 1 && mid.count("only.b") == 0);
+    CHECK(BlendLook(a, b, 0.0, smooth) == a);
+    CHECK(BlendLook(a, b, 1.0, smooth) == b);
+    CHECK(BlendLook(a, b, 2.0, smooth) == b);
+    CHECK(!LookNumber("one.hdr", v) && !LookNumber("", v) && !LookNumber("1.5x", v));
+}
+
 int main()
 {
     TestRotations();
@@ -571,6 +590,7 @@ int main()
     TestIni();
     TestVdf();
     TestSessionFiles();
+    TestLookBlend();
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

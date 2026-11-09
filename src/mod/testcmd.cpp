@@ -27,6 +27,7 @@
 #include "mod/savetrace.h"
 #include "mod/scene.h"
 #include "mod/sharing.h"
+#include "mod/sky.h"
 #include "mod/switcher.h"
 #include "mod/ue.h"
 
@@ -76,6 +77,8 @@ void WriteState()
     uint32_t frame = 0;
     const bool inFight = replay::Position(round, frame);
     out << "drama " << effects::DramaPlaying() << "\n";
+    out << "sky " << sky::Config().SunYaw << " " << sky::Config().SunHeight << " " << sky::Config().SkyRotation << " hdri " << sky::Config().HdriOn << " " << sky::Config().HdriBrightness << " status " << sky::Status() << "\n";
+    out << "lookkeys " << presets::LookKeyTimes().size() << "\n";
     out << "position " << inFight << " round " << round << " frame " << frame << " canjump " << replay::CanJump() << " seeking " << game::Seeking() << "\n";
     out.close();
     std::error_code ignored;
@@ -166,6 +169,9 @@ void Run(const std::string& line)
     } else if (command == "tab") {
         in >> n;
         menu::SetTab(n);
+    } else if (command == "groups") {
+        in >> n;
+        menu::OpenAllGroups(n != 0);
     } else if (command == "mode") {
         std::string name;
         in >> name;
@@ -691,6 +697,32 @@ void Run(const std::string& line)
         if (fn)
             for (const std::string& property : ue::PropertyNames(fn))
                 mod::Log("[fn]   %s", property.c_str());
+    } else if (command == "sky") {
+        // sky <sun yaw> <sun height> <sky rotation>
+        sky::Settings& k = sky::Config();
+        in >> k.SunYaw >> k.SunHeight >> k.SkyRotation;
+    } else if (command == "hdri") {
+        // hdri <0|1> [file] / hdribright <x> / hdrilight <0|1>
+        sky::Settings& k = sky::Config();
+        in >> n;
+        k.HdriOn = n != 0;
+        const std::string file = Rest(in);
+        if (!file.empty())
+            strncpy_s(k.HdriFile, file.c_str(), _TRUNCATE);
+    } else if (command == "hdribright") {
+        in >> sky::Config().HdriBrightness;
+    } else if (command == "hdrilight") {
+        in >> n;
+        sky::Config().HdriLightsStage = n != 0;
+    } else if (command == "hidefighter") {
+        // hidefighter <side> <0|1>
+        in >> n >> m;
+        sky::Config().HideFighter[std::clamp(n, 0, 1)] = m != 0;
+    } else if (command == "lookkey") {
+        presets::AddLookKey();
+        mod::Log("[test] look keys: %zu", presets::LookKeyTimes().size());
+    } else if (command == "lookclear") {
+        presets::ClearLookKeys();
     } else if (command == "speedtrace") {
         in >> g_speedTrace;
     } else if (command == "keepstatus") {

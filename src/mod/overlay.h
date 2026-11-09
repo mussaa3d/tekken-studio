@@ -55,6 +55,7 @@ void Draw();
 void DrawOsd();
 void ShowNotice(const char* text);
 void SetTab(int tab);
+void OpenAllGroups(bool open); // test only: every section of a tab drawn open
 constexpr int TabCount = 4;
 bool RunUiTest(); // true once it has finished
 } // namespace menu

@@ -19,6 +19,16 @@ void UndoWatch(bool settled);
 bool Undo();
 bool Redo();
 
+// Look keys on the timeline. A key holds every setting of the look at one moment. Between two keys the sliders and colours move
+// smoothly and the switches and choices change at the key. Nothing happens with fewer than two.
+std::vector<double> LookKeyTimes();
+void AddLookKey(); // at the clock now, replacing a key that's already there
+void RemoveLookKey(size_t index);
+size_t MoveLookKey(size_t index, double time); // returns where the key ended up
+void ClearLookKeys();
+// Game thread, once per frame, before the settings are used.
+void OnGameTick();
+
 // Every setting of the tool back to how it starts, camera path and speed ramp included. Recording folder and pak mods aren't touched.
 void ResetAll();
 

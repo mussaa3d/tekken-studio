@@ -18,7 +18,7 @@ target_include_directories(minhook PUBLIC third_party/minhook/include)
 # ----- the in-game mod: built as dinput8.dll so the game loads it from its own folder
 add_library(tekken8mvm_mod SHARED
     src/mod/proxy.cpp src/mod/dllmain.cpp src/mod/scan.cpp src/mod/ue.cpp src/mod/game.cpp
-    src/mod/camera.cpp src/mod/effects.cpp src/mod/guard.cpp src/mod/recorder.cpp src/mod/overlay.cpp src/mod/depth.cpp src/mod/switcher.cpp src/mod/replaydisplay.cpp
+    src/mod/camera.cpp src/mod/effects.cpp src/mod/guard.cpp src/mod/recorder.cpp src/mod/overlay.cpp src/mod/depth.cpp src/mod/switcher.cpp src/mod/replaydisplay.cpp src/mod/sky.cpp
     src/mod/menu.cpp src/mod/savetrace.cpp src/mod/dvars.cpp src/mod/postfx.cpp src/mod/lights.cpp src/mod/audio.cpp
     src/mod/presets.cpp src/mod/replay.cpp src/mod/sharing.cpp src/mod/testcmd.cpp src/mod/pakmods.cpp src/mod/scene.cpp src/mod/inputblock.cpp src/common/version.rc src/common/config.cpp
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx12.cpp)

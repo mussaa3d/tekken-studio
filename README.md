@@ -27,6 +27,10 @@ The editor (Insert) is laid out like IWXMVM: the game picture on the left, tool 
   - **Frame:** the game's own shape, fill the screen with no black bars, or a fixed aspect ratio such as 2.39:1, which the recording keeps.
 - **Replay display (VISUALS tab):** hide or show the game's replay panels from the editor, straight away and with no menus: command history, health numbers, the combo counter, attack info, frame info and frame advantage. Each row can also be left to the game's own setting.
 - **Only the in-battle status:** tick **Hide the HUD** and **Keep the in-battle status** (HUD and screen) to clear everything except the hit combo, damage, counter, clean, punish and tornado text. Each of those has its own tick under Replay display.
+- **Sun and sky** (VISUALS tab): turn the stage's sun and raise or lower it, so the light and shadows move, and turn the sky.
+- **A sky of your own (HDRI):** tick **Sky picture of your own**, press **Open the pictures folder**, drop a panorama in (`.hdr` and `.exr` are real HDRIs; `.png` and `.jpg` work too) and pick it. It goes on the stage's own sky, with a brightness slider, and **Light the stage from it** makes the stage's sky light take its light from your picture. The sun stays the stage's: turn it with the sliders to match your picture. A stage with no sky of that kind says so and keeps its own.
+- **Look keys:** **+ Look key (L)** on the timeline keeps every VISUALS setting as it is at that moment. With two or more, sliders and colours move from one key to the next as the replay plays, so the sun, the sky rotation, fog, colours, depth of field and the rest can change over a shot, and switches such as Hide the HUD change at the key. Drag a key to move it, right-click to delete it, and to change one, go to it, change the settings and add a key again. They're saved with a shot. Playback speed has its own lane, and the recording setup isn't part of a look.
+- **Hide a fighter:** **Hide P1** and **Hide P2** (Stage group) take a fighter out of the picture, shadow included. Their hit sparks still show.
 - **Undo:** Ctrl+Z and Ctrl+Y undo and redo your settings, camera path and speed ramp, up to 64 steps. **File > Reset the mod** puts every setting back to how it starts.
 - **From the camera:** the depth stream now starts at the camera (Depth near 0), autofocus has **From the camera**, and **Fog starts at the camera** thickens the fog only with distance from you.
 - **Rule of thirds:** guides over the picture (View menu), never in a recording.
@@ -77,6 +81,7 @@ While the editor is open it has the keyboard, and the game gets none of it. With
 | F7 | Record |
 | F9 | Hide the HUD |
 | K | Add a dolly key (free camera on) |
+| L | Add a look key |
 
 With the free camera looking with the arrow keys (F4), the arrows look around, and `,` `.` move along the timeline. The editor's **Keys** menu lists all of these.
 
@@ -114,6 +119,8 @@ The game keeps every replay decoded in fixed slots in memory, so sharing copies 
 ## Not verified
 - **A rage art itself.** The filter was tested on the game's real mid-round cinematic camera moves and zooms, and on round intros, in replays that happened to have no rage art. Rage arts should behave the same, but this one case hasn't been watched.
 - **The "No rage art screen effects" option** runs without trouble, but it hasn't been seen against a rage art for the same reason.
+- **A sky picture on other stages.** It was tested on one stage (the one in the test replay), with an `.hdr` and a `.png`. Stages draw their sky with the same material where they have a sky dome, but no other stage was tried.
+- **The new sliders and ticks by hand.** The sun, sky, sky picture and hide-a-fighter options and the look keys were driven by test commands in the real game, and the editor draws their controls in its own test. Clicking them with a mouse in the game wasn't done.
 - **A friend's PC.** Export and load were tested on one PC and one Steam account, by loading a replay exported moments earlier.
 
 ## Bans and anti-cheat

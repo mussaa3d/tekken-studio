@@ -34,6 +34,7 @@
 #include "mod/replay.h"
 #include "mod/replaydisplay.h"
 #include "mod/sharing.h"
+#include "mod/sky.h"
 #include "mod/switcher.h"
 
 namespace menu {
@@ -66,7 +67,7 @@ bool Group(const char* label)
 
 // Where things ended up on screen, for the UI test to click on.
 struct Layout {
-    float Left = 0, Width = 1, RulerTop = 0, CameraTop = 0, SpeedTop = 0, RangeTop = 0, Bottom = 0;
+    float Left = 0, Width = 1, RulerTop = 0, CameraTop = 0, LookTop = 0, SpeedTop = 0, RangeTop = 0, Bottom = 0;
     ImVec2 PlayButton, OneX, SliderMin, SliderMax, ViewCenter, PanelCenter;
     ImVec2 Tabs[4];
 } g_layout;
@@ -670,6 +671,42 @@ void VisualsTab()
             tint.SunOverridden = true;
             dvars::TintChanged();
         }
+        sky::Settings& k = sky::Config();
+        BarWidth();
+        ImGui::SliderFloat("Sun direction", &k.SunYaw, -180.0f, 180.0f, "%.0f deg");
+        BarWidth();
+        ImGui::SliderFloat("Sun height", &k.SunHeight, -60.0f, 60.0f, "%.0f deg");
+        Help("Turns and tilts the stage's sun from where the stage put it, so the light and the shadows move. 0 is the stage's own.");
+        BarWidth();
+        ImGui::SliderFloat("Sky rotation", &k.SkyRotation, -180.0f, 180.0f, "%.0f deg");
+        ImGui::Checkbox("Sky picture of your own (HDRI)", &k.HdriOn);
+        Help("Puts a panorama of yours on the stage's sky. .hdr and .exr are real HDRIs, and .png and .jpg work too. It should be the usual HDRI shape, twice as wide as it is high.");
+        if (k.HdriOn) {
+            static std::vector<std::string> files;
+            static double listedAt = -10;
+            if (ImGui::GetTime() - listedAt > 1.5) {
+                files = sky::Files();
+                listedAt = ImGui::GetTime();
+            }
+            BarWidth();
+            if (ImGui::BeginCombo("Picture", k.HdriFile[0] ? k.HdriFile : "Choose one")) {
+                for (const std::string& file : files)
+                    if (ImGui::Selectable(file.c_str(), file == k.HdriFile))
+                        strncpy_s(k.HdriFile, file.c_str(), _TRUNCATE);
+                if (files.empty())
+                    ImGui::TextColored(Dim, "No pictures in the folder yet");
+                ImGui::EndCombo();
+            }
+            if (ImGui::SmallButton("Open the pictures folder"))
+                ShellExecuteW(nullptr, L"open", sky::Folder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            BarWidth();
+            ImGui::SliderFloat("Picture brightness", &k.HdriBrightness, 0.02f, 20.0f, "%.2fx", ImGuiSliderFlags_Logarithmic);
+            ImGui::Checkbox("Light the stage from it", &k.HdriLightsStage);
+            Help("The stage's sky light takes its light from your picture and not from the stage's own sky. The sun stays where it is: turn it with the sliders above to match your picture.");
+            const std::string status = sky::Status();
+            if (!status.empty())
+                ImGui::TextColored(Dim, "%s", status.c_str());
+        }
     }
 
     if (Group("Lighting")) {
@@ -698,6 +735,10 @@ void VisualsTab()
         if (s.PlainStage)
             ImGui::TextColored(Dim, "%d stage meshes plain", scene::LastCounts().PlainMeshes);
         ImGui::Checkbox("No camera shake", &s.NoCameraShake);
+        ImGui::Checkbox("Hide P1", &sky::Config().HideFighter[0]);
+        ImGui::SameLine();
+        ImGui::Checkbox("Hide P2", &sky::Config().HideFighter[1]);
+        Help("Takes a fighter out of the picture, shadow included. Their hit sparks still show.");
         changed = ImGui::Checkbox("No particles (stage and fight)", &e.NoParticles) || changed;
         if (changed)
             effects::RequestRefresh();
@@ -902,6 +943,7 @@ struct TimelineState {
     int SelectedCamera = -1;
     int DragCamera = -1;
     int DragSpeed = -1;
+    int DragLook = -1;
     int DragRange = 0; // 1 = start handle, 2 = end handle
 } g_timeline;
 
@@ -970,6 +1012,10 @@ void Timeline(ImVec2 position, ImVec2 size)
     if (ImGui::SmallButton("+ Camera key (K)"))
         camera::AddKeyAtCurrentView();
     ImGui::SameLine();
+    if (ImGui::SmallButton("+ Look key (L)"))
+        presets::AddLookKey();
+    Help("Keeps every VISUALS setting as it is at this moment. With two or more, sliders and colours move from one key to the next as the replay plays, such as the sun and sky rotation, and switches change at the key. Set things up, add a key, go to another moment, change them, add another.");
+    ImGui::SameLine();
     {
         const std::vector<cine::CameraKey> keys = camera::Keys();
         ImGui::BeginDisabled(keys.size() < 2 || recorder::Active() || recorder::Finishing());
@@ -993,6 +1039,9 @@ void Timeline(ImVec2 position, ImVec2 size)
         game::SetSpeedKeys({});
         game::Time().UseSpeedRamp = false;
     }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear look"))
+        presets::ClearLookKeys();
     ImGui::SameLine();
     if (ImGui::SmallButton("Zero clock here"))
         game::ZeroClock();
@@ -1019,18 +1068,21 @@ void Timeline(ImVec2 position, ImVec2 size)
     const float available = position.y + size.y - origin.y - font * 0.5f;
     const float rulerHeight = font * 1.4f;
     const float cameraHeight = std::max(font * 1.5f, available * 0.25f);
+    const float lookHeight = std::max(font * 1.3f, available * 0.12f);
     const float rangeHeight = font * 1.2f;
-    const float speedHeight = std::max(available - rulerHeight - cameraHeight - rangeHeight, font * 1.5f);
+    const float speedHeight = std::max(available - rulerHeight - cameraHeight - lookHeight - rangeHeight, font * 1.5f);
 
     const float rulerTop = origin.y;
     const float cameraTop = rulerTop + rulerHeight;
-    const float speedTop = cameraTop + cameraHeight;
+    const float lookTop = cameraTop + cameraHeight;
+    const float speedTop = lookTop + lookHeight;
     const float rangeTop = speedTop + speedHeight;
     const float bottom = rangeTop + rangeHeight;
     g_layout.Left = left;
     g_layout.Width = width;
     g_layout.RulerTop = rulerTop;
     g_layout.CameraTop = cameraTop;
+    g_layout.LookTop = lookTop;
     g_layout.SpeedTop = speedTop;
     g_layout.RangeTop = rangeTop;
     g_layout.Bottom = bottom;
@@ -1065,10 +1117,12 @@ void Timeline(ImVec2 position, ImVec2 size)
 
     // Lane backgrounds and names
     const ImU32 laneA = IM_COL32(24, 24, 30, 255), laneB = IM_COL32(30, 30, 37, 255), text = IM_COL32(200, 200, 205, 255), dim = IM_COL32(120, 120, 128, 255);
-    draw->AddRectFilled({ left, cameraTop }, { left + width, speedTop }, laneA);
-    draw->AddRectFilled({ left, speedTop }, { left + width, rangeTop }, laneB);
-    draw->AddRectFilled({ left, rangeTop }, { left + width, bottom }, laneA);
+    draw->AddRectFilled({ left, cameraTop }, { left + width, lookTop }, laneA);
+    draw->AddRectFilled({ left, lookTop }, { left + width, speedTop }, laneB);
+    draw->AddRectFilled({ left, speedTop }, { left + width, rangeTop }, laneA);
+    draw->AddRectFilled({ left, rangeTop }, { left + width, bottom }, laneB);
     draw->AddText({ origin.x + font * 0.4f, cameraTop + font * 0.2f }, text, "Camera");
+    draw->AddText({ origin.x + font * 0.4f, lookTop + font * 0.1f }, text, "Look");
     draw->AddText({ origin.x + font * 0.4f, speedTop + font * 0.2f }, text, "Timescale");
     draw->AddText({ origin.x + font * 0.4f, rangeTop }, text, "Range");
     draw->PushClipRect({ left, rulerTop }, { left + width, bottom }, true);
@@ -1163,7 +1217,7 @@ void Timeline(ImVec2 position, ImVec2 size)
                 hit = i;
             DrawDiamond(draw, at, radius, i == v.SelectedCamera ? IM_COL32(255, 255, 255, 255) : IM_COL32(230, 70, 80, 255), IM_COL32(0, 0, 0, 255));
         }
-        const bool inCamera = hovered && inLanes && mouse.y >= cameraTop && mouse.y < speedTop;
+        const bool inCamera = hovered && inLanes && mouse.y >= cameraTop && mouse.y < lookTop;
         if (inCamera && hit >= 0) {
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 camera::GoToKey(hit);
@@ -1185,6 +1239,42 @@ void Timeline(ImVec2 position, ImVec2 size)
             } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                 v.DragCamera = -1;
             }
+        }
+    }
+
+    // Look lane: each key is every VISUALS setting at that moment.
+    {
+        const std::vector<double> times = presets::LookKeyTimes();
+        const float mid = lookTop + lookHeight * 0.5f;
+        if (times.size() >= 2)
+            draw->AddLine({ TimeToX(times.front(), left, width), mid }, { TimeToX(times.back(), left, width), mid }, IM_COL32(50, 100, 140, 255), 2.0f);
+        int hit = -1;
+        const float radius = std::min(font * 0.45f, lookHeight * 0.4f);
+        for (int i = 0; i < static_cast<int>(times.size()); ++i) {
+            const ImVec2 at { TimeToX(times[i], left, width), mid };
+            if (std::fabs(mouse.x - at.x) < radius + 2 && std::fabs(mouse.y - at.y) < lookHeight * 0.5f)
+                hit = i;
+            DrawDiamond(draw, at, radius, i == v.DragLook ? IM_COL32(255, 255, 255, 255) : IM_COL32(80, 170, 235, 255), IM_COL32(0, 0, 0, 255));
+        }
+        const bool inLook = hovered && inLanes && mouse.y >= lookTop && mouse.y < speedTop;
+        if (inLook && hit >= 0) {
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (times[hit] > clock || replay::CanJump())
+                    game::SeekTo(times[hit]);
+            } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                v.DragLook = hit;
+            }
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                presets::RemoveLookKey(hit);
+                v.DragLook = -1;
+            }
+            ImGui::SetTooltip("Look key %d at %.3f s\nDrag to move, double-click to go there, right-click to delete.\nTo change it, go there, change the settings and add a look key again.", hit + 1, times[hit]);
+        }
+        if (v.DragLook >= 0) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f))
+                v.DragLook = static_cast<int>(presets::MoveLookKey(v.DragLook, std::max(XToTime(mouse.x, left, width), 0.0)));
+            else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+                v.DragLook = -1;
         }
     }
 
@@ -1456,6 +1546,11 @@ void SetTab(int tab)
     g_tab = tab;
 }
 
+void OpenAllGroups(bool open)
+{
+    g_openAllGroups = open;
+}
+
 // Drives the real editor with mouse events, one action per frame, and logs what happened. Harness only.
 bool RunUiTest()
 {
@@ -1499,7 +1594,7 @@ bool RunUiTest()
         };
         const auto keyAt = [](int index) -> ImVec2 {
             const auto keys = camera::Keys();
-            const float mid = (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f;
+            const float mid = (g_layout.CameraTop + g_layout.LookTop) * 0.5f;
             return { TimeToX(keys[std::min<size_t>(index, keys.size() - 1)].Time, g_layout.Left, g_layout.Width), mid };
         };
         const auto speedAt = [](int index) -> ImVec2 {
@@ -1533,7 +1628,7 @@ bool RunUiTest()
             before = keys[1].Time;
             countBefore = keys.size();
         });
-        drag([keyAt] { return keyAt(1); }, [keyAt] { return ImVec2(TimeToX(3.6, g_layout.Left, g_layout.Width), (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f); });
+        drag([keyAt] { return keyAt(1); }, [keyAt] { return ImVec2(TimeToX(3.6, g_layout.Left, g_layout.Width), (g_layout.CameraTop + g_layout.LookTop) * 0.5f); });
         check("dragging a camera key moves it", [] {
             const auto keys = camera::Keys();
             return keys.size() == countBefore && keys[1].Time > before + 0.3 && std::fabs(keys[1].Time - 3.6) < 0.1;
@@ -1542,7 +1637,7 @@ bool RunUiTest()
             const auto keys = camera::Keys();
             return std::is_sorted(keys.begin(), keys.end(), [](const cine::CameraKey& a, const cine::CameraKey& b) { return a.Time < b.Time; });
         });
-        drag([keyAt] { return keyAt(1); }, [] { return ImVec2(TimeToX(6.0, g_layout.Left, g_layout.Width), (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f); });
+        drag([keyAt] { return keyAt(1); }, [] { return ImVec2(TimeToX(6.0, g_layout.Left, g_layout.Width), (g_layout.CameraTop + g_layout.LookTop) * 0.5f); });
         check("dragging a key past its neighbour re-sorts", [] {
             const auto keys = camera::Keys();
             return keys.size() == countBefore && std::is_sorted(keys.begin(), keys.end(), [](const cine::CameraKey& a, const cine::CameraKey& b) { return a.Time < b.Time; })
@@ -1609,13 +1704,13 @@ bool RunUiTest()
         // Zoom and pan
         static double span = 0;
         steps.push_back([] { span = g_timeline.End - g_timeline.Start; });
-        moveTo([] { return ImVec2(g_layout.Left + g_layout.Width * 0.5f, (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f); });
+        moveTo([] { return ImVec2(g_layout.Left + g_layout.Width * 0.5f, (g_layout.CameraTop + g_layout.LookTop) * 0.5f); });
         steps.push_back([&io] { io.AddMouseWheelEvent(0, 3); });
         wait(2);
         check("the wheel zooms the timeline", [] { return g_timeline.End - g_timeline.Start < span * 0.8; });
         steps.push_back([] { span = g_timeline.Start; });
-        drag([] { return ImVec2(g_layout.Left + g_layout.Width * 0.5f, (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f); },
-             [] { return ImVec2(g_layout.Left + g_layout.Width * 0.3f, (g_layout.CameraTop + g_layout.SpeedTop) * 0.5f); }, 2);
+        drag([] { return ImVec2(g_layout.Left + g_layout.Width * 0.5f, (g_layout.CameraTop + g_layout.LookTop) * 0.5f); },
+             [] { return ImVec2(g_layout.Left + g_layout.Width * 0.3f, (g_layout.CameraTop + g_layout.LookTop) * 0.5f); }, 2);
         check("middle-dragging pans the timeline", [] { return g_timeline.Start != span && !g_timeline.Follow; });
         steps.push_back([] { g_timeline.Follow = true; });
 

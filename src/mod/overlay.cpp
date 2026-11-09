@@ -718,7 +718,7 @@ void OnGameTick()
     bool edges[256] = {};
     bool repeats[256] = {};
     static const int keys[] = { VK_INSERT, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_OEM_COMMA,
-                                VK_OEM_PERIOD, VK_OEM_4, VK_OEM_6, VK_HOME, 'K', 'Z', 'Y' };
+                                VK_OEM_PERIOD, VK_OEM_4, VK_OEM_6, VK_HOME, 'K', 'L', 'Z', 'Y' };
     for (const int key : keys) {
         const bool isDown = usable && down(key);
         edges[key] = isDown && !previous[key];
@@ -805,6 +805,10 @@ void OnGameTick()
         effects::Config().HideHud = !effects::Config().HideHud;
     if (edges['K'] && camera::WantsKeyboard())
         camera::AddKeyAtCurrentView();
+    if (edges['L'] && !control) {
+        presets::AddLookKey();
+        menu::ShowNotice("Look key added");
+    }
 }
 
 void SetHarness(const HarnessOptions& options)

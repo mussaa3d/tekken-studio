@@ -20,8 +20,10 @@
 #include "mod/log.h"
 #include "mod/overlay.h"
 #include "mod/recorder.h"
+#include "mod/presets.h"
 #include "mod/replay.h"
 #include "mod/replaydisplay.h"
+#include "mod/sky.h"
 #include "mod/scan.h"
 #include "mod/pakmods.h"
 #include "mod/scene.h"
@@ -428,6 +430,7 @@ void FindFighters()
         lights::OnFightFound();
         scene::OnFightFound();
         replaydisplay::OnFightFound();
+        sky::OnFightFound();
     }
 }
 
@@ -709,10 +712,12 @@ void DetourGameModeTick(void* gameMode, float dt)
 
     ApplyEngineTime();
     KeepClothWithTheFight();
+    presets::OnGameTick();
     effects::OnGameTick();
     scene::OnGameTick();
     dvars::OnGameTick();
     lights::OnGameTick();
+    sky::OnGameTick();
     audio::OnGameTick(Clock());
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
