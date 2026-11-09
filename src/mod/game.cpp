@@ -21,6 +21,7 @@
 #include "mod/overlay.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
+#include "mod/replaydisplay.h"
 #include "mod/scan.h"
 #include "mod/pakmods.h"
 #include "mod/scene.h"
@@ -202,23 +203,13 @@ void FollowFight()
         ForgetMotion();
 }
 
-// What GetGameSpeedTotal multiplies together: two floats on the battle's owner object. They're how the game slows the fight at a KO (0.01).
+// What GetGameSpeedTotal multiplies together: two floats on the battle's owner object. Below 1 they mark the game slowing a hit or a KO (0.01).
 void** g_gameSpeedOwner = nullptr;
 constexpr uintptr_t GameSpeedFactors = 0x1570;
 
-void HoldGameSpeed()
-{
-    if (!g_time.NoGameSlowMotion || !g_gameSpeedOwner || !*g_gameSpeedOwner)
-        return;
-    auto* factors = reinterpret_cast<float*>(static_cast<uint8_t*>(*g_gameSpeedOwner) + GameSpeedFactors);
-    factors[0] = factors[1] = 1.0f;
-}
-
 void RunStep()
 {
-    HoldGameSpeed();
     oTick(StepSeconds);
-    HoldGameSpeed();
     g_steps.fetch_add(1, std::memory_order_relaxed);
     FollowFight();
     camera::MarkNewStep();
@@ -226,6 +217,18 @@ void RunStep()
         track.NewStep = true;
     for (BoneTrack& track : g_boneTracks)
         track.NewStep = true;
+}
+
+// During a KO the fight itself barely moves: about one animation frame over 90 steps, measured, whatever the speed values are held at.
+// So the steps are all run at once and the fighters carry straight on from where they were.
+void SkipGameSlowMotion()
+{
+    if (!g_time.NoGameSlowMotion || !g_gameSpeedOwner || !*g_gameSpeedOwner)
+        return;
+    constexpr int MostSteps = 400;
+    const auto* factors = reinterpret_cast<const float*>(static_cast<const uint8_t*>(*g_gameSpeedOwner) + GameSpeedFactors);
+    for (int i = 0; i < MostSteps && factors[0] * factors[1] < 0.99f && g_positionMoved.load(std::memory_order_relaxed); ++i)
+        RunStep();
 }
 
 void EndSeek()
@@ -368,8 +371,10 @@ void DetourTick(double dt)
     int steps = 0;
     while (g_accumulator >= StepSeconds) {
         g_accumulator -= StepSeconds;
-        if (++steps <= 8) // after a long stall, catch up a little rather than fast-forwarding
+        if (++steps <= 8) { // after a long stall, catch up a little rather than fast-forwarding
             RunStep();
+            SkipGameSlowMotion();
+        }
     }
     if (g_stepRequests.load(std::memory_order_relaxed) > 0) {
         g_stepRequests.fetch_sub(1, std::memory_order_relaxed);
@@ -422,6 +427,7 @@ void FindFighters()
         dvars::OnFightFound();
         lights::OnFightFound();
         scene::OnFightFound();
+        replaydisplay::OnFightFound();
     }
 }
 
@@ -711,6 +717,7 @@ void DetourGameModeTick(void* gameMode, float dt)
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
     switcher::OnGameTick();
+    replaydisplay::OnGameTick();
     pakmods::OnGameTick();
     testcmd::OnGameTick();
 }

@@ -32,6 +32,7 @@
 #include "mod/scene.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
+#include "mod/replaydisplay.h"
 #include "mod/sharing.h"
 #include "mod/switcher.h"
 
@@ -470,7 +471,7 @@ void TimeGroup()
     ImGui::Checkbox("Blend motion between game steps", &t.Interpolate);
     Help("The game only moves in 60 Hz steps. Blending poses between steps is what makes slow motion smooth.");
     ImGui::Checkbox("No slow motion on big hits and KOs", &t.NoGameSlowMotion);
-    Help("The game slows the world for a moment on some hits, and almost stops it at a KO. This keeps it at the timescale you set.");
+    Help("The game almost stops the fight for a moment on some hits and at a KO. This runs straight through those moments. The replay clock skips ahead with them, so a camera path jumps by that much there.");
     ImGui::Checkbox("Slow the effects too", &t.ScaleEffects);
     Help("Sparks, cloth and materials follow the timescale through the engine's time dilation.");
     float cap = static_cast<float>(t.FpsCap);
@@ -599,38 +600,15 @@ void VisualsTab()
     }
 
     if (Group("Replay display")) {
-        static int choices[switcher::DisplayRows];
-        static const bool ready = [] {
-            std::fill(std::begin(choices), std::end(choices), -1);
-            return true;
-        }();
-        (void)ready;
-        ImGui::TextColored(Dim, "The game's own display settings for replays.");
-        for (int row = 0; row < switcher::DisplayRows; ++row) {
-            const switcher::DisplayRow& info = switcher::DisplayRowInfo(row);
-            ImGui::PushID(row);
+        for (int row = 0; row < replaydisplay::Rows; ++row) {
+            int shown = replaydisplay::Choice(row) + 1;
             BarWidth();
-            if (ImGui::BeginCombo(info.Label, choices[row] < 0 ? "Leave as it is" : switcher::DisplayOption(row, choices[row]))) {
-                if (ImGui::Selectable("Leave as it is", choices[row] < 0))
-                    choices[row] = -1;
-                for (int option = 0; option < info.Options; ++option)
-                    if (ImGui::Selectable(switcher::DisplayOption(row, option), option == choices[row]))
-                        choices[row] = option;
-                ImGui::EndCombo();
+            if (ImGui::Combo(replaydisplay::Label(row), &shown, "Leave to the game\0Hide\0Show\0")) {
+                replaydisplay::Choice(row) = shown - 1;
+                replaydisplay::Changed();
             }
-            ImGui::PopID();
         }
-        const bool busy = switcher::Running();
-        ImGui::BeginDisabled(busy);
-        if (ImGui::Button("Apply to the replay")) {
-            std::string error;
-            if (switcher::ApplyDisplay(choices, error))
-                std::fill(std::begin(choices), std::end(choices), -1);
-            else
-                Notice(error.c_str());
-        }
-        ImGui::EndDisabled();
-        Help("Opens the replay's own menu and sets these for you, which takes a few seconds with your mouse moving by itself. Don't touch the mouse or keyboard until the editor comes back. The game keeps them for your next replays too.");
+        Help("Changes straight away and holds through the rounds. Leave to the game gives the row back to the game's own setting from the next replay you open.");
     }
 
     if (Group("Rage art and heat effects")) {

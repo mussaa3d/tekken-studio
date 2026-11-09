@@ -14,6 +14,7 @@
 #include "mod/log.h"
 #include "mod/postfx.h"
 #include "mod/recorder.h"
+#include "mod/replaydisplay.h"
 #include "mod/scene.h"
 
 namespace presets {
@@ -55,6 +56,8 @@ void WriteLook(Ini& ini)
     ini.SetNumber("camera.path_style", static_cast<double>(static_cast<int>(camera::Config().PathStyle)));
     ini.SetBool("time.ramp", t.UseSpeedRamp);
     ini.SetBool("time.no_game_slowmo", t.NoGameSlowMotion);
+    for (int row = 0; row < replaydisplay::Rows; ++row)
+        ini.SetNumber("replay_display." + std::to_string(row), replaydisplay::Choice(row));
     ini.SetBool("camera.thirds", camera::Config().RuleOfThirds);
 
     const camera::Settings& c = camera::Config();
@@ -139,6 +142,9 @@ void ReadLook(const Ini& ini)
     camera::Config().PathStyle = static_cast<cine::PathStyle>(std::clamp(static_cast<int>(ini.GetNumber("camera.path_style", static_cast<int>(camera::Config().PathStyle))), 0, 2));
     t.UseSpeedRamp = ini.GetBool("time.ramp", t.UseSpeedRamp);
     t.NoGameSlowMotion = ini.GetBool("time.no_game_slowmo", t.NoGameSlowMotion);
+    for (int row = 0; row < replaydisplay::Rows; ++row)
+        replaydisplay::Choice(row) = static_cast<int>(ini.GetNumber("replay_display." + std::to_string(row), replaydisplay::Choice(row)));
+    replaydisplay::Changed();
     camera::Config().RuleOfThirds = ini.GetBool("camera.thirds", camera::Config().RuleOfThirds);
 
     camera::Settings& c = camera::Config();
@@ -378,6 +384,7 @@ void ResetAll()
     camera::ClearKeys();
     game::SetSpeedKeys({});
     game::Time() = {};
+    replaydisplay::ClearChoices();
     effects::Config() = {};
     effects::RequestRefresh();
     scene::Config() = {};

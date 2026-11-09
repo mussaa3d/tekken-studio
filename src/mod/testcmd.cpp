@@ -23,6 +23,7 @@
 #include "mod/presets.h"
 #include "mod/recorder.h"
 #include "mod/replay.h"
+#include "mod/replaydisplay.h"
 #include "mod/savetrace.h"
 #include "mod/scene.h"
 #include "mod/sharing.h"
@@ -107,6 +108,24 @@ void SpeedTrace()
 {
     if (!g_speedTrace)
         return;
+    if (g_speedTrace == 2) {
+        static uint32_t lastFrame = 0;
+        int stepRound = -1;
+        uint32_t stepFrame = 0;
+        replay::Position(stepRound, stepFrame);
+        static void* fighterClass = ue::FindClass("PolarisCharacterActor");
+        static const int motionField = fighterClass ? ue::PropertyOffset(fighterClass, "PlayerMotionFrame") : -1;
+        void* one = game::Fighter(0);
+        void* two = game::Fighter(1);
+        if (stepFrame != lastFrame && one && two && motionField >= 0) {
+            cine::Vec3 p1, p2;
+            game::FighterLocation(0, p1);
+            game::FighterLocation(1, p2);
+            mod::Log("[step] %u motion %g %g p1 %.2f %.2f %.2f p2 %.2f %.2f %.2f dilation %g total %g", stepFrame, ue::Field<float>(one, motionField), ue::Field<float>(two, motionField), p1.X, p1.Y, p1.Z, p2.X, p2.Y, p2.Z,
+                     GameSpeedValue("GameplayStatics", "GetGlobalTimeDilation"), GameSpeedValue("PolarisBlueprintLibrary", "GetGameSpeedTotal"));
+            lastFrame = stepFrame;
+        }
+    }
     static double last[3] = { -9, -9, -9 };
     const double now[3] = { GameSpeedValue("GameplayStatics", "GetGlobalTimeDilation"), GameSpeedValue("PolarisBlueprintLibrary", "GetGameSpeedTotal"),
                             GameSpeedValue("PolarisBlueprintLibrary", "GetFrameSkip") };
@@ -674,15 +693,11 @@ void Run(const std::string& line)
                 mod::Log("[fn]   %s", property.c_str());
     } else if (command == "speedtrace") {
         in >> g_speedTrace;
-    } else if (command == "displayset") {
-        // displayset <row> <option>: sets one row of the replay's display settings
-        int choices[switcher::DisplayRows];
-        std::fill(std::begin(choices), std::end(choices), -1);
+    } else if (command == "display") {
+        // display <row> <-1|0|1>
         in >> n >> m;
-        choices[std::clamp(n, 0, switcher::DisplayRows - 1)] = m;
-        std::string error;
-        if (!switcher::ApplyDisplay(choices, error))
-            mod::Log("[test] displayset: %s", error.c_str());
+        replaydisplay::Choice(std::clamp(n, 0, replaydisplay::Rows - 1)) = m;
+        replaydisplay::Changed();
     } else if (command == "slowmo") {
         in >> n;
         t.NoGameSlowMotion = n != 0;

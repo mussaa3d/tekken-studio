@@ -9,15 +9,6 @@ namespace switcher {
 bool Start(int slot, std::string& error);
 void Cancel();
 
-// The replay's own display settings (its menu under B). A choice of -1 leaves that row alone.
-constexpr int DisplayRows = 15;
-struct DisplayRow {
-    const char* Label;
-    int Options; // how many choices the game's list for this row has
-};
-const DisplayRow& DisplayRowInfo(int row);
-const char* DisplayOption(int row, int option);
-bool ApplyDisplay(const int (&choices)[DisplayRows], std::string& error);
 bool Running();
 std::string Status();
 
