@@ -19,7 +19,9 @@ void UndoWatch(bool settled);
 bool Undo();
 bool Redo();
 
-// Look keys on the timeline. A key holds every setting of the look at one moment. Between two keys the sliders and colours move
+// Look keys on the timeline. A key holds everything the editor can set at one moment, apart from the camera path, the playback speed
+// and the recording setup, which have lanes and a tab of their own: the visuals, the lighting rig, the props, effects and actors you
+// placed, the attached camera, and ReShade's effects when it's there. Between two keys the sliders, colours, places and sizes move
 // smoothly and the switches and choices change at the key. Nothing happens with fewer than two.
 std::vector<double> LookKeyTimes();
 void AddLookKey(); // at the clock now, replacing a key that's already there

@@ -43,6 +43,14 @@ int wmain(int argc, wchar_t** argv)
         SetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_PREVIEW", L"1");
     const bool livePicture = GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_PREVIEW", nullptr, 0) > 0;
 
+    // The stand-in for ReShade goes in first, as the real one would be there before the mod looks for it.
+    using FakePresentFn = void (*)();
+    FakePresentFn fakeReShadePresent = nullptr;
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_RESHADE", nullptr, 0) > 0) {
+        if (HMODULE fake = LoadLibraryW((std::filesystem::path(self).parent_path() / "tekken8mvm_fake_reshade.dll").c_str()))
+            fakeReShadePresent = reinterpret_cast<FakePresentFn>(GetProcAddress(fake, "FakeReShadePresent"));
+    }
+
     HMODULE mod = LoadLibraryW(dllPath.c_str());
     if (!mod) {
         MessageBoxW(nullptr, (L"Couldn't load " + dllPath.wstring()).c_str(), L"tekken8mvm preview", MB_OK | MB_ICONERROR);
@@ -203,6 +211,9 @@ int wmain(int argc, wchar_t** argv)
         list->Close();
         ID3D12CommandList* lists[] = { list };
         queue->ExecuteCommandLists(1, lists);
+        // Where ReShade would have finished its effects and tell its add-ons.
+        if (fakeReShadePresent)
+            fakeReShadePresent();
         swapChain->Present(1, 0);
 
         queue->Signal(fence, ++fenceValue);

@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -19,6 +20,7 @@ namespace {
 // A slot starts with these. The record size is in the slot itself, so a patch that changes it costs nothing here.
 constexpr int HeaderTag = 0;
 constexpr int HeaderGameVersion = 8;
+constexpr int HeaderPlayVersion = 12; // the same version again, which the game checks before playing
 constexpr int HeaderPlayed = 16;
 constexpr int HeaderDownloaded = 24;
 constexpr int HeaderSize = 0x28;
@@ -56,6 +58,13 @@ uint64_t ReadU64(const uint8_t* at)
     uint64_t value = 0;
     std::memcpy(&value, at, sizeof(value));
     return value;
+}
+
+// A replay file's header, checked before anything in it is trusted: these files are passed between people.
+bool HeaderOk(const FileHeader& header)
+{
+    return header.Magic == FileMagic && header.Version == FileVersion && header.RecordSize > 0x10000 && header.RecordSize < 0x1000000
+        && header.RecordSize >= static_cast<uint32_t>(Player2Name + NameBytes) && header.Stored >= 0x1000 && header.Stored <= header.RecordSize;
 }
 
 bool LooksLikeSlot(const uint8_t* slot, const uint8_t* end)
@@ -97,7 +106,10 @@ bool FindBlock()
             return true;
         }
     }
-    mod::Log("Replay slots: not found yet");
+    static bool logged = false;
+    if (!logged)
+        mod::Log("Replay slots: not found yet");
+    logged = true;
     return false;
 }
 
@@ -131,9 +143,29 @@ Slot Read(int index, const uint8_t* slot)
     return out;
 }
 
+// UTF-8 both ways: player names are often not in the PC's code page, and a std::string path would be read in that code page.
+std::filesystem::path Utf8Path(const std::string& text)
+{
+    return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+}
+
+std::string Utf8Of(const std::filesystem::path& path)
+{
+    const std::u8string text = path.u8string();
+    return std::string(reinterpret_cast<const char*>(text.data()), text.size());
+}
+
+std::filesystem::path FolderPath()
+{
+    const std::filesystem::path folder = recorder::Config().OutputDir / "shared_replays";
+    std::error_code ignored;
+    std::filesystem::create_directories(folder, ignored);
+    return folder;
+}
+
 std::filesystem::path PathOf(const std::string& fileName)
 {
-    return std::filesystem::path(Folder()) / (fileName + ".t8replay");
+    return FolderPath() / Utf8Path(fileName + ".t8replay");
 }
 
 } // namespace
@@ -158,25 +190,104 @@ bool Available()
 
 std::string Folder()
 {
-    const std::filesystem::path folder = recorder::Config().OutputDir / "shared_replays";
-    std::error_code ignored;
-    std::filesystem::create_directories(folder, ignored);
-    return folder.string();
+    return FolderPath().string();
 }
 
 std::vector<std::string> SharedFiles()
 {
     std::vector<std::string> names;
     std::error_code ignored;
-    for (const auto& entry : std::filesystem::directory_iterator(Folder(), ignored))
+    for (const auto& entry : std::filesystem::directory_iterator(FolderPath(), ignored))
         if (entry.path().extension() == ".t8replay")
-            names.push_back(entry.path().stem().string());
+            names.push_back(Utf8Of(entry.path().stem()));
     std::sort(names.begin(), names.end());
     return names;
 }
 
+bool SlotInfo(int index, Slot& out)
+{
+    std::lock_guard lock(g_mutex);
+    if (!FindBlock() || index < 0 || index >= SlotCount() || ReadU32(SlotAt(index) + HeaderTag) != SlotTag)
+        return false;
+    out = Read(index, SlotAt(index));
+    return true;
+}
+
+std::string FileNameFor(const Slot& slot)
+{
+    const time_t played = static_cast<time_t>(slot.Played);
+    tm local {};
+    localtime_s(&local, &played);
+    char date[32];
+    strftime(date, sizeof(date), "%Y-%m-%d %H-%M-%S", &local);
+    std::string name = std::string(date) + " " + slot.Player1 + " vs " + slot.Player2;
+    for (char& c : name)
+        if (static_cast<unsigned char>(c) < 32 || std::strchr("\\/:*?\"<>|", c))
+            c = '_';
+    while (!name.empty() && (name.back() == ' ' || name.back() == '.'))
+        name.pop_back();
+    std::error_code ignored;
+    std::string unique = name;
+    for (int n = 2; std::filesystem::exists(PathOf(unique), ignored) && n < 1000; ++n)
+        unique = name + " (" + std::to_string(n) + ")";
+    return unique;
+}
+
+bool ExportNamed(int index, std::string& fileName, std::string& error)
+{
+    Slot slot;
+    if (!SlotInfo(index, slot)) {
+        error = "There's no replay in that slot";
+        return false;
+    }
+    fileName = FileNameFor(slot);
+    return Export(index, fileName, error);
+}
+
+bool DateMatches(const std::string& text, uint64_t played)
+{
+    // The numbers in the text, in order, and whether it's a 12-hour clock.
+    int numbers[8] = {};
+    int count = 0;
+    for (size_t i = 0; i < text.size() && count < 8;) {
+        if (text[i] < '0' || text[i] > '9') {
+            ++i;
+            continue;
+        }
+        int value = 0;
+        for (; i < text.size() && text[i] >= '0' && text[i] <= '9'; ++i)
+            value = value * 10 + (text[i] - '0');
+        numbers[count++] = value;
+    }
+    if (count != 6)
+        return false;
+    const bool pm = text.find("PM") != std::string::npos || text.find("pm") != std::string::npos;
+    const bool am = text.find("AM") != std::string::npos || text.find("am") != std::string::npos;
+    const time_t t = static_cast<time_t>(played);
+    tm local {};
+    if (localtime_s(&local, &t) != 0)
+        return false;
+    int hour = local.tm_hour;
+    if (pm || am)
+        hour = hour % 12 == 0 ? 12 : hour % 12;
+    if (numbers[3] != hour || numbers[4] != local.tm_min || numbers[5] != local.tm_sec)
+        return false;
+    // The date can be written in any order, with a short or a long year.
+    int date[3] = { numbers[0], numbers[1], numbers[2] };
+    const int year = local.tm_year + 1900;
+    const bool longYear = date[0] >= 100 || date[1] >= 100 || date[2] >= 100;
+    std::sort(std::begin(date), std::end(date));
+    int wanted[3] = { longYear ? year : year % 100, local.tm_mon + 1, local.tm_mday };
+    std::sort(std::begin(wanted), std::end(wanted));
+    return std::equal(std::begin(date), std::end(date), std::begin(wanted));
+}
+
 bool Export(int index, const std::string& fileName, std::string& error)
 {
+    if (!mod::SafeFileName(fileName)) {
+        error = "Use a name without \\ / : * ? \" < > |";
+        return false;
+    }
     std::lock_guard lock(g_mutex);
     if (!FindBlock()) {
         error = "The game's replays aren't loaded yet";
@@ -207,10 +318,14 @@ bool Export(int index, const std::string& fileName, std::string& error)
 
 bool Describe(const std::string& fileName, Slot& out, std::string& error)
 {
+    if (!mod::SafeFileName(fileName)) {
+        error = "That isn't a tekken8mvm replay file";
+        return false;
+    }
     std::ifstream file(PathOf(fileName), std::ios::binary);
     FileHeader header;
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
-    if (!file || header.Magic != FileMagic || header.Version != FileVersion || header.Stored > header.RecordSize || header.Stored < 0x1000) {
+    if (!file || !HeaderOk(header)) {
         error = "That isn't a tekken8mvm replay file";
         return false;
     }
@@ -224,12 +339,181 @@ bool Describe(const std::string& fileName, Slot& out, std::string& error)
     return true;
 }
 
+// The newest version any replay has had, kept between sessions: with only older replays in the list, the list alone can't tell.
+uint32_t RememberedVersion()
+{
+    std::ifstream file(mod::DataDir() / "replay_version.txt");
+    uint32_t version = 0;
+    file >> version;
+    return version >= 10000 && version < 100000 ? version : 0;
+}
+
+uint32_t NewestVersion()
+{
+    uint32_t newest = 0;
+    for (int i = 0; i < SlotCount(); ++i)
+        if (ReadU32(SlotAt(i) + HeaderTag) == SlotTag) {
+            const uint32_t version = ReadU32(SlotAt(i) + HeaderGameVersion);
+            if (version < 100000)
+                newest = std::max(newest, version);
+        }
+    static uint32_t remembered = RememberedVersion();
+    if (newest > remembered) {
+        remembered = newest;
+        std::ofstream(mod::DataDir() / "replay_version.txt") << newest;
+    }
+    return std::max(newest, remembered);
+}
+
+int UnlockOlderReplays()
+{
+    std::lock_guard lock(g_mutex);
+    if (!FindBlock())
+        return 0;
+    const uint32_t newest = NewestVersion();
+    int changed = 0;
+    for (int i = 0; i < SlotCount(); ++i) {
+        uint8_t* slot = SlotAt(i);
+        if (ReadU32(slot + HeaderTag) != SlotTag)
+            continue;
+        const uint32_t version = ReadU32(slot + HeaderGameVersion);
+        if (version >= newest || version < 10000)
+            continue;
+        // The version is in the slot twice; the game checks the second one before it plays.
+        std::memcpy(slot + HeaderGameVersion, &newest, sizeof(newest));
+        const uint32_t second = ReadU32(slot + HeaderPlayVersion);
+        if (second >= 10000 && second < 100000)
+            std::memcpy(slot + HeaderPlayVersion, &newest, sizeof(newest));
+        ++changed;
+    }
+    if (changed)
+        mod::Log("Sharing: %d older replays marked as version %u", changed, newest);
+    return changed;
+}
+
+void FindInSlot(int index, uint32_t value)
+{
+    std::lock_guard lock(g_mutex);
+    if (!FindBlock() || index < 0 || index >= SlotCount())
+        return;
+    const uint8_t* slot = SlotAt(index);
+    std::string found;
+    int count = 0;
+    for (uint32_t at = 0; at + 4 <= g_slotSize && count < 60; ++at) {
+        uint16_t half = 0;
+        std::memcpy(&half, slot + at, 2);
+        if (ReadU32(slot + at) == value || (value < 0x10000 && half == value && ReadU32(slot + at) != value)) {
+            found += " " + std::to_string(at) + (ReadU32(slot + at) == value ? "" : "h");
+            ++count;
+        }
+    }
+    mod::Log("[test] slot %d value %u at:%s", index, value, found.c_str());
+}
+
+namespace {
+
+// What Copies needs from a record, read in one go while the memory is known to be there.
+struct Found {
+    const uint8_t* Address;
+    uint64_t Played;
+    char Player1[NameBytes + 1], Player2[NameBytes + 1];
+};
+
+// The game can free memory while it's being looked through, so a region is read under a guard and only plain bytes come out.
+int ScanRegion(const uint8_t* begin, const uint8_t* end, Found* found, int room)
+{
+    int count = 0;
+    __try {
+        for (const uint8_t* at = begin; at + 0x100 <= end && count < room; at += 8) {
+            if (ReadU32(at) != SlotTag || !LooksLikeSlot(at, end))
+                continue;
+            Found& f = found[count++];
+            f.Address = at;
+            f.Played = ReadU64(at + HeaderPlayed);
+            f.Player1[0] = f.Player2[0] = 0;
+            if (end - at > Player2Name + NameBytes) {
+                memcpy(f.Player1, at + Player1Name, NameBytes);
+                memcpy(f.Player2, at + Player2Name, NameBytes);
+                f.Player1[NameBytes] = f.Player2[NameBytes] = 0;
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return count;
+}
+
+} // namespace
+
+std::vector<Copy> Copies()
+{
+    std::vector<Copy> copies;
+    std::vector<Slot> slots;
+    {
+        std::lock_guard lock(g_mutex);
+        if (!FindBlock())
+            return copies;
+        for (int i = 0; i < SlotCount(); ++i)
+            if (ReadU32(SlotAt(i) + HeaderTag) == SlotTag)
+                slots.push_back(Read(i, SlotAt(i)));
+    }
+    constexpr int Room = 64;
+    std::vector<Found> found(Room);
+    MEMORY_BASIC_INFORMATION info {};
+    for (const uint8_t* address = nullptr; VirtualQuery(address, &info, sizeof(info)) == sizeof(info) && copies.size() < Room;
+         address = static_cast<const uint8_t*>(info.BaseAddress) + info.RegionSize) {
+        if (info.State != MEM_COMMIT || info.Protect != PAGE_READWRITE || info.RegionSize < 0x100 || info.RegionSize > (4ull << 30))
+            continue;
+        const auto* begin = static_cast<const uint8_t*>(info.BaseAddress);
+        if (begin == g_block)
+            continue;
+        const int count = ScanRegion(begin, begin + info.RegionSize, found.data(), Room - static_cast<int>(copies.size()));
+        for (int i = 0; i < count; ++i) {
+            Copy copy;
+            copy.Address = found[i].Address;
+            copy.RegionSize = info.RegionSize;
+            copy.RegionOffset = static_cast<size_t>(found[i].Address - begin);
+            copy.Played = found[i].Played;
+            copy.Player1 = NameAt(reinterpret_cast<const uint8_t*>(found[i].Player1));
+            copy.Player2 = NameAt(reinterpret_cast<const uint8_t*>(found[i].Player2));
+            for (const Slot& slot : slots)
+                if (slot.Played == copy.Played && slot.Player1 == copy.Player1 && slot.Player2 == copy.Player2)
+                    copy.Slot = slot.Index;
+            copies.push_back(copy);
+        }
+    }
+    return copies;
+}
+
+bool& OlderReplaysOn()
+{
+    static bool on = true;
+    return on;
+}
+
+void StartOlderReplays()
+{
+    static std::atomic<bool> started { false };
+    if (started.exchange(true))
+        return;
+    CloseHandle(CreateThread(nullptr, 0, [](void*) -> DWORD {
+        for (;;) {
+            Sleep(3000);
+            if (OlderReplaysOn())
+                UnlockOlderReplays();
+        }
+    }, nullptr, 0, nullptr));
+}
+
 bool Import(const std::string& fileName, std::string& error)
 {
+    if (!mod::SafeFileName(fileName)) {
+        error = "That isn't a tekken8mvm replay file";
+        return false;
+    }
     std::ifstream file(PathOf(fileName), std::ios::binary);
     FileHeader header;
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
-    if (!file || header.Magic != FileMagic || header.Version != FileVersion || header.Stored > header.RecordSize || header.Stored < 0x1000) {
+    if (!file || !HeaderOk(header)) {
         error = "That isn't a tekken8mvm replay file";
         return false;
     }
@@ -242,18 +526,16 @@ bool Import(const std::string& fileName, std::string& error)
         error = "This file is from a different version of the game";
         return false;
     }
-    // Replays only play on the game version they were made on.
-    uint32_t newest = 0;
+    // Replays only play on the game version they were made on, so an older one is marked with this version (see UnlockOlderReplays).
+    const uint32_t newest = NewestVersion();
     int last = -1;
     for (int i = 0; i < SlotCount(); ++i)
-        if (ReadU32(SlotAt(i) + HeaderTag) == SlotTag) {
-            newest = std::max(newest, ReadU32(SlotAt(i) + HeaderGameVersion));
+        if (ReadU32(SlotAt(i) + HeaderTag) == SlotTag)
             last = i;
-        }
     // Right after the last used slot. Further along the block isn't all slots: the end of it holds other things.
     const int empty = last + 1;
-    if (newest != 0 && header.GameVersion < newest) {
-        error = "This replay is from an older version of the game (" + std::to_string(header.GameVersion) + ", yours is " + std::to_string(newest) + "), so the game wouldn't play it";
+    if (newest != 0 && header.GameVersion < newest && !OlderReplaysOn()) {
+        error = "This replay is from an older version of the game (" + std::to_string(header.GameVersion) + ", yours is " + std::to_string(newest) + "). Tick \"Play replays from older versions\" to load it";
         return false;
     }
     if (empty < 0 || empty >= SlotCount() - 8) {
@@ -267,10 +549,21 @@ bool Import(const std::string& fileName, std::string& error)
         error = "The file is cut short";
         return false;
     }
+    // The slot inside must look like the game's own, or the game's list of replays could be thrown off by it.
+    if (ReadU32(data.data() + HeaderTag) != SlotTag || ReadU32(data.data() + HeaderSize) != g_slotSize || ReadU32(data.data() + HeaderGameVersion) != header.GameVersion) {
+        error = "That isn't a tekken8mvm replay file";
+        return false;
+    }
     // It shows up as a downloaded replay, dated now in the "when it came in" field.
     if (ReadU64(data.data() + HeaderDownloaded) == 0) {
         const uint64_t now = static_cast<uint64_t>(std::time(nullptr));
         std::memcpy(data.data() + HeaderDownloaded, &now, sizeof(now));
+    }
+    if (newest != 0 && header.GameVersion < newest) {
+        std::memcpy(data.data() + HeaderGameVersion, &newest, sizeof(newest));
+        const uint32_t second = ReadU32(data.data() + HeaderPlayVersion);
+        if (second >= 10000 && second < 100000)
+            std::memcpy(data.data() + HeaderPlayVersion, &newest, sizeof(newest));
     }
     std::memcpy(SlotAt(empty), data.data(), g_slotSize);
     mod::Log("Sharing: imported %s into slot %d", fileName.c_str(), empty);

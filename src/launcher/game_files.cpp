@@ -495,6 +495,8 @@ InstallResult SnapshotSaves(const fs::path& saveDir, const fs::path& vaultDir, c
     std::error_code error;
     if (!fs::exists(saveDir, error))
         return Fail("No save folder yet: " + saveDir.string());
+    if (name.empty() || name[0] == '.' || name.find_first_of("\\/:*?\"<>|") != std::string::npos)
+        return Fail("Use a snapshot name without \\ / : * ? \" < > |");
     const fs::path folder = vaultDir / name;
     if (fs::exists(folder, error))
         return Fail("A snapshot called " + name + " already exists");

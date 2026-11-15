@@ -1,0 +1,5 @@
+// The editor's fonts, built into the DLL so the mod stays one file: Rubik for text (SIL Open Font License) and Font Awesome 6 Free
+// Solid for the icons (SIL Open Font License). Their licences are in third_party/fonts and go out with the installer.
+FONT_RUBIK_REGULAR  RCDATA "../../third_party/fonts/Rubik-Regular.ttf"
+FONT_RUBIK_SEMIBOLD RCDATA "../../third_party/fonts/Rubik-SemiBold.ttf"
+FONT_ICONS          RCDATA "../../third_party/fonts/fa-solid-900.ttf"

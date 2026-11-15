@@ -10,6 +10,7 @@
 
 #include "common/config.h"
 #include "common/lookmath.h"
+#include "mod/actors.h"
 #include "mod/camera.h"
 #include "mod/dvars.h"
 #include "mod/effects.h"
@@ -19,8 +20,10 @@
 #include "mod/postfx.h"
 #include "mod/recorder.h"
 #include "mod/replaydisplay.h"
+#include "mod/reshadelink.h"
 #include "mod/scene.h"
 #include "mod/sky.h"
+#include "mod/spawner.h"
 
 namespace presets {
 
@@ -52,6 +55,25 @@ std::string Key(const char* prefix, int index, const char* field)
     return std::string(prefix) + "." + std::to_string(index) + "." + field;
 }
 
+// A few numbers under one name: name0, name1 and so on.
+void SetNumbers(Ini& ini, const std::string& key, const float* values, int count)
+{
+    for (int i = 0; i < count; ++i)
+        ini.SetNumber(key + std::to_string(i), values[i]);
+}
+
+void GetNumbers(const Ini& ini, const std::string& key, float* values, int count)
+{
+    for (int i = 0; i < count; ++i)
+        values[i] = static_cast<float>(ini.GetNumber(key + std::to_string(i), values[i]));
+}
+
+void GetText(const Ini& ini, const std::string& key, char* out, size_t size)
+{
+    if (ini.Values().count(key))
+        strncpy_s(out, size, ini.Get(key).c_str(), _TRUNCATE);
+}
+
 void WriteLook(Ini& ini)
 {
     const game::TimeControl& t = game::Time();
@@ -71,9 +93,33 @@ void WriteLook(Ini& ini)
     ini.SetNumber("camera.jump_angle", c.JumpAngle);
     ini.SetNumber("camera.zoom", c.SeparationZoom);
 
+    // The lens, where it isn't the camera path's to set: on the game's own camera, and on the attached one.
+    ini.SetBool("cam.fov_game", c.FovOverride);
+    if (c.FovOverride || c.Mode == camera::Mode::Attach)
+        ini.SetNumber("cam.fov", c.Fov);
+    if (c.Mode == camera::Mode::Attach)
+        ini.SetNumber("cam.roll", c.Roll);
+    const camera::AttachSettings& at = camera::Attach();
+    ini.SetNumber("attach.fighter", at.Fighter);
+    ini.Set("attach.bone", at.Bone);
+    ini.SetNumber("attach.style", static_cast<int>(at.Style));
+    SetNumbers(ini, "attach.offset", at.Offset, 3);
+    SetNumbers(ini, "attach.turn", at.Turn, 3);
+    ini.SetNumber("attach.smooth", at.Smooth);
+    ini.SetNumber("attach.orbit_distance", at.OrbitDistance);
+    ini.SetNumber("attach.orbit_yaw", at.OrbitYaw);
+    ini.SetNumber("attach.orbit_pitch", at.OrbitPitch);
+    SetNumbers(ini, "attach.pov_offset", at.PovOffset, 3);
+    SetNumbers(ini, "attach.pov_turn", at.PovTurn, 3);
+    ini.SetNumber("attach.pov_fov", at.PovFov);
+    ini.SetBool("attach.pov_hide_head", at.PovHideHead);
+    ini.SetBool("attach.pov_level", at.PovLevel);
+
     const effects::Settings& e = effects::Config();
     ini.SetBool("fx.hide_hud", e.HideHud);
     ini.SetBool("fx.keep_battle_status", e.KeepBattleStatus);
+    ini.Set("fx.keep_hud", e.KeepHud);
+    ini.SetNumber("fx.hud_preset", effects::HudPreset());
     for (int item = 0; item < replaydisplay::StatusItems; ++item)
         ini.SetBool("replay_status." + std::to_string(item), replaydisplay::StatusShown(item));
     ini.SetBool("fx.hide_hit_labels", e.HideHitLabels);
@@ -126,10 +172,16 @@ void WriteLook(Ini& ini)
     }
     ini.SetNumber("pp.focus_mode", static_cast<int>(postfx::FocusConfig().Mode));
 
+    // A light, prop, effect or actor that's switched off is written down as off, so a look key can switch it off. A slot that was never
+    // used isn't written at all, and a look key that doesn't mention a slot leaves it as it is.
+    const lights::Light freshLight;
     for (int i = 0; i < lights::MaxLights; ++i) {
         const lights::Light& light = lights::Rig()[i];
-        if (!light.On)
+        if (!light.On) {
+            if (std::memcmp(&light, &freshLight, sizeof(light)) != 0)
+                ini.SetBool(Key("light", i, "on"), false);
             continue;
+        }
         ini.SetBool(Key("light", i, "on"), true);
         ini.SetBool(Key("light", i, "spot"), light.Spot);
         ini.SetNumber(Key("light", i, "follow"), static_cast<int>(light.Follow));
@@ -139,20 +191,79 @@ void WriteLook(Ini& ini)
             ini.SetNumber(Key("light", i, ("offset" + std::to_string(axis)).c_str()), light.Offset[axis]);
             ini.SetNumber(Key("light", i, ("color" + std::to_string(axis)).c_str()), light.Color[axis]);
         }
+        ini.SetNumber(Key("light", i, "aim"), static_cast<int>(light.Aim));
+        ini.SetNumber(Key("light", i, "pitch"), light.Direction[0]);
+        ini.SetNumber(Key("light", i, "yaw"), light.Direction[1]);
+        ini.SetNumber(Key("light", i, "cone"), light.Cone);
+        ini.SetBool(Key("light", i, "shadows"), light.Shadows);
     }
 
+    for (int i = 0; i < spawner::MaxProps; ++i) {
+        const spawner::Prop& prop = spawner::Props()[i];
+        if (!prop.On && !prop.Asset[0])
+            continue;
+        ini.SetBool(Key("prop", i, "on"), prop.On);
+        ini.Set(Key("prop", i, "asset"), prop.Asset);
+        ini.SetNumber(Key("prop", i, "follow"), prop.Follow);
+        SetNumbers(ini, Key("prop", i, "location"), prop.Location, 3);
+        SetNumbers(ini, Key("prop", i, "rotation"), prop.Rotation, 3);
+        SetNumbers(ini, Key("prop", i, "scale"), prop.Scale, 3);
+        ini.SetBool(Key("prop", i, "shadows"), prop.Shadows);
+    }
+    for (int i = 0; i < spawner::MaxEffects; ++i) {
+        const spawner::Effect& effect = spawner::Effects()[i];
+        if (!effect.On && !effect.Asset[0])
+            continue;
+        ini.SetBool(Key("vfx", i, "on"), effect.On);
+        ini.Set(Key("vfx", i, "asset"), effect.Asset);
+        ini.SetNumber(Key("vfx", i, "follow"), effect.Follow);
+        SetNumbers(ini, Key("vfx", i, "location"), effect.Location, 3);
+        SetNumbers(ini, Key("vfx", i, "rotation"), effect.Rotation, 3);
+        ini.SetNumber(Key("vfx", i, "scale"), effect.Scale);
+        ini.SetBool(Key("vfx", i, "timeline"), effect.OnTimeline);
+        ini.SetNumber(Key("vfx", i, "start"), effect.Start);
+        ini.SetNumber(Key("vfx", i, "length"), effect.Length);
+        ini.SetNumber(Key("vfx", i, "rate"), effect.Rate);
+    }
+    for (int i = 0; i < actors::MaxActors; ++i) {
+        const actors::Actor& actor = actors::Cast()[i];
+        if (!actor.On && !actor.Take[0])
+            continue;
+        ini.SetBool(Key("actor", i, "on"), actor.On);
+        ini.Set(Key("actor", i, "take"), actor.Take);
+        ini.SetNumber(Key("actor", i, "body"), actor.Body);
+        ini.SetNumber(Key("actor", i, "start"), actor.Start);
+        ini.SetNumber(Key("actor", i, "speed"), actor.Speed);
+        ini.SetNumber(Key("actor", i, "end"), actor.End);
+        SetNumbers(ini, Key("actor", i, "location"), actor.Location, 3);
+        SetNumbers(ini, Key("actor", i, "rotation"), actor.Rotation, 3);
+        ini.SetNumber(Key("actor", i, "scale"), actor.Scale);
+    }
+
+    reshadelink::WriteLook(ini);
+
     const recorder::Settings& r = recorder::Config();
+    ini.SetNumber("depth.near", r.DepthNear);
+    ini.SetNumber("depth.far", r.DepthFar);
+    ini.SetNumber("depth.curve", r.DepthCurve);
     ini.SetNumber("rec.fps", r.Fps);
     ini.SetNumber("rec.codec", r.CodecIndex);
     ini.SetNumber("rec.samples", r.MotionSamples);
     ini.SetNumber("rec.shutter", r.ShutterDegrees);
+    ini.SetNumber("rec.capture_width", r.CaptureWidth);
+    ini.SetNumber("rec.capture_height", r.CaptureHeight);
+    ini.SetNumber("rec.output_width", r.OutputWidth);
+    ini.SetNumber("rec.output_height", r.OutputHeight);
+    ini.SetBool("rec.blue_key", r.BlueKey);
     for (int i = 0; i < recorder::MaxStreams; ++i) {
         ini.SetBool(Key("stream", i, "on"), r.Streams[i].Enabled);
         ini.SetNumber(Key("stream", i, "look"), static_cast<int>(r.Streams[i].Look));
     }
 }
 
-void ReadLook(const Ini& ini)
+// `whole` is a preset or a shot, which is the whole look: what it doesn't mention is off. A look key is read with it off, and leaves
+// alone the lights, props, effects and actors it doesn't mention, so one added after the keys were made isn't taken away by them.
+void ReadLook(const Ini& ini, bool whole = true)
 {
     game::TimeControl& t = game::Time();
     t.Speed = std::clamp(ini.GetNumber("time.speed", t.Speed), 0.01, 4.0);
@@ -177,10 +288,31 @@ void ReadLook(const Ini& ini)
     c.JumpAngle = ini.GetNumber("camera.jump_angle", c.JumpAngle);
     c.SeparationZoom = ini.GetNumber("camera.zoom", c.SeparationZoom);
 
+    c.FovOverride = ini.GetBool("cam.fov_game", c.FovOverride);
+    c.Fov = std::clamp(ini.GetNumber("cam.fov", c.Fov), 5.0, 130.0);
+    c.Roll = ini.GetNumber("cam.roll", c.Roll);
+    camera::AttachSettings& at = camera::Attach();
+    at.Fighter = std::clamp(static_cast<int>(ini.GetNumber("attach.fighter", at.Fighter)), 0, 1);
+    GetText(ini, "attach.bone", at.Bone, sizeof(at.Bone));
+    at.Style = static_cast<camera::AttachStyle>(std::clamp(static_cast<int>(ini.GetNumber("attach.style", static_cast<int>(at.Style))), 0, 3));
+    GetNumbers(ini, "attach.offset", at.Offset, 3);
+    GetNumbers(ini, "attach.turn", at.Turn, 3);
+    at.Smooth = static_cast<float>(ini.GetNumber("attach.smooth", at.Smooth));
+    at.OrbitDistance = static_cast<float>(ini.GetNumber("attach.orbit_distance", at.OrbitDistance));
+    at.OrbitYaw = static_cast<float>(ini.GetNumber("attach.orbit_yaw", at.OrbitYaw));
+    at.OrbitPitch = static_cast<float>(ini.GetNumber("attach.orbit_pitch", at.OrbitPitch));
+    GetNumbers(ini, "attach.pov_offset", at.PovOffset, 3);
+    GetNumbers(ini, "attach.pov_turn", at.PovTurn, 3);
+    at.PovFov = static_cast<float>(ini.GetNumber("attach.pov_fov", at.PovFov));
+    at.PovHideHead = ini.GetBool("attach.pov_hide_head", at.PovHideHead);
+    at.PovLevel = ini.GetBool("attach.pov_level", at.PovLevel);
+
     effects::Settings& e = effects::Config();
     const effects::Settings effectsBefore = e;
     e.HideHud = ini.GetBool("fx.hide_hud", e.HideHud);
     e.KeepBattleStatus = ini.GetBool("fx.keep_battle_status", e.KeepBattleStatus);
+    strncpy_s(e.KeepHud, ini.Get("fx.keep_hud", e.KeepHud).c_str(), _TRUNCATE);
+    effects::HudPreset() = static_cast<int>(ini.GetNumber("fx.hud_preset", effects::HudPreset()));
     for (int item = 0; item < replaydisplay::StatusItems; ++item) {
         const bool shown = ini.GetBool("replay_status." + std::to_string(item), replaydisplay::StatusShown(item));
         displayChanged = displayChanged || shown != replaydisplay::StatusShown(item);
@@ -256,7 +388,7 @@ void ReadLook(const Ini& ini)
 
     for (int i = 0; i < lights::MaxLights; ++i) {
         lights::Light& light = lights::Rig()[i];
-        light.On = ini.GetBool(Key("light", i, "on"), false);
+        light.On = ini.GetBool(Key("light", i, "on"), whole ? false : light.On);
         light.Spot = ini.GetBool(Key("light", i, "spot"), light.Spot);
         light.Follow = static_cast<lights::Follow>(static_cast<int>(ini.GetNumber(Key("light", i, "follow"), static_cast<int>(light.Follow))));
         light.Intensity = static_cast<float>(ini.GetNumber(Key("light", i, "intensity"), light.Intensity));
@@ -265,13 +397,64 @@ void ReadLook(const Ini& ini)
             light.Offset[axis] = static_cast<float>(ini.GetNumber(Key("light", i, ("offset" + std::to_string(axis)).c_str()), light.Offset[axis]));
             light.Color[axis] = static_cast<float>(ini.GetNumber(Key("light", i, ("color" + std::to_string(axis)).c_str()), light.Color[axis]));
         }
+        light.Aim = static_cast<lights::Aim>(std::clamp(static_cast<int>(ini.GetNumber(Key("light", i, "aim"), static_cast<int>(light.Aim))), 0, 3));
+        light.Direction[0] = static_cast<float>(ini.GetNumber(Key("light", i, "pitch"), light.Direction[0]));
+        light.Direction[1] = static_cast<float>(ini.GetNumber(Key("light", i, "yaw"), light.Direction[1]));
+        light.Cone = static_cast<float>(ini.GetNumber(Key("light", i, "cone"), light.Cone));
+        light.Shadows = ini.GetBool(Key("light", i, "shadows"), light.Shadows);
     }
 
+    for (int i = 0; i < spawner::MaxProps; ++i) {
+        spawner::Prop& prop = spawner::Props()[i];
+        prop.On = ini.GetBool(Key("prop", i, "on"), whole ? false : prop.On);
+        GetText(ini, Key("prop", i, "asset"), prop.Asset, sizeof(prop.Asset));
+        prop.Follow = std::clamp(static_cast<int>(ini.GetNumber(Key("prop", i, "follow"), prop.Follow)), 0, 3);
+        GetNumbers(ini, Key("prop", i, "location"), prop.Location, 3);
+        GetNumbers(ini, Key("prop", i, "rotation"), prop.Rotation, 3);
+        GetNumbers(ini, Key("prop", i, "scale"), prop.Scale, 3);
+        prop.Shadows = ini.GetBool(Key("prop", i, "shadows"), prop.Shadows);
+    }
+    for (int i = 0; i < spawner::MaxEffects; ++i) {
+        spawner::Effect& effect = spawner::Effects()[i];
+        effect.On = ini.GetBool(Key("vfx", i, "on"), whole ? false : effect.On);
+        GetText(ini, Key("vfx", i, "asset"), effect.Asset, sizeof(effect.Asset));
+        effect.Follow = std::clamp(static_cast<int>(ini.GetNumber(Key("vfx", i, "follow"), effect.Follow)), 0, 3);
+        GetNumbers(ini, Key("vfx", i, "location"), effect.Location, 3);
+        GetNumbers(ini, Key("vfx", i, "rotation"), effect.Rotation, 3);
+        effect.Scale = static_cast<float>(ini.GetNumber(Key("vfx", i, "scale"), effect.Scale));
+        effect.OnTimeline = ini.GetBool(Key("vfx", i, "timeline"), effect.OnTimeline);
+        effect.Start = ini.GetNumber(Key("vfx", i, "start"), effect.Start);
+        effect.Length = static_cast<float>(ini.GetNumber(Key("vfx", i, "length"), effect.Length));
+        effect.Rate = static_cast<float>(ini.GetNumber(Key("vfx", i, "rate"), effect.Rate));
+    }
+    for (int i = 0; i < actors::MaxActors; ++i) {
+        actors::Actor& actor = actors::Cast()[i];
+        actor.On = ini.GetBool(Key("actor", i, "on"), whole ? false : actor.On);
+        GetText(ini, Key("actor", i, "take"), actor.Take, sizeof(actor.Take));
+        actor.Body = std::clamp(static_cast<int>(ini.GetNumber(Key("actor", i, "body"), actor.Body)), -1, 1);
+        actor.Start = ini.GetNumber(Key("actor", i, "start"), actor.Start);
+        actor.Speed = static_cast<float>(ini.GetNumber(Key("actor", i, "speed"), actor.Speed));
+        actor.End = std::clamp(static_cast<int>(ini.GetNumber(Key("actor", i, "end"), actor.End)), 0, 2);
+        GetNumbers(ini, Key("actor", i, "location"), actor.Location, 3);
+        GetNumbers(ini, Key("actor", i, "rotation"), actor.Rotation, 3);
+        actor.Scale = static_cast<float>(ini.GetNumber(Key("actor", i, "scale"), actor.Scale));
+    }
+
+    reshadelink::ReadLook(ini);
+
     recorder::Settings& r = recorder::Config();
+    r.DepthNear = static_cast<float>(ini.GetNumber("depth.near", r.DepthNear));
+    r.DepthFar = static_cast<float>(ini.GetNumber("depth.far", r.DepthFar));
+    r.DepthCurve = static_cast<float>(ini.GetNumber("depth.curve", r.DepthCurve));
     r.Fps = static_cast<int>(ini.GetNumber("rec.fps", r.Fps));
     r.CodecIndex = static_cast<int>(ini.GetNumber("rec.codec", r.CodecIndex));
     r.MotionSamples = static_cast<int>(ini.GetNumber("rec.samples", r.MotionSamples));
     r.ShutterDegrees = static_cast<float>(ini.GetNumber("rec.shutter", r.ShutterDegrees));
+    r.CaptureWidth = std::clamp(static_cast<int>(ini.GetNumber("rec.capture_width", r.CaptureWidth)), 0, 16384);
+    r.CaptureHeight = std::clamp(static_cast<int>(ini.GetNumber("rec.capture_height", r.CaptureHeight)), 0, 16384);
+    r.OutputWidth = std::clamp(static_cast<int>(ini.GetNumber("rec.output_width", r.OutputWidth)), 0, 16384);
+    r.OutputHeight = std::clamp(static_cast<int>(ini.GetNumber("rec.output_height", r.OutputHeight)), 0, 16384);
+    r.BlueKey = ini.GetBool("rec.blue_key", r.BlueKey);
     for (int i = 0; i < recorder::MaxStreams; ++i) {
         r.Streams[i].Enabled = ini.GetBool(Key("stream", i, "on"), r.Streams[i].Enabled);
         r.Streams[i].Look = static_cast<recorder::Look>(static_cast<int>(ini.GetNumber(Key("stream", i, "look"), static_cast<int>(r.Streams[i].Look))));
@@ -282,6 +465,8 @@ void ReadLook(const Ini& ini)
 
 bool SavePreset(const std::string& name)
 {
+    if (!mod::SafeFileName(name))
+        return false;
     Ini ini;
     WriteLook(ini);
     return ini.Save(Folder("presets") / (name + ".t8preset"));
@@ -290,7 +475,7 @@ bool SavePreset(const std::string& name)
 bool LoadPreset(const std::string& name)
 {
     Ini ini;
-    if (!ini.Load(Folder("presets") / (name + ".t8preset")))
+    if (!mod::SafeFileName(name) || !ini.Load(Folder("presets") / (name + ".t8preset")))
         return false;
     ReadLook(ini);
     return true;
@@ -332,23 +517,42 @@ cine::LookValues CaptureLook()
     return values;
 }
 
-// Sliders and colours move between keys. Everything else is a switch or a choice, and changes at the key.
+// Sliders, colours, places and sizes move between keys. Everything else is a switch, a choice or a name, and changes at the key.
 bool MovesSmoothly(const std::string& key)
 {
-    if (key.rfind("dvar.", 0) == 0) {
+    const auto starts = [&](const char* prefix) { return key.rfind(prefix, 0) == 0; };
+    const auto has = [&](std::initializer_list<const char*> fields) {
+        for (const char* field : fields)
+            if (key.find(field) != std::string::npos)
+                return true;
+        return false;
+    };
+    if (starts("dvar.")) {
         for (const dvars::Slider& slider : dvars::All())
             if (key.compare(5, std::string::npos, slider.Label) == 0)
                 return slider.Choices.empty();
         return false;
     }
-    if (key.rfind("light.", 0) == 0)
-        return key.find(".intensity") != std::string::npos || key.find(".radius") != std::string::npos || key.find(".offset") != std::string::npos || key.find(".color") != std::string::npos;
+    if (starts("reshade."))
+        return reshadelink::MovesSmoothly(key);
+    if (starts("light."))
+        return has({ ".intensity", ".radius", ".offset", ".color", ".pitch", ".yaw", ".cone" });
+    if (starts("prop."))
+        return has({ ".location", ".rotation", ".scale" });
+    // When an effect or an actor starts isn't moved: that would slide it through time as the keys play.
+    if (starts("vfx."))
+        return has({ ".location", ".rotation", ".scale" });
+    if (starts("actor."))
+        return has({ ".location", ".rotation", ".scale" });
+    if (starts("attach."))
+        return has({ ".offset", ".turn", ".smooth", ".orbit_", ".pov_offset", ".pov_turn", ".pov_fov" });
     if (key == "pp.focus_mode")
         return false;
-    for (const char* prefix : { "pp.", "fog_color.", "sun_color.", "scene.character_light_" })
-        if (key.rfind(prefix, 0) == 0)
+    for (const char* prefix : { "pp.", "fog_color.", "sun_color.", "scene.character_light_", "depth." })
+        if (starts(prefix))
             return true;
-    return key == "scene.aspect_ratio" || key == "sky.sun_yaw" || key == "sky.sun_height" || key == "sky.rotation" || key == "sky.hdri_brightness";
+    return key == "scene.aspect_ratio" || key == "sky.sun_yaw" || key == "sky.sun_height" || key == "sky.rotation" || key == "sky.hdri_brightness" || key == "cam.fov"
+        || key == "cam.roll";
 }
 } // namespace
 
@@ -441,7 +645,7 @@ void OnGameTick()
     for (const auto& [key, value] : look)
         ini.Set(key, value);
     applied = std::move(look);
-    ReadLook(ini);
+    ReadLook(ini, false);
     g_lookDrove.store(12, std::memory_order_relaxed);
 }
 
@@ -524,6 +728,8 @@ void ReadShot(const Ini& ini)
 
 bool SaveShot(const std::string& name)
 {
+    if (!mod::SafeFileName(name))
+        return false;
     Ini ini;
     WriteShot(ini);
     return ini.Save(Folder("shots") / (name + ".t8shot"));
@@ -532,7 +738,7 @@ bool SaveShot(const std::string& name)
 bool LoadShot(const std::string& name)
 {
     Ini ini;
-    if (!ini.Load(Folder("shots") / (name + ".t8shot")))
+    if (!mod::SafeFileName(name) || !ini.Load(Folder("shots") / (name + ".t8shot")))
         return false;
     ReadShot(ini);
     return true;
@@ -629,6 +835,10 @@ void ResetAll()
     effects::RequestRefresh();
     scene::Config() = {};
     lights::Rig() = {};
+    spawner::Props() = {};
+    spawner::Effects() = {};
+    actors::Cast() = {};
+    camera::Attach() = {};
     postfx::FocusConfig() = {};
     for (postfx::Control& control : postfx::All()) {
         control.On = false;
@@ -654,6 +864,7 @@ void ResetAll()
     r.DepthNear = fresh.DepthNear;
     r.DepthFar = fresh.DepthFar;
     r.DepthCurve = fresh.DepthCurve;
+    r.CaptureWidth = r.CaptureHeight = r.OutputWidth = r.OutputHeight = 0;
     r.UseRange = false;
     for (int i = 0; i < recorder::MaxStreams; ++i)
         r.Streams[i].Enabled = i == 0;

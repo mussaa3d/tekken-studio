@@ -4,3 +4,11 @@ build.log
 held/
 
 release/
+
+# old copies of the built tool and mod at the top of the repo
+/tekken8mvm.exe
+/tekken8mvm_preview.exe
+/mod/
+
+# Showcase pictures and videos stay local; the ones used in the README are in docs/images
+/showcase/

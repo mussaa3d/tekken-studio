@@ -11,10 +11,12 @@
 #include <vector>
 
 #include "common/config.h"
+#include "mod/actors.h"
 #include "mod/audio.h"
 #include "mod/camera.h"
 #include "mod/dvars.h"
 #include "mod/effects.h"
+#include "mod/gameui.h"
 #include "mod/guard.h"
 #include "mod/lights.h"
 #include "mod/log.h"
@@ -23,13 +25,16 @@
 #include "mod/presets.h"
 #include "mod/replay.h"
 #include "mod/replaydisplay.h"
+#include "mod/reshadelink.h"
 #include "mod/sky.h"
 #include "mod/scan.h"
+#include "mod/spawner.h"
 #include "mod/pakmods.h"
 #include "mod/scene.h"
 #include "mod/switcher.h"
 #include "mod/testcmd.h"
 #include "mod/ue.h"
+#include "mod/window.h"
 
 namespace game {
 
@@ -428,6 +433,8 @@ void FindFighters()
         effects::OnFightFound();
         dvars::OnFightFound();
         lights::OnFightFound();
+        actors::OnFightFound();
+        spawner::OnFightFound();
         scene::OnFightFound();
         replaydisplay::OnFightFound();
         sky::OnFightFound();
@@ -712,15 +719,20 @@ void DetourGameModeTick(void* gameMode, float dt)
 
     ApplyEngineTime();
     KeepClothWithTheFight();
+    window::OnGameTick();
+    reshadelink::OnGameTick();
     presets::OnGameTick();
     effects::OnGameTick();
     scene::OnGameTick();
     dvars::OnGameTick();
     lights::OnGameTick();
+    spawner::OnGameTick();
+    actors::OnGameTick();
     sky::OnGameTick();
     audio::OnGameTick(Clock());
     recorder::OnGameTick(Clock());
     overlay::OnGameTick();
+    gameui::OnGameTick();
     switcher::OnGameTick();
     replaydisplay::OnGameTick();
     pakmods::OnGameTick();
@@ -786,7 +798,12 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
                  TArray<BoneTransform>* boneSpace, Vec3* root, void* curve, void* attributes)
 {
     oBones(component, mesh, anim, evaluate, spaceBases, boneSpace, root, curve, attributes);
-    if (!g_time.Interpolate || !component || !spaceBases || guard::Tripped() || !g_fightersValid)
+    if (!component || !spaceBases || guard::Tripped())
+        return;
+    // An actor's mesh takes its pose from its take, whatever the engine just worked out for it.
+    if (spaceBases->Data && spaceBases->Num > 0 && actors::DrivePose(component, spaceBases->Data, spaceBases->Num))
+        return;
+    if (!g_time.Interpolate || !g_fightersValid)
         return;
     const size_t limit = g_time.BlendAllMeshes ? MaxTrackedMeshes : 2;
     for (size_t i = 0; i < limit; ++i) {
@@ -810,6 +827,8 @@ void DetourBones(void* component, void* mesh, void* anim, bool evaluate, TArray<
             track.Previous.swap(track.Target);
             track.Target.assign(spaceBases->Data, spaceBases->Data + count);
         }
+        // A take being recorded keeps the pose of the game step itself, not the blend between two.
+        actors::CaptureBones(component, track.Target.data(), count);
         const double alpha = g_alpha.load(std::memory_order_relaxed);
         for (int bone = 0; bone < count; ++bone)
             BlendBone(track.Previous[bone], track.Target[bone], alpha, spaceBases->Data[bone]);
@@ -1076,6 +1095,49 @@ bool FighterLocation(int side, Vec3& out)
 int FightCount()
 {
     return g_fightCount;
+}
+
+int64_t Position()
+{
+    return g_position.load(std::memory_order_relaxed);
+}
+
+std::vector<void*> FighterMeshes(int side)
+{
+    std::vector<void*> meshes;
+    void* fighter = Fighter(side);
+    if (!fighter)
+        return meshes;
+    for (auto& slot : g_meshes) {
+        void* mesh = slot.load(std::memory_order_relaxed);
+        if (!mesh)
+            break;
+        if (ComponentOwner(mesh) == fighter)
+            meshes.push_back(mesh);
+    }
+    return meshes;
+}
+
+bool FighterPose(int side, Vec3& location, Rot& rotation)
+{
+    void* fighter = Fighter(side);
+    if (!fighter)
+        return false;
+    // Where the last game step put the fighter. What's on screen is a blend on the way there.
+    const Track& track = g_actorTracks[side];
+    if (g_time.Interpolate && track.Valid) {
+        location = track.TargetLocation;
+        rotation = track.TargetRotation;
+        return true;
+    }
+    struct {
+        Rot ReturnValue;
+    } params;
+    static FunctionRef ref { "Actor", "K2_GetActorRotation" };
+    if (!ActorLocation(fighter, location) || !Call(fighter, ref, &params))
+        return false;
+    rotation = params.ReturnValue;
+    return true;
 }
 
 double StepAlpha()

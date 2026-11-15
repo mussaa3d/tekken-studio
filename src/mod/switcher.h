@@ -1,6 +1,7 @@
 #pragma once
-// Changing replay from inside a replay. The game has no call for "play this one" that takes a replay, so this walks its own screens with
-// key presses, like a player would: to the end of the match, back to the replay list, along to the row, and play.
+// Changing replay from inside a replay or from the game's replay list. The game has no call for "play this one" that takes a replay, so
+// this makes the calls its screens make when clicked (see gameui): to the end of the match, Return to Replay List, the replay's tab,
+// the row whose date and players are the replay's, Play Replay, and the side for tips. No keys or clicks, so the game needn't be in front.
 #include <string>
 
 namespace switcher {

@@ -34,6 +34,41 @@ Check "depth" (Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1).F
 & .\tools\harness\run_harness.ps1 -RecordFrames 20 -Looks "0123" -Settle 0 | Where-Object { $_ -match "TIMED|stopped after" }
 foreach ($f in (Get-ChildItem build\harness_out\*.mp4 | Sort-Object Name)) { Check $f.Name $f.FullName @("--step", "4", "--frames", "20") }
 
+"=== I: the video written smaller than the picture: 1280 x 720 from a 1920 x 1080 render, every frame there"
+& .\tools\harness\run_harness.ps1 -RecordFrames 30 -OutputSize "1280x720" | Where-Object { $_ -match "TIMED|stopped after" }
+$file = Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1
+if ($file) {
+    $probe = (ffprobe -v error -select_streams v:0 -count_frames -show_entries stream=width,height,nb_read_frames -of csv=p=0 $file.FullName)
+    "scaled : $probe " + $(if ($probe -eq "1280,720,30") { "PASS" } else { "FAIL" })
+} else { "scaled : NO FILE" }
+
+"=== J: an odd picture size is trimmed to even numbers for the formats that need them (an odd video size is asked for, 1279 x 719)"
+& .\tools\harness\run_harness.ps1 -RecordFrames 20 -OutputSize "1279x719" | Where-Object { $_ -match "TIMED|stopped after" }
+$file = Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1
+if ($file) {
+    $probe = (ffprobe -v error -select_streams v:0 -count_frames -show_entries stream=width,height,nb_read_frames -of csv=p=0 $file.FullName)
+    "even : $probe " + $(if ($probe -eq "1278,718,20") { "PASS" } else { "FAIL" })
+} else { "even : NO FILE" }
+
+"=== K: a render size the window can't take (the stand-in's picture never changes size): the recording gives up with a reason and the window goes back"
+$lines = & .\tools\harness\run_harness.ps1 -Live -Frames 900 -RecordFrames 30 -CaptureSize "2560x1440" -TimeoutSeconds 90
+$gaveUp = ($lines | Where-Object { $_ -match "didn't take the size 2560 x 1440" }).Count -gt 0
+$back = ($lines | Where-Object { $_ -match "Window: back to" }).Count -gt 0
+$timedOut = ($lines | Where-Object { $_ -match "TIMED OUT" }).Count -gt 0
+"refused size : gave up with a reason $gaveUp, window back $back, hung $timedOut " + $(if ($gaveUp -and $back -and -not $timedOut) { "PASS" } else { "FAIL" })
+
+"=== L: the editor test with a stand-in for ReShade: found, listed, set and keyed, and recording after its effects"
+$lines = & .\tools\harness\run_harness.ps1 -UiTest -Live -ReShade -Frames 2000 -RecordFrames 0 -TimeoutSeconds 180
+$fails = (Select-String -Path build\tekken8mvm\tekken8mvm.log -Pattern "\[uitest\] FAIL").Count
+$passes = (Select-String -Path build\tekken8mvm\tekken8mvm.log -Pattern "\[uitest\] PASS").Count
+"reshade editor test : $passes passed, $fails failed " + $(if ($fails -eq 0 -and $passes -ge 44) { "PASS" } else { "FAIL" })
+& .\tools\harness\run_harness.ps1 -Live -ReShade -Frames 500 -RecordFrames 300 -TimeoutSeconds 120 | Where-Object { $_ -match "TIMED|stopped after" }
+$file = Get-ChildItem build\harness_out\*.mp4 | Select-Object -First 1
+if ($file) {
+    $probe = (ffprobe -v error -select_streams v:0 -count_frames -show_entries stream=nb_read_frames -of csv=p=0 $file.FullName)
+    "reshade recording : $probe frames " + $(if ($probe -eq "300") { "PASS" } else { "FAIL" })
+} else { "reshade recording : NO FILE" }
+
 "=== H: audio pass against a test tone"
 & .\tools\harness\run_harness.ps1 -RecordFrames 60 -Frames 240 -Audio | Where-Object { $_ -match "TIMED|Harness audio" }
 if (Test-Path build\tekken8mvm\harness_audio.wav) {

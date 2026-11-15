@@ -72,6 +72,11 @@ void SetRecordingClock(bool enabled, double samplesPerSecond);
 void* Fighter(int side);
 bool FighterLocation(int side, cine::Vec3& out);
 int FightCount(); // goes up each time a new fight is found
+int64_t Position(); // the fight's frame count, which is what the clock is made from
+// Game thread: every mesh a fighter wears, body first.
+std::vector<void*> FighterMeshes(int side);
+// Game thread: where the last game step put a fighter, without the blending between steps.
+bool FighterPose(int side, cine::Vec3& location, cine::Rot& rotation);
 double StepAlpha();
 
 struct HookStatus {

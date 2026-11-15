@@ -131,7 +131,7 @@ ID3DBlob* Compile(CompileFn compile, const char* entry, const char* target)
 
 bool CreatePipeline(ID3D12Device* device, DXGI_FORMAT format)
 {
-    HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
+    HMODULE compiler = LoadLibraryExW(L"d3dcompiler_47.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32); // Windows' own, not one dropped next to the game
     const CompileFn compile = compiler ? reinterpret_cast<CompileFn>(GetProcAddress(compiler, "D3DCompile")) : nullptr;
     if (!compile) {
         mod::Log("Depth: no shader compiler");

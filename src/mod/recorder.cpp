@@ -18,6 +18,7 @@
 #include "common/framemath.h"
 #include "mod/game.h"
 #include "mod/log.h"
+#include "mod/window.h"
 
 namespace recorder {
 
@@ -32,6 +33,9 @@ int g_rangeStopWait = 0;
 constexpr int PictureLag = 2;
 std::atomic<bool> g_firstCaptureDone { true };
 std::atomic<bool> g_startRequested { false };
+int g_sizeWait = 0;          // frames spent waiting for the game to take the capture size
+bool g_sizeChanged = false;  // the game window was resized for this recording, and goes back afterwards
+constexpr int MostSizeWait = 600;
 std::atomic<bool> g_stopRequested { false };
 std::atomic<bool> g_active { false };
 std::atomic<int> g_writers { 0 };
@@ -273,9 +277,26 @@ std::shared_ptr<Encoder> StartEncoder(UINT width, UINT height, DXGI_FORMAT forma
         return nullptr;
     }
 
-    char arguments[512];
-    snprintf(arguments, sizeof(arguments), "-hide_banner -y -f rawvideo -pix_fmt %s -s %ux%u -r %d -i - %s ", pixelFormat, width, height,
-             g_settings.Fps, codec.Arguments);
+    // The video's size: scaled down from the render when that's asked for, and even numbers for the formats that halve the colour.
+    int outWidth = 0, outHeight = 0;
+    VideoSize(static_cast<int>(width), static_cast<int>(height), outWidth, outHeight);
+    std::string filters;
+    const auto addFilter = [&](const std::string& filter) {
+        if (!filter.empty())
+            filters += (filters.empty() ? "" : ",") + filter;
+    };
+    const bool needsEven = std::string(codec.Extension) != ".png";
+    if (g_settings.OutputWidth > 0 && g_settings.OutputHeight > 0 && (outWidth != static_cast<int>(width) || outHeight != static_cast<int>(height)))
+        addFilter("scale=" + std::to_string(outWidth) + ":" + std::to_string(outHeight) + ":flags=lanczos");
+    else if (needsEven && ((width | height) & 1))
+        addFilter("crop=trunc(iw/2)*2:trunc(ih/2)*2");
+    addFilter(codec.Filter);
+    if (!filters.empty())
+        filters = "-vf \"" + filters + "\" ";
+
+    char arguments[768];
+    snprintf(arguments, sizeof(arguments), "-hide_banner -y -f rawvideo -pix_fmt %s -s %ux%u -r %d -i - %s%s ", pixelFormat, width, height, g_settings.Fps, filters.c_str(),
+             codec.Arguments);
     const std::string command = std::string("\"") + g_settings.FfmpegPath + "\" " + arguments + "\"" + output.string() + "\"";
 
     SECURITY_ATTRIBUTES inherit { sizeof(inherit), nullptr, TRUE };
@@ -485,15 +506,19 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
 
 const std::vector<Codec>& Codecs()
 {
-#define TEKKEN8MVM_BT709 "-vf scale=out_color_matrix=bt709:out_range=tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 "
+#define TEKKEN8MVM_BT709_FILTER "scale=out_color_matrix=bt709:out_range=tv"
+#define TEKKEN8MVM_BT709 "-colorspace bt709 -color_primaries bt709 -color_trc bt709 "
+    // New formats go at the end: presets and shots remember a format by its place in this list.
     static const std::vector<Codec> codecs = {
-        { "H.264 (x264, high quality)", ".mp4", TEKKEN8MVM_BT709 "-c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p" },
-        { "H.264 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709 "-c:v h264_nvenc -preset p6 -cq 14 -pix_fmt yuv420p" },
-        { "H.265 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709 "-c:v hevc_nvenc -preset p6 -cq 16 -pix_fmt yuv420p" },
-        { "ProRes 422 HQ (for editing)", ".mov", TEKKEN8MVM_BT709 "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le" },
-        { "PNG image sequence", ".png", "-c:v png -pix_fmt rgb24" },
+        { "H.264 (x264, high quality)", ".mp4", TEKKEN8MVM_BT709_FILTER, TEKKEN8MVM_BT709 "-c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p" },
+        { "H.264 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709_FILTER, TEKKEN8MVM_BT709 "-c:v h264_nvenc -preset p6 -cq 14 -pix_fmt yuv420p" },
+        { "H.265 (NVIDIA NVENC)", ".mp4", TEKKEN8MVM_BT709_FILTER, TEKKEN8MVM_BT709 "-c:v hevc_nvenc -preset p6 -cq 16 -pix_fmt yuv420p" },
+        { "ProRes 422 HQ (for editing)", ".mov", TEKKEN8MVM_BT709_FILTER, TEKKEN8MVM_BT709 "-c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le" },
+        { "PNG image sequence", ".png", "", "-c:v png -pix_fmt rgb24" },
+        { "ProRes 4444 (full colour, for grading)", ".mov", TEKKEN8MVM_BT709_FILTER, TEKKEN8MVM_BT709 "-c:v prores_ks -profile:v 4 -pix_fmt yuv444p10le" },
     };
 #undef TEKKEN8MVM_BT709
+#undef TEKKEN8MVM_BT709_FILTER
     return codecs;
 }
 
@@ -550,8 +575,34 @@ void RequestStart()
     g_stopRequested = false;
     g_rangeStopWait = 0;
     g_firstCaptureDone = false;
+    g_sizeWait = 0;
+    g_sizeChanged = g_settings.CaptureWidth > 0 && g_settings.CaptureHeight > 0;
+    if (g_sizeChanged)
+        window::SetCaptureSize(g_settings.CaptureWidth, g_settings.CaptureHeight);
     g_startRequested = true;
     game::SetRecordingClock(true, static_cast<double>(g_settings.Fps) * g_samplesPerFrame);
+}
+
+void VideoSize(int pictureWidth, int pictureHeight, int& width, int& height)
+{
+    const Settings& s = g_settings;
+    if (s.CaptureWidth > 0 && s.CaptureHeight > 0) {
+        pictureWidth = s.CaptureWidth;
+        pictureHeight = s.CaptureHeight;
+    }
+    width = pictureWidth;
+    height = pictureHeight;
+    if (s.OutputWidth > 0 && s.OutputHeight > 0) {
+        width = s.OutputWidth;
+        height = s.OutputHeight;
+    }
+    const bool needsEven = std::string(Codecs()[std::clamp(s.CodecIndex, 0, static_cast<int>(Codecs().size()) - 1)].Extension) != ".png";
+    if (needsEven) {
+        width &= ~1;
+        height &= ~1;
+    }
+    width = std::max(width, 2);
+    height = std::max(height, 2);
 }
 
 void RequestStop()
@@ -666,13 +717,31 @@ void OnGameTick(double clock)
 
 void OnPresent(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* backBuffer, DXGI_FORMAT format)
 {
-    if (g_startRequested.exchange(false)) {
+    if (g_startRequested.load()) {
         const D3D12_RESOURCE_DESC desc = backBuffer->GetDesc();
+        // The game takes a few frames to change its picture's size. Time is held until the first capture, so nothing is missed.
+        if (g_sizeChanged && (desc.Width != static_cast<UINT64>(g_settings.CaptureWidth) || desc.Height != static_cast<UINT>(g_settings.CaptureHeight))) {
+            if (++g_sizeWait <= MostSizeWait)
+                return;
+            SetError("the game didn't take the size " + std::to_string(g_settings.CaptureWidth) + " x " + std::to_string(g_settings.CaptureHeight) + ", it stayed at "
+                     + std::to_string(desc.Width) + " x " + std::to_string(desc.Height));
+            g_startRequested = false;
+            g_firstCaptureDone = true;
+            game::SetRecordingClock(false, g_settings.Fps);
+            window::SetCaptureSize(0, 0);
+            g_sizeChanged = false;
+            return;
+        }
+        g_startRequested = false;
         g_frames = 0;
         g_pixels = PixelFormatOf(format);
         if (!StartEncoders(static_cast<UINT>(desc.Width), desc.Height, format)) {
             CloseEncoders();
+            g_firstCaptureDone = true;
             game::SetRecordingClock(false, g_settings.Fps);
+            if (g_sizeChanged)
+                window::SetCaptureSize(0, 0);
+            g_sizeChanged = false;
             return;
         }
         if (g_samplesPerFrame > 1 && g_pixels == framemath::PixelFormat::RgbaF16) {
@@ -698,6 +767,9 @@ void OnPresent(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* 
         g_holdsTime = false;
         game::SetRecordingClock(false, g_settings.Fps);
         CloseEncoders();
+        if (g_sizeChanged)
+            window::SetCaptureSize(0, 0);
+        g_sizeChanged = false;
         mod::Log("Recorder: stopped after %llu frames", static_cast<unsigned long long>(g_frames.load()));
         return;
     }

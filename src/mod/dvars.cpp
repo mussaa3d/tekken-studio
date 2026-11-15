@@ -182,6 +182,30 @@ void ApplyFogFloat(ue::FunctionRef& setter, const char* property, float value)
         mod::Log("Dvars: this stage has no fog object");
 }
 
+// The fog you see is volumetric fog, which keeps its own start distance: StartDistance only moves the plain fog. Unreal has no setter
+// for it, so it's written and then a setter makes the engine read the fog again.
+void SetVolumetricStart(void* fog, int offset, float value)
+{
+    static ue::FunctionRef density { "ExponentialHeightFogComponent", "SetFogDensity" };
+    static const int densityAt = ue::PropertyOffset(ue::FindClass("ExponentialHeightFogComponent"), "FogDensity");
+    ue::Field<float>(fog, offset) = value;
+    if (densityAt < 0)
+        return;
+    const float current = ue::Field<float>(fog, densityAt);
+    CallFloat(fog, density, current + 0.0001f); // a setter that changes nothing is ignored
+    CallFloat(fog, density, current);
+}
+
+int VolumetricStartOffset()
+{
+    static const int offset = [] {
+        const int at = ue::PropertyOffset(ue::FindClass("ExponentialHeightFogComponent"), "VolumetricFogStartDistance");
+        mod::Log("Dvars: VolumetricFogStartDistance at %d", at);
+        return at;
+    }();
+    return offset;
+}
+
 void ApplyStage(const Slider& slider, float value)
 {
     static ue::FunctionRef density { "ExponentialHeightFogComponent", "SetFogDensity" };
@@ -198,9 +222,17 @@ void ApplyStage(const Slider& slider, float value)
     case Kind::FogFalloff:
         ApplyFogFloat(falloff, "FogHeightFalloff", value);
         break;
-    case Kind::FogStartDistance:
+    case Kind::FogStartDistance: {
         ApplyFogFloat(start, "StartDistance", value);
+        if (const int at = VolumetricStartOffset(); at >= 0) {
+            void* cls = ue::FindClass("ExponentialHeightFogComponent");
+            ForEachOf("ExponentialHeightFogComponent", [&](void* fog) {
+                Remember(fog, cls, "VolumetricFogStartDistance");
+                SetVolumetricStart(fog, at, value);
+            });
+        }
         break;
+    }
     case Kind::FogMaxOpacity:
         ApplyFogFloat(opacity, "FogMaxOpacity", value);
         break;
@@ -270,6 +302,13 @@ void RestoreStage(const Slider& slider)
     case Kind::Cvar:
         return;
     }
+    if (slider.Kind == Kind::FogStartDistance)
+        if (const int at = VolumetricStartOffset(); at >= 0)
+            ForEachOf(className, [&](void* fog) {
+                const auto it = g_originals.find(std::make_pair(fog, std::string("VolumetricFogStartDistance")));
+                if (it != g_originals.end())
+                    SetVolumetricStart(fog, at, it->second);
+            });
     ForEachOf(className, [&](void* object) {
         const auto it = g_originals.find(std::make_pair(object, std::string(property)));
         if (it != g_originals.end())
@@ -445,6 +484,51 @@ void Reset(Slider& slider)
     slider.Value = slider.Default;
     std::lock_guard lock(g_mutex);
     g_pending.push_back(static_cast<int>(&slider - All().data()));
+}
+
+const char* GraphicsPresetName(int preset)
+{
+    static const char* const names[GraphicsPresetCount] = { "All low", "Medium", "High", "Epic", "Cinematic", "Extreme" };
+    return preset >= 0 && preset < GraphicsPresetCount ? names[preset] : "The game's own";
+}
+
+void ApplyGraphicsPreset(int preset)
+{
+    struct Setting {
+        const char* Label;
+        float Values[GraphicsPresetCount]; // Low, Medium, High, Epic, Cinematic, Extreme
+    };
+    // GI and reflections: 0 none, 1 Lumen, 2 screen space. Anti-aliasing: 1 FXAA, 2 TAA, 4 TSR.
+    static const Setting settings[] = {
+        { "Global illumination", { 0, 2, 1, 1, 1, 1 } },
+        { "Global illumination quality", { 0, 1, 2, 3, 4, 4 } },
+        { "Reflections", { 0, 2, 1, 1, 1, 1 } },
+        { "Reflection quality", { 0, 1, 2, 3, 4, 4 } },
+        { "Shadow quality", { 0, 1, 2, 3, 4, 4 } },
+        { "Anti-aliasing", { 1, 2, 2, 4, 4, 4 } },
+        { "Anti-aliasing quality", { 0, 1, 2, 3, 4, 4 } },
+        { "View distance", { 0, 1, 2, 3, 4, 4 } },
+        { "Post processing", { 0, 1, 2, 3, 4, 4 } },
+        { "Textures", { 0, 1, 2, 3, 4, 4 } },
+        { "Effects", { 0, 1, 2, 3, 4, 4 } },
+        { "Foliage", { 0, 1, 2, 3, 4, 4 } },
+        { "Shading", { 0, 1, 2, 3, 4, 4 } },
+        { "Bloom quality", { 1, 3, 4, 5, 5, 5 } },
+        { "Motion blur quality", { 0, 2, 3, 4, 4, 4 } },
+        { "Depth of field quality", { 0, 1, 2, 2, 3, 4 } },
+        { "Resolution scale", { 70, 85, 100, 100, 100, 150 } },
+    };
+    for (Slider& slider : All())
+        for (const Setting& setting : settings) {
+            if (slider.Label != setting.Label || (slider.Group != "Quality" && slider.Group != "Engine"))
+                continue;
+            if (preset < 0 || preset >= GraphicsPresetCount) {
+                Reset(slider);
+            } else {
+                slider.Value = std::clamp(setting.Values[preset], slider.Min, slider.Max);
+                Changed(slider);
+            }
+        }
 }
 
 Colors& Tint()

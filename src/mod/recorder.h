@@ -23,6 +23,7 @@ namespace recorder {
 struct Codec {
     const char* Label;
     const char* Extension;
+    const char* Filter;    // ffmpeg video filters this format needs, such as the colour matrix
     const char* Arguments;
 };
 const std::vector<Codec>& Codecs();
@@ -55,6 +56,10 @@ struct Settings {
     float DepthNear = 0, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
     bool UseRange = false;    // start and stop by themselves at the timeline's range
     double RangeIn = 0, RangeOut = 10; // seconds on the fight clock
+    // The size the game renders at while it records, whatever the monitor's size is. 0 = the game window as it is.
+    int CaptureWidth = 0, CaptureHeight = 0;
+    // The size of the video. 0 = as rendered. Smaller than the render size gives a cleaner picture than rendering at that size.
+    int OutputWidth = 0, OutputHeight = 0;
 };
 Settings& Config();
 
@@ -74,6 +79,9 @@ bool TakeAdvance();
 bool WaitingForFirstFrame();
 Pass ActivePass();
 int EnabledStreams();
+
+// The size the next recording's video will be, given the picture's size now. For the menu.
+void VideoSize(int pictureWidth, int pictureHeight, int& width, int& height);
 
 // Records exactly this stretch of the timeline once, starting when the clock gets to the start. The caller takes the fight there.
 void RecordRange(double in, double out);

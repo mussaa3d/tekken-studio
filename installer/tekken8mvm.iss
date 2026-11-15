@@ -4,7 +4,7 @@
 ; downloads a pinned release from GitHub and checks its SHA-256 before using it.
 
 #define AppName "tekken8mvm"
-#define AppVersion "1.0"
+#define AppVersion "2.1"
 #define FfmpegVersion "9.0.2"
 #define FfmpegUrl "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
 #define FfmpegSha256 "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
@@ -15,7 +15,7 @@ AppId={{0F81B8E8-9138-4408-BD65-3C51D081EB80}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion=2.1.0.0
 AppPublisher={#AppName}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
@@ -27,6 +27,9 @@ InfoBeforeFile=before_install.txt
 OutputDir=..\release
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
 UninstallDisplayIcon={app}\tekken8mvm.exe
+SetupIconFile=logo\tekken8mvm.ico
+WizardSmallImageFile=logo\wizard_small.bmp
+WizardImageFile=logo\wizard_large.bmp
 UninstallDisplayName={#AppName}
 WizardStyle=modern
 Compression=lzma2
@@ -42,6 +45,13 @@ Source: "..\dist\tekken8mvm.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\mod\dinput8.dll"; DestDir: "{app}\mod"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+; The licences of the libraries built into the tool, which ask to be passed on with it.
+Source: "..\third_party\imgui\LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "Dear ImGui.txt"; Flags: ignoreversion
+Source: "..\third_party\minhook\LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "MinHook.txt"; Flags: ignoreversion
+Source: "..\third_party\reshade\LICENSE.md"; DestDir: "{app}\licenses"; DestName: "ReShade add-on API.txt"; Flags: ignoreversion
+Source: "..\third_party\fonts\Rubik-OFL.txt"; DestDir: "{app}\licenses"; DestName: "Rubik font.txt"; Flags: ignoreversion
+Source: "..\third_party\fonts\FontAwesome-LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "Font Awesome Free.txt"; Flags: ignoreversion
+Source: "..\third_party\fonts\IconFontCppHeaders-licence.txt"; DestDir: "{app}\licenses"; DestName: "IconFontCppHeaders.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\tekken8mvm.exe"
@@ -50,6 +60,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\tekken8mvm.exe"; Tasks: deskt
 
 [Run]
 Filename: "{app}\tekken8mvm.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
+; An update from inside the tool runs this installer with /SILENT (a progress bar, no pages), then starts the tool again.
+Filename: "{app}\tekken8mvm.exe"; Flags: nowait skipifnotsilent
 
 [UninstallRun]
 ; Takes the mod and any skins back out of the game folder before the launcher that would do it is gone.

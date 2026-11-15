@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cstring>
 #include <map>
 #include <mutex>
 
@@ -229,10 +231,21 @@ int PropertyOffsetUnguarded(const void* cls, const std::string& name)
 
 void PropertyNamesUnguarded(const void* cls, std::vector<std::string>& names)
 {
-    ForEachProperty(cls, [&](const std::string& property, int offset) {
-        names.push_back(property + " @0x" + std::to_string(offset));
-        return true;
-    });
+    // Each with its type (the FFieldClass's name, the first thing in it) and size, so a function's parameters can be read off the list.
+    constexpr uintptr_t FieldClassPrivate = 0x08, ElementSize = 0x3C;
+    if (!Engine().AppendString || !scan::IsReadable(cls, ChildProperties + 8))
+        return;
+    int guard = 0;
+    for (void* field = Field<void*>(cls, ChildProperties); field && guard < 4096; ++guard) {
+        if (!scan::IsReadable(field, PropertyOffsetInternal + 4))
+            return;
+        const void* type = Field<void*>(field, FieldClassPrivate);
+        char offset[16];
+        snprintf(offset, sizeof(offset), "0x%X", Field<int>(field, PropertyOffsetInternal));
+        names.push_back(NameAt(reinterpret_cast<const uint8_t*>(field) + FieldName) + " @" + offset + " " + (scan::IsReadable(type, 8) ? NameAt(type) : std::string("?")) + " "
+                        + std::to_string(Field<int>(field, ElementSize)));
+        field = Field<void*>(field, FieldNextProperty);
+    }
 }
 
 bool BoolPropertyUnguarded(const void* cls, const std::string& name, int& byteOffset, uint8_t& mask)
@@ -415,6 +428,17 @@ bool Call(void* object, FunctionRef& ref, void* params)
     return true;
 }
 
+bool CallOwn(void* object, const std::string& name, void* params)
+{
+    if (!object || !scan::IsReadable(object, 0x28))
+        return false;
+    void* function = FindFunction(Field<void*>(object, ClassPrivate), name);
+    if (!function)
+        return false;
+    ProcessEvent(object, function, params);
+    return true;
+}
+
 void* GameViewport()
 {
     void* engine = Engine().GEngine ? *Engine().GEngine : nullptr;
@@ -521,6 +545,243 @@ void DestroyActor(void* actor)
 {
     static FunctionRef ref { "Actor", "K2_DestroyActor" };
     Call(actor, ref, nullptr);
+}
+
+namespace {
+
+// Identity transform: rotation quaternion, translation, scale, four doubles each.
+void WriteIdentity(uint8_t* at)
+{
+    auto* transform = reinterpret_cast<double*>(at);
+    transform[3] = 1.0;
+    transform[8] = transform[9] = transform[10] = 1.0;
+}
+
+// An object's own name, with nothing cut off: a package's name is its whole path.
+std::string RawNameOf(const void* object)
+{
+    return object && Engine().AppendString ? NameAt(reinterpret_cast<const uint8_t*>(object) + NamePrivate) : std::string();
+}
+
+constexpr uintptr_t OuterPrivate = 0x20;
+
+} // namespace
+
+void* SpawnActor(const std::string& className)
+{
+    void* library = FindClass("GameplayStatics");
+    void* cls = FindClass(className);
+    void* begin = library ? FindFunction(library, "BeginDeferredActorSpawnFromClass") : nullptr;
+    void* finish = library ? FindFunction(library, "FinishSpawningActor") : nullptr;
+    void* world = World();
+    if (!cls || !begin || !finish || !world)
+        return nullptr;
+    const int worldAt = PropertyOffset(begin, "WorldContextObject");
+    const int classAt = PropertyOffset(begin, "ActorClass");
+    const int transformAt = PropertyOffset(begin, "SpawnTransform");
+    const int collisionAt = PropertyOffset(begin, "CollisionHandlingOverride");
+    const int returnAt = PropertyOffset(begin, "ReturnValue");
+    const int finishActorAt = PropertyOffset(finish, "Actor");
+    const int finishTransformAt = PropertyOffset(finish, "SpawnTransform");
+    if (worldAt < 0 || classAt < 0 || transformAt < 0 || returnAt < 0 || finishActorAt < 0 || finishTransformAt < 0) {
+        static bool warned = false;
+        if (!warned)
+            mod::Log("Spawn: the spawn functions have an unexpected layout");
+        warned = true;
+        return nullptr;
+    }
+    alignas(16) uint8_t params[0x200] = {};
+    *reinterpret_cast<void**>(params + worldAt) = world;
+    *reinterpret_cast<void**>(params + classAt) = cls;
+    WriteIdentity(params + transformAt);
+    if (collisionAt >= 0)
+        params[collisionAt] = 1; // always spawn
+    static FunctionRef beginRef { "GameplayStatics", "BeginDeferredActorSpawnFromClass" };
+    Call(nullptr, beginRef, params);
+    void* actor = *reinterpret_cast<void**>(params + returnAt);
+    if (!actor)
+        return nullptr;
+
+    alignas(16) uint8_t finishParams[0x200] = {};
+    *reinterpret_cast<void**>(finishParams + finishActorAt) = actor;
+    WriteIdentity(finishParams + finishTransformAt);
+    static FunctionRef finishRef { "GameplayStatics", "FinishSpawningActor" };
+    Call(nullptr, finishRef, finishParams);
+    return actor;
+}
+
+void SetActorPose(void* actor, cine::Vec3 location, cine::Rot rotation)
+{
+    static void* cls = FindClass("Actor");
+    static void* function = cls ? FindFunction(cls, "K2_SetActorLocationAndRotation") : nullptr;
+    static const int rotationAt = function ? PropertyOffset(function, "NewRotation") : -1;
+    static const int teleportAt = function ? PropertyOffset(function, "bTeleport") : -1;
+    if (rotationAt < 0 || teleportAt < 0 || teleportAt > 0x3F0)
+        return;
+    alignas(16) uint8_t params[0x400] = {}; // the function also takes a hit result to fill in
+    *reinterpret_cast<cine::Vec3*>(params) = location;
+    *reinterpret_cast<cine::Rot*>(params + rotationAt) = rotation;
+    params[teleportAt] = 1;
+    static FunctionRef ref { "Actor", "K2_SetActorLocationAndRotation" };
+    Call(actor, ref, params);
+}
+
+void SetActorScale(void* actor, cine::Vec3 scale)
+{
+    static FunctionRef ref { "Actor", "SetActorScale3D" };
+    Call(actor, ref, &scale);
+}
+
+void SetActorHidden(void* actor, bool hidden)
+{
+    struct {
+        bool Hidden;
+    } params { hidden };
+    static FunctionRef ref { "Actor", "SetActorHiddenInGame" };
+    Call(actor, ref, &params);
+}
+
+void* ComponentOwner(void* component)
+{
+    struct {
+        void* ReturnValue;
+    } params { nullptr };
+    static FunctionRef ref { "ActorComponent", "GetOwner" };
+    Call(component, ref, &params);
+    return params.ReturnValue;
+}
+
+bool ComponentTransform(void* component, cine::Xform& out)
+{
+    struct {
+        double Rotation[4], Translation[4], Scale[4];
+    } params {};
+    params.Rotation[3] = 1;
+    static FunctionRef ref { "SceneComponent", "K2_GetComponentToWorld" };
+    if (!Call(component, ref, &params))
+        return false;
+    out.Rotation = { params.Rotation[0], params.Rotation[1], params.Rotation[2], params.Rotation[3] };
+    out.Translation = { params.Translation[0], params.Translation[1], params.Translation[2] };
+    out.Scale = { params.Scale[0], params.Scale[1], params.Scale[2] };
+    return true;
+}
+
+void SetComponentPose(void* component, cine::Vec3 location, cine::Rot rotation)
+{
+    static void* cls = FindClass("SceneComponent");
+    static void* function = cls ? FindFunction(cls, "K2_SetWorldLocationAndRotation") : nullptr;
+    static const int rotationAt = function ? PropertyOffset(function, "NewRotation") : -1;
+    static const int teleportAt = function ? PropertyOffset(function, "bTeleport") : -1;
+    if (rotationAt < 0 || teleportAt < 0 || teleportAt > 0x3F0)
+        return;
+    alignas(16) uint8_t params[0x400] = {};
+    *reinterpret_cast<cine::Vec3*>(params) = location;
+    *reinterpret_cast<cine::Rot*>(params + rotationAt) = rotation;
+    params[teleportAt] = 1;
+    static FunctionRef ref { "SceneComponent", "K2_SetWorldLocationAndRotation" };
+    Call(component, ref, params);
+}
+
+void SetComponentScale(void* component, cine::Vec3 scale)
+{
+    static FunctionRef ref { "SceneComponent", "SetWorldScale3D" };
+    Call(component, ref, &scale);
+}
+
+void SetMovable(void* component)
+{
+    static void* scene = FindClass("SceneComponent");
+    static const int at = scene ? PropertyOffset(scene, "Mobility") : -1;
+    if (at >= 0 && Field<uint8_t>(component, at) == 2)
+        return;
+    uint8_t movable = 2;
+    static FunctionRef ref { "SceneComponent", "SetMobility" };
+    Call(component, ref, &movable);
+}
+
+std::string PathOf(void* object)
+{
+    if (!object || !scan::IsReadable(object, 0x28))
+        return {};
+    std::string path = RawNameOf(object);
+    int depth = 0;
+    for (void* outer = Field<void*>(object, OuterPrivate); outer && scan::IsReadable(outer, 0x28) && depth < 8; outer = Field<void*>(outer, OuterPrivate), ++depth) {
+        // The outermost one is the package, whose name is the path on disk. Anything between is a subobject.
+        const bool package = Field<void*>(outer, OuterPrivate) == nullptr;
+        path = RawNameOf(outer) + (package ? "." : ":") + path;
+    }
+    return path;
+}
+
+void* FindLoaded(const std::string& className, const std::string& nameOrPath)
+{
+    void* cls = FindClass(className);
+    if (!cls || nameOrPath.empty())
+        return nullptr;
+    const bool byPath = nameOrPath.find('/') != std::string::npos;
+    const std::string shortName = byPath ? nameOrPath.substr(nameOrPath.find_last_of("/.") + 1) : nameOrPath;
+    void* found = nullptr;
+    ForEachObject([&](void* object) {
+        if (!IsA(object, cls) || (Field<uint32_t>(object, ObjectFlags) & RF_ClassDefaultObject) || RawNameOf(object) != shortName)
+            return true;
+        if (byPath && PathOf(object) != nameOrPath)
+            return true;
+        found = object;
+        return false;
+    });
+    return found;
+}
+
+void* LoadAsset(const std::string& path)
+{
+    void* library = FindClass("KismetSystemLibrary");
+    void* make = library ? FindFunction(library, "MakeSoftObjectPath") : nullptr;
+    void* convert = library ? FindFunction(library, "Conv_SoftObjPathToSoftObjRef") : nullptr;
+    void* load = library ? FindFunction(library, "LoadAsset_Blocking") : nullptr;
+    if (!make || !convert || !load)
+        return nullptr;
+    const int makeReturn = PropertyOffset(make, "ReturnValue"), convertIn = PropertyOffset(convert, "SoftObjectPath"), convertReturn = PropertyOffset(convert, "ReturnValue");
+    const int loadIn = PropertyOffset(load, "Asset"), loadReturn = PropertyOffset(load, "ReturnValue");
+    const int makeSize = Field<uint16_t>(make, FunctionParamsSize), convertSize = Field<uint16_t>(convert, FunctionParamsSize), loadSize = Field<uint16_t>(load, FunctionParamsSize);
+    const int pathBytes = makeSize - makeReturn, pointerBytes = convertSize - convertReturn;
+    // The sizes come from the functions themselves. If they don't add up, this build lays them out differently, and nothing is called.
+    if (makeReturn < 16 || convertIn != 0 || convertReturn < pathBytes || loadIn != 0 || loadReturn < pointerBytes || pathBytes < 16 || pathBytes > 0x60 || pointerBytes < 16
+        || pointerBytes > 0x80 || makeSize > 0xE0 || convertSize > 0xE0 || loadSize > 0xE0) {
+        mod::Log("Load: the engine's load functions have an unexpected layout (%d %d %d %d %d, sizes %d %d %d)", makeReturn, convertIn, convertReturn, loadIn, loadReturn, makeSize,
+                 convertSize, loadSize);
+        return nullptr;
+    }
+    const std::wstring wide(path.begin(), path.end());
+    alignas(16) uint8_t makeParams[0x100] = {}, convertParams[0x100] = {}, loadParams[0x100] = {};
+    *reinterpret_cast<FString*>(makeParams) = FString(wide);
+    static FunctionRef makeRef { "KismetSystemLibrary", "MakeSoftObjectPath" };
+    static FunctionRef convertRef { "KismetSystemLibrary", "Conv_SoftObjPathToSoftObjRef" };
+    static FunctionRef loadRef { "KismetSystemLibrary", "LoadAsset_Blocking" };
+    if (!Call(nullptr, makeRef, makeParams))
+        return nullptr;
+    std::memcpy(convertParams + convertIn, makeParams + makeReturn, pathBytes);
+    if (!Call(nullptr, convertRef, convertParams))
+        return nullptr;
+    std::memcpy(loadParams + loadIn, convertParams + convertReturn, pointerBytes);
+    if (!Call(nullptr, loadRef, loadParams))
+        return nullptr;
+    return *reinterpret_cast<void**>(loadParams + loadReturn);
+}
+
+std::vector<std::string> LoadedNames(const std::string& className)
+{
+    std::vector<std::string> names;
+    void* cls = FindClass(className);
+    if (!cls)
+        return names;
+    ForEachObject([&](void* object) {
+        if (IsA(object, cls) && !(Field<uint32_t>(object, ObjectFlags) & RF_ClassDefaultObject))
+            names.push_back(RawNameOf(object));
+        return true;
+    });
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
 }
 
 SlateVisibility WidgetVisibility(void* widget)

@@ -12,7 +12,10 @@
 #include "common/framemath.h"
 #include "common/guardlogic.h"
 #include "common/lookmath.h"
+#include "common/xform.h"
 #include "launcher/game_files.h"
+#include "launcher/updater.h"
+#include "mod/log.h"
 #include "mod/scan.h"
 
 namespace fs = std::filesystem;
@@ -575,8 +578,134 @@ static void TestLookBlend()
     CHECK(!LookNumber("one.hdr", v) && !LookNumber("", v) && !LookNumber("1.5x", v));
 }
 
+static bool NearVec(Vec3 a, Vec3 b, double tolerance = 1e-6)
+{
+    return Near(a.X, b.X, tolerance) && Near(a.Y, b.Y, tolerance) && Near(a.Z, b.Z, tolerance);
+}
+
+// The transforms that put an actor's recorded motion somewhere else on the stage.
+static void TestXform()
+{
+    // Rotating by a quaternion agrees with the camera's own axes.
+    const Rot turned { 20, 70, 0 };
+    CHECK(NearVec(Rotate(ToQuat(turned), { 1, 0, 0 }), ForwardOf(turned)));
+    CHECK(NearVec(Rotate(ToQuat({ 0, 90, 0 }), { 1, 0, 0 }), { 0, 1, 0 }));
+
+    const Xform a { ToQuat({ 10, 40, -5 }), { 100, -50, 20 }, { 2, 2, 2 } };
+    const Xform b { ToQuat({ -30, 120, 15 }), { -7, 300, 90 }, { 0.5, 0.5, 0.5 } };
+    const Vec3 point { 3, -4, 5 };
+
+    // A then B is the same as applying A, then B, to a point.
+    CHECK(NearVec(Apply(Compose(a, b), point), Apply(b, Apply(a, point)), 1e-6));
+    // A transform and its inverse cancel, either way round.
+    CHECK(NearVec(Apply(Compose(a, Inverse(a)), point), point, 1e-6));
+    CHECK(NearVec(Apply(Compose(Inverse(a), a), point), point, 1e-6));
+    CHECK(NearVec(Apply(Inverse(a), Apply(a, point)), point, 1e-6));
+
+    // Motion placed where it was recorded comes back unchanged.
+    const Xform first { ToQuat({ 0, 30, 0 }), { 500, 200, 0 }, { 1, 1, 1 } };
+    const Xform now { ToQuat({ 0, 75, 0 }), { 620, 260, 0 }, { 1, 1, 1 } };
+    const Xform same = Replaced(first, now, first);
+    CHECK(NearVec(same.Translation, now.Translation, 1e-6));
+    CHECK(NearVec(Apply(same, point), Apply(now, point), 1e-6));
+
+    // Placed elsewhere and turned, the motion since the first frame turns with it and keeps its length.
+    const Xform placement { ToQuat({ 0, 120, 0 }), { -1000, 40, 0 }, { 1, 1, 1 } };
+    const Xform moved = Replaced(first, now, placement);
+    const Vec3 walked = now.Translation - first.Translation, walkedThere = moved.Translation - placement.Translation;
+    CHECK(Near(Length(walked), Length(walkedThere), 1e-6));
+    CHECK(NearVec(walkedThere, Rotate(ToQuat({ 0, 90, 0 }), walked), 1e-6)); // turned by the 90 degrees between 30 and 120
+    CHECK(Near(WrapAngle(ToRot(moved.Rotation).Yaw - 165), 0, 1e-6));        // and so is which way it faces: 75 + 90
+    // The first frame lands exactly on the placement.
+    CHECK(NearVec(Replaced(first, first, placement).Translation, placement.Translation, 1e-9));
+
+    // A bigger actor takes bigger steps.
+    Xform big = placement;
+    big.Scale = { 2, 2, 2 };
+    CHECK(Near(Length(Replaced(first, now, big).Translation - big.Translation), 2 * Length(walked), 1e-6));
+
+    const Xform half = BlendXform(first, now, 0.5);
+    CHECK(NearVec(half.Translation, { 560, 230, 0 }));
+    CHECK(Near(WrapAngle(ToRot(half.Rotation).Yaw - 52.5), 0, 1e-6));
+}
+
+// Which two frames of a take a moment on the timeline falls between.
+static void TestTakeCursor()
+{
+    // 61 frames is one second.
+    TakeCursor c = SampleTake(61, 0.0, 1.0, TakeEnd::Hold);
+    CHECK(c.A == 0 && c.B == 1 && Near(c.Alpha, 0) && c.Visible);
+    c = SampleTake(61, 0.5, 1.0, TakeEnd::Hold);
+    CHECK(c.A == 30 && c.B == 31 && Near(c.Alpha, 0, 1e-9));
+    c = SampleTake(61, 0.5 + 0.25 / 60.0, 1.0, TakeEnd::Hold);
+    CHECK(c.A == 30 && c.B == 31 && Near(c.Alpha, 0.25, 1e-9));
+    // Half speed takes twice as long to get there.
+    c = SampleTake(61, 1.0, 0.5, TakeEnd::Hold);
+    CHECK(c.A == 30 && c.B == 31);
+
+    // Before its start an actor waits on its first frame, or isn't there at all.
+    c = SampleTake(61, -2.0, 1.0, TakeEnd::Hold);
+    CHECK(c.A == 0 && c.B == 0 && c.Visible);
+    c = SampleTake(61, -2.0, 1.0, TakeEnd::Hide);
+    CHECK(!c.Visible);
+
+    // After the end: the last pose, gone, or round again.
+    c = SampleTake(61, 5.0, 1.0, TakeEnd::Hold);
+    CHECK(c.A == 60 && c.B == 60 && c.Visible);
+    c = SampleTake(61, 5.0, 1.0, TakeEnd::Hide);
+    CHECK(!c.Visible);
+    c = SampleTake(61, 1.5, 1.0, TakeEnd::Loop);
+    CHECK(c.A == 30 && c.B == 31 && c.Visible);
+    c = SampleTake(61, 1.0, 1.0, TakeEnd::Loop);
+    CHECK(c.A == 0 && c.Visible);
+
+    // Never outside the take, whatever the numbers.
+    for (const double seconds : { -1e9, -0.001, 0.0, 0.999, 1.0, 1.0001, 1e9 })
+        for (const TakeEnd end : { TakeEnd::Hold, TakeEnd::Loop, TakeEnd::Hide }) {
+            c = SampleTake(61, seconds, 3.7, end);
+            CHECK(c.A >= 0 && c.A <= 60 && c.B >= c.A && c.B <= 60 && c.Alpha >= 0 && c.Alpha <= 1);
+        }
+    CHECK(!SampleTake(0, 1.0, 1.0, TakeEnd::Hold).Visible);
+    c = SampleTake(1, 3.0, 1.0, TakeEnd::Loop); // a single pose is a statue
+    CHECK(c.A == 0 && c.B == 0 && c.Visible);
+}
+
+// Names from shared presets and replay files must stay in their own folder.
+static void TestSafeFileName()
+{
+    CHECK(mod::SafeFileName("look1"));
+    CHECK(mod::SafeFileName("sunset sky.hdr"));
+    CHECK(!mod::SafeFileName(""));
+    CHECK(!mod::SafeFileName("..\\..\\Windows\\x"));
+    CHECK(!mod::SafeFileName("../x"));
+    CHECK(!mod::SafeFileName("\\\\server\\share\\x.hdr"));
+    CHECK(!mod::SafeFileName("C:\\x.hdr"));
+    CHECK(!mod::SafeFileName("C:x"));
+    CHECK(!mod::SafeFileName(".."));
+    CHECK(!mod::SafeFileName("a\"b"));
+    CHECK(!mod::SafeFileName("x."));
+}
+
+static void TestUpdater()
+{
+    CHECK(updater::Newer("2.2", "2.1") && updater::Newer("2.10", "2.9") && updater::Newer("3", "2.9.9") && updater::Newer("2.1.1", "2.1"));
+    CHECK(!updater::Newer("2.1", "2.1") && !updater::Newer("2.0", "2.1") && !updater::Newer("2.1", "2.1.0"));
+    const std::string reply = "{\"tag_name\":\"v2.2\",\"name\":\"2.2\",\"assets\":[{\"name\":\"tekken8mvm-2.2-setup.exe.sha256\",\"browser_download_url\":"
+                              "\"https://github.com/o/r/releases/download/v2.2/tekken8mvm-2.2-setup.exe.sha256\"},{\"name\":\"tekken8mvm-2.2-setup.exe\","
+                              "\"browser_download_url\": \"https://github.com/o/r/releases/download/v2.2/tekken8mvm-2.2-setup.exe\"}]}";
+    const updater::Release release = updater::ReadLatest(reply);
+    CHECK(release.Found && release.Version == "2.2" && release.InstallerName == "tekken8mvm-2.2-setup.exe");
+    CHECK(release.ChecksumUrl.ends_with(".sha256") && release.InstallerUrl.ends_with("-setup.exe"));
+    CHECK(!updater::ReadLatest("{\"tag_name\":\"v2.2\",\"assets\":[]}").Found); // no installer, nothing to offer
+    CHECK(updater::Sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
 int main()
 {
+    TestUpdater();
+    TestSafeFileName();
+    TestXform();
+    TestTakeCursor();
     TestRotations();
     TestPath();
     TestRelativeCamera();

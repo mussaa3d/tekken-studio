@@ -11,7 +11,9 @@
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -19,6 +21,7 @@
 
 #include "common/config.h"
 #include "launcher/game_files.h"
+#include "launcher/updater.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
@@ -343,7 +346,7 @@ void ReplaysTab()
     } else {
         ImGui::Text("%d replays, newest %s", static_cast<int>(g_app.Replays.size()), g_app.Replays.front().Modified.c_str());
     }
-    ImGui::TextWrapped("To send a replay to a friend, start a cinematic session and open the REPLAYS tab in the editor: pick a replay and press Export. "
+    ImGui::TextWrapped("To send a replay to a friend, start a cinematic session and open the Replays tab in the editor: pick a replay and press Export. "
                        "A file you received goes in the shared_replays folder next to your recordings, and Load puts it in the game's Downloaded Replays. "
                        "It stays there until you close the game. Both of you need the same game version, and the file holds both players' names.");
     if (ImGui::Button("Open shared replays")) {
@@ -473,6 +476,67 @@ void HelpTab()
     }
 }
 
+// Updates: GitHub is asked once, when the tool opens.
+updater::Release g_update;
+std::atomic<int> g_updateState { 0 }; // 0 not asked, 1 asking, 2 asked, 3 downloading, 4 started
+std::string g_updateProblem;
+std::mutex g_updateMutex;
+
+DWORD WINAPI UpdateCheck(void*)
+{
+    const updater::Release latest = updater::Latest();
+    {
+        std::lock_guard lock(g_updateMutex);
+        if (latest.Found && updater::Newer(latest.Version, updater::CurrentVersion()))
+            g_update = latest;
+    }
+    g_updateState = 2;
+    return 0;
+}
+
+DWORD WINAPI UpdateDownload(void*)
+{
+    updater::Release release;
+    {
+        std::lock_guard lock(g_updateMutex);
+        release = g_update;
+    }
+    const std::string problem = updater::DownloadAndRun(release);
+    std::lock_guard lock(g_updateMutex);
+    g_updateProblem = problem;
+    g_updateState = problem.empty() ? 4 : 2;
+    return 0;
+}
+
+void UpdateBanner()
+{
+    if (g_updateState == 0) {
+        g_updateState = 1;
+        CloseHandle(CreateThread(nullptr, 0, UpdateCheck, nullptr, 0, nullptr));
+    }
+    if (g_updateState < 2)
+        return;
+    std::lock_guard lock(g_updateMutex);
+    if (g_update.Version.empty())
+        return;
+    if (g_updateState == 4) {
+        PostQuitMessage(0); // the installer is running; close so it can replace this tool
+        return;
+    }
+    ImGui::TextColored(Accent, "tekken8mvm %s is out (you have %s).", g_update.Version.c_str(), updater::CurrentVersion().c_str());
+    ImGui::SameLine();
+    if (g_updateState == 3) {
+        ImGui::TextDisabled("Downloading. The tool closes, updates and opens again by itself.");
+    } else if (ImGui::SmallButton("Update now")) {
+        g_updateState = 3;
+        g_updateProblem.clear();
+        CloseHandle(CreateThread(nullptr, 0, UpdateDownload, nullptr, 0, nullptr));
+    }
+    if (!g_updateProblem.empty())
+        ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", g_updateProblem.c_str());
+    ImGui::Separator();
+}
+
 void DrawUi(double now)
 {
     if (now - g_app.LastRefresh > 2.0) {
@@ -485,6 +549,7 @@ void DrawUi(double now)
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     ImGui::Begin("##main", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    UpdateBanner();
     if (ImGui::BeginTabBar("tabs")) {
         if (ImGui::BeginTabItem("Play")) {
             PlayTab();
@@ -641,6 +706,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* commandLine, int sho
     windowClass.lpfnWndProc = WndProc;
     windowClass.hInstance = instance;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1)); // the logo, from src/launcher/icon.rc
+    windowClass.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                                                        GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
     windowClass.lpszClassName = L"tekken8mvm";
     RegisterClassExW(&windowClass);
 

@@ -10,12 +10,15 @@
 
 #include <MinHook.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <mutex>
 #include <set>
 #include <string>
+#include <vector>
 
+#include "mod/events.h"
 #include "mod/log.h"
 #include "mod/scan.h"
 #include "mod/ue.h"
@@ -115,27 +118,27 @@ NTSTATUS WINAPI DetourDecrypt(BCRYPT_KEY_HANDLE key, PUCHAR input, ULONG inputSi
     return status;
 }
 
-using ProcessEventFn = void (*)(void*, void*, void*);
-ProcessEventFn oProcessEvent = nullptr;
 std::atomic<bool> g_eventsOn { false };
 std::atomic<int> g_eventLines { 0 };
+std::mutex g_eventMutex;
+std::map<void*, bool> g_known; // function -> whether its name has one of the words
+std::vector<std::string> g_words { "Rewind", "Jump", "Replay" };
 
 // Which engine events a game action fires, and the native call path that fired them. Only the interesting names get a stack.
-void DetourProcessEvent(void* object, void* function, void* params)
+void OnEvent(void* object, void* function, void* params)
 {
     if (g_eventsOn.load(std::memory_order_relaxed)) {
-        static std::mutex mutex;
-        static std::map<void*, bool> known;
         bool interesting = false, first = false;
         {
-            std::lock_guard lock(mutex);
-            const auto found = known.find(function);
-            if (found != known.end()) {
+            std::lock_guard lock(g_eventMutex);
+            const auto found = g_known.find(function);
+            if (found != g_known.end()) {
                 interesting = found->second;
             } else {
                 const std::string name = ue::NameOf(function);
-                interesting = name.find("Rewind") != std::string::npos || name.find("Jump") != std::string::npos || name.find("Replay") != std::string::npos;
-                known[function] = interesting;
+                for (const std::string& word : g_words)
+                    interesting |= name.find(word) != std::string::npos;
+                g_known[function] = interesting;
                 first = true;
             }
         }
@@ -154,10 +157,11 @@ void DetourProcessEvent(void* object, void* function, void* params)
                     path += text;
                 }
             }
-            mod::Log("[events] %s on %s:%s", ue::NameOf(function).c_str(), ue::ClassNameOf(object).c_str(), path.c_str());
+            const size_t size = std::min<size_t>(ue::Field<uint16_t>(function, ue::off::FunctionParamsSize), 48);
+            mod::Log("[events] %s on %s %p (%s):%s", ue::NameOf(function).c_str(), ue::ClassNameOf(object).c_str(), object,
+                     params && size ? Hex(params, size).c_str() : "", path.c_str());
         }
     }
-    oProcessEvent(object, function, params);
 }
 
 template <typename T>
@@ -186,18 +190,23 @@ void Start()
     mod::Log("Save tracer: file hooks %d, BCrypt hook %d", files, crypto);
 }
 
-void TraceEvents(bool on)
+void TraceEvents(bool on, const std::string& words)
 {
-    if (on && !oProcessEvent) {
-        void* anyObject = ue::FindClass("Object");
-        if (!anyObject)
-            return;
-        void** vtable = *static_cast<void***>(anyObject);
-        void* target = vtable[ue::off::ProcessEventIndex];
-        if (MH_CreateHook(target, reinterpret_cast<void*>(&DetourProcessEvent), reinterpret_cast<void**>(&oProcessEvent)) != MH_OK || MH_EnableHook(target) != MH_OK) {
-            mod::Log("Event tracer: hook failed");
-            return;
+    if (on && !events::Listen(&OnEvent)) {
+        mod::Log("Event tracer: hook failed");
+        return;
+    }
+    if (!words.empty()) {
+        std::lock_guard lock(g_eventMutex);
+        g_words.clear();
+        for (size_t start = 0; start <= words.size();) {
+            const size_t comma = std::min(words.find(',', start), words.size());
+            if (comma > start)
+                g_words.push_back(words.substr(start, comma - start));
+            start = comma + 1;
         }
+        g_known.clear();
+        g_eventLines = 0;
     }
     g_eventsOn = on;
     mod::Log("Event tracer %s", on ? "on" : "off");

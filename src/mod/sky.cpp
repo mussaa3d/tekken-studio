@@ -284,11 +284,12 @@ void UpdateTexture()
     g_texture = nullptr;
     SetStatus("");
     if (wanted) {
-        fs::path path(std::u8string(file.begin(), file.end()));
-        if (!path.is_absolute())
-            path = Folder() / path;
+        // Only a picture in the sky folder: a preset someone shared can't point this anywhere else.
+        const fs::path path = Folder() / fs::path(std::u8string(file.begin(), file.end()));
         std::error_code ignored;
-        if (!fs::exists(path, ignored)) {
+        if (!mod::SafeFileName(file)) {
+            SetStatus("Put the picture in the sky folder and pick it from the list");
+        } else if (!fs::exists(path, ignored)) {
             SetStatus("Can't find " + file);
         } else {
             const std::wstring wide = path.wstring();

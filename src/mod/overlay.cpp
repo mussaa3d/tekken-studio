@@ -25,6 +25,8 @@
 #include "mod/log.h"
 #include "mod/presets.h"
 #include "mod/recorder.h"
+#include "mod/reshadelink.h"
+#include "mod/window.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
@@ -70,6 +72,9 @@ std::atomic<bool> g_keyboardTaken { false };
 HarnessOptions g_harness;
 uint64_t g_harnessFrame = 0;
 std::atomic<bool> g_harnessUiDone { false };
+
+std::mutex g_shotMutex;
+std::filesystem::path g_shotPath;
 
 // The game's picture, copied each frame so the editor can draw it scaled down in the game view.
 ID3D12Resource* g_gameCopy = nullptr;
@@ -211,6 +216,15 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
     if (message == WM_NCHITTEST && g_menuOpen)
         return HTCLIENT;
 
+    // Windows won't let a window grow past the desktop unless the window says it may. A recording at a size bigger than the monitor needs that.
+    if (message == WM_GETMINMAXINFO && window::AllowsOversize()) {
+        const LRESULT result = CallWindowProcW(g_originalWndProc, window, message, wParam, lParam);
+        auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+        info->ptMaxTrackSize = { 32000, 32000 };
+        info->ptMaxSize = { 32000, 32000 };
+        return result;
+    }
+
     // During the UI test only the scripted mouse counts, not whatever the real one is doing.
     const bool scripted = g_harness.UiTest && message >= WM_MOUSEFIRST && message <= WM_MOUSELAST;
     if (ImGui::GetCurrentContext() && !scripted) {
@@ -241,16 +255,58 @@ std::string g_glyphText;
 bool g_glyphsChanged = false;
 ImVector<ImWchar> g_glyphRanges;
 
+// A font built into the DLL (src/mod/fonts.rc).
+std::pair<void*, int> FontResource(const wchar_t* name)
+{
+    HMODULE self = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCWSTR>(&FontResource), &self);
+    HRSRC found = FindResourceW(self, name, RT_RCDATA);
+    HGLOBAL loaded = found ? LoadResource(self, found) : nullptr;
+    if (!loaded)
+        return { nullptr, 0 };
+    return { LockResource(loaded), static_cast<int>(SizeofResource(self, found)) };
+}
+
+// One face of Rubik with Font Awesome's icons merged in at two thirds of its size, as Iris Studio's editor has them.
+bool AddFace(const wchar_t* name)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    const auto [data, size] = FontResource(name);
+    ImFontConfig font;
+    font.OversampleH = 2;
+    font.FontDataOwnedByAtlas = false; // the bytes belong to the DLL
+    if (!data || !io.Fonts->AddFontFromMemoryTTF(data, size, g_fontSize, &font))
+        return false;
+    const auto [iconData, iconSize] = FontResource(L"FONT_ICONS");
+    if (iconData) {
+        static const ImWchar range[] = { 0xe005, 0xf8ff, 0 };
+        const float size = std::floor(g_fontSize * 2.0f / 3.0f);
+        ImFontConfig icons;
+        icons.MergeMode = true;
+        icons.PixelSnapH = true;
+        icons.FontDataOwnedByAtlas = false;
+        icons.GlyphMinAdvanceX = size;
+        icons.GlyphOffset.y = std::floor((g_fontSize - size) * 0.25f); // sits on the text's middle line
+        io.Fonts->AddFontFromMemoryTTF(iconData, iconSize, size, &icons, range);
+    }
+    return true;
+}
+
+// Font 0 is the text, font 1 the semi-bold face.
 void LoadFonts()
 {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
-    ImFontConfig font;
-    font.OversampleH = 2;
-    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", g_fontSize, &font)) {
-        io.Fonts->AddFontDefault();
+    if (!AddFace(L"FONT_RUBIK_REGULAR")) {
+        ImFontConfig font;
+        font.OversampleH = 2;
+        if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", g_fontSize, &font))
+            io.Fonts->AddFontDefault();
         return;
     }
+    struct Bold {
+        ~Bold() { AddFace(L"FONT_RUBIK_SEMIBOLD"); }
+    } bold; // added last, so the player-name characters below are merged into the text font
     std::string text;
     {
         std::lock_guard lock(g_glyphMutex);
@@ -314,8 +370,7 @@ bool CreateResources(IDXGISwapChain3* swapChain)
     // The editor packs a lot in, so text scales with the window.
     g_fontSize = std::clamp(std::floor(g_desc.BufferDesc.Width / 106.0f), 13.0f, 42.0f);
     LoadFonts();
-    menu::ApplyStyle();
-    ImGui::GetStyle().ScaleAllSizes(g_fontSize / 18.0f);
+    menu::ApplyStyle(g_fontSize);
 
     ImGui_ImplWin32_Init(g_window);
     ImGui_ImplDX12_InitInfo init;
@@ -461,6 +516,20 @@ void OnPresent(IDXGISwapChain3* swapChain)
     // Captured before the menu is drawn, so the video never contains it.
     recorder::OnPresent(g_device, g_queue, frame.BackBuffer, g_desc.BufferDesc.Format);
 
+    {
+        std::filesystem::path shot;
+        {
+            std::lock_guard lock(g_shotMutex);
+            shot.swap(g_shotPath);
+        }
+        if (!shot.empty()) {
+            const D3D12_RESOURCE_DESC size = frame.BackBuffer->GetDesc();
+            const int bytes = recorder::SaveRawFrame(g_device, g_queue, frame.BackBuffer, shot);
+            mod::Log("Screenshot: %s, %llu x %u, format %d, %d bytes a pixel", shot.filename().string().c_str(), static_cast<unsigned long long>(size.Width), size.Height,
+                     g_desc.BufferDesc.Format, bytes);
+        }
+    }
+
     int screenshotTab = -1;
     if (g_harness.Enabled) {
         ++g_harnessFrame;
@@ -493,7 +562,9 @@ void OnPresent(IDXGISwapChain3* swapChain)
 HRESULT PresentThrough(PresentFn next, IDXGISwapChain3* swapChain, UINT sync, UINT flags)
 {
     if (!guard::Tripped()) {
-        OnPresent(swapChain);
+        // With ReShade drawing, the frame isn't finished yet: its effects come after this. It calls PresentFromReShade when they're done.
+        if (!reshadelink::OwnsPresent())
+            OnPresent(swapChain);
         if (recorder::Active())
             sync = 0; // recording runs as fast as frames can be made, not at the monitor's rate
     }
@@ -667,6 +738,17 @@ void ToggleMenu()
     }
 }
 
+HWND GameWindow()
+{
+    return g_ready ? g_window : nullptr;
+}
+
+bool ExclusiveFullscreen()
+{
+    BOOL fullscreen = FALSE;
+    return g_ready && g_swapChain && SUCCEEDED(g_swapChain->GetFullscreenState(&fullscreen, nullptr)) && fullscreen;
+}
+
 bool IsGameForeground()
 {
     if (!g_window)
@@ -689,6 +771,18 @@ void SetGameViewHovered(bool hovered)
 bool MouseOverGameView()
 {
     return g_gameViewHovered;
+}
+
+void RequestScreenshot(const std::filesystem::path& path)
+{
+    std::lock_guard lock(g_shotMutex);
+    g_shotPath = path;
+}
+
+void PresentFromReShade()
+{
+    if (g_ready && !g_failed && g_swapChain && !guard::Tripped())
+        OnPresent(g_swapChain);
 }
 
 uint64_t GameTexture()

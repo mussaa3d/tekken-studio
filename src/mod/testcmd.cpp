@@ -10,11 +10,13 @@
 #include <string>
 #include <vector>
 
+#include "mod/actors.h"
 #include "mod/audio.h"
 #include "mod/camera.h"
 #include "mod/dvars.h"
 #include "mod/effects.h"
 #include "mod/game.h"
+#include "mod/gameui.h"
 #include "mod/guard.h"
 #include "mod/lights.h"
 #include "mod/log.h"
@@ -24,12 +26,16 @@
 #include "mod/recorder.h"
 #include "mod/replay.h"
 #include "mod/replaydisplay.h"
+#include "mod/reshadelink.h"
 #include "mod/savetrace.h"
+#include "mod/scan.h"
 #include "mod/scene.h"
 #include "mod/sharing.h"
 #include "mod/sky.h"
+#include "mod/spawner.h"
 #include "mod/switcher.h"
 #include "mod/ue.h"
+#include "mod/window.h"
 
 namespace testcmd {
 
@@ -64,6 +70,8 @@ void WriteState()
     out << "keys " << camera::Keys().size() << " speedkeys " << game::SpeedKeys().size() << "\n";
     out << "bones " << camera::Bones(0).size() << " " << camera::Bones(1).size() << "\n";
     out << "menu " << overlay::MenuOpen() << "\n";
+    out << "input keyboard_taken " << overlay::KeyboardTakenByUi() << " foreground " << overlay::IsGameForeground() << " over_view "
+        << overlay::MouseOverGameView() << " w " << overlay::KeyDown('W') << "\n";
     out << "rec active " << recorder::Active() << " finishing " << recorder::Finishing() << " frames " << recorder::Frames() << "\n";
     out << "rec_file " << recorder::LastFile() << "\n";
     out << "rec_error " << recorder::LastError() << "\n";
@@ -79,6 +87,24 @@ void WriteState()
     out << "drama " << effects::DramaPlaying() << "\n";
     out << "sky " << sky::Config().SunYaw << " " << sky::Config().SunHeight << " " << sky::Config().SkyRotation << " hdri " << sky::Config().HdriOn << " " << sky::Config().HdriBrightness << " status " << sky::Status() << "\n";
     out << "lookkeys " << presets::LookKeyTimes().size() << "\n";
+    int pictureWidth = 0, pictureHeight = 0, videoWidth = 0, videoHeight = 0;
+    window::PictureSize(pictureWidth, pictureHeight);
+    recorder::VideoSize(pictureWidth, pictureHeight, videoWidth, videoHeight);
+    out << "picture " << pictureWidth << " " << pictureHeight << " video " << videoWidth << " " << videoHeight << "\n";
+    out << "take recording " << actors::RecordingTake() << " takes " << actors::Takes().size() << " status " << actors::TakeStatus() << "\n";
+    for (int i = 0; i < actors::MaxActors; ++i)
+        if (actors::Cast()[i].On)
+            out << "actor" << i << " take " << actors::Cast()[i].Take << " start " << actors::Cast()[i].Start << " at " << actors::Cast()[i].Location[0] << " " << actors::Cast()[i].Location[1]
+                << " " << actors::Cast()[i].Location[2] << " yaw " << actors::Cast()[i].Rotation[1] << " status " << actors::ActorStatus(i) << "\n";
+    for (int i = 0; i < spawner::MaxProps; ++i)
+        if (spawner::Props()[i].On)
+            out << "prop" << i << " " << spawner::Props()[i].Asset << " at " << spawner::Props()[i].Location[0] << " " << spawner::Props()[i].Location[1] << " "
+                << spawner::Props()[i].Location[2] << " status " << spawner::PropStatus(i) << "\n";
+    for (int i = 0; i < spawner::MaxEffects; ++i)
+        if (spawner::Effects()[i].On)
+            out << "vfx" << i << " " << spawner::Effects()[i].Asset << " start " << spawner::Effects()[i].Start << " status " << spawner::EffectStatus(i) << "\n";
+    out << "reshade found " << reshadelink::Found() << " owns " << reshadelink::OwnsPresent() << " techniques " << reshadelink::Techniques().size() << " values "
+        << reshadelink::Values().size() << "\n";
     out << "position " << inFight << " round " << round << " frame " << frame << " canjump " << replay::CanJump() << " seeking " << game::Seeking() << "\n";
     out.close();
     std::error_code ignored;
@@ -149,6 +175,262 @@ std::string Rest(std::istringstream& in)
     return begin == std::string::npos ? std::string() : rest.substr(begin);
 }
 
+// A parameter's type, from a line of ue::PropertyNames ("Name @0x0 IntProperty 4").
+std::string ParamType(const std::string& line)
+{
+    std::istringstream words(line);
+    std::string name, at, type;
+    words >> name >> at >> type;
+    return type;
+}
+
+// For finding the game's replay calls: a function's flags and parameters, a call that only takes plain numbers, and copies of replays in memory.
+bool RunReplayCommand(const std::string& command, std::istringstream& in)
+{
+    if (command == "fnx") {
+        // fnx <Class> <Function>: flags, parameter size, where its native code is, and each parameter with its type
+        std::string name, function;
+        in >> name >> function;
+        void* fn = ue::FindFunction(ue::FindClass(name), function);
+        if (!fn) {
+            mod::Log("[fnx] %s.%s not found", name.c_str(), function.c_str());
+            return true;
+        }
+        const uintptr_t native = ue::Field<uintptr_t>(fn, 0xD8);
+        const scan::Module module = scan::MainModule();
+        mod::Log("[fnx] %s.%s flags %08X params %u bytes, code %s+0x%llX", name.c_str(), function.c_str(), ue::Field<uint32_t>(fn, ue::off::FunctionFlags),
+                 ue::Field<uint16_t>(fn, ue::off::FunctionParamsSize), native >= module.Base && native < module.Base + module.Size ? "game" : "elsewhere ",
+                 static_cast<unsigned long long>(native - (native >= module.Base ? module.Base : 0)));
+        for (const std::string& property : ue::PropertyNames(fn))
+            mod::Log("[fnx]   %s", property.c_str());
+        return true;
+    }
+    if (command == "callints") {
+        // callints <Class> <Function> [int ...]: calls it on every live object of the class, the ints filling its parameters in order.
+        // Refused unless every parameter is a plain number, since a wrong argument is a fatal error in this game.
+        std::string name, function;
+        in >> name >> function;
+        void* cls = ue::FindClass(name);
+        void* fn = ue::FindFunction(cls, function);
+        if (!fn) {
+            mod::Log("[callints] %s.%s not found", name.c_str(), function.c_str());
+            return true;
+        }
+        for (const std::string& property : ue::PropertyNames(fn)) {
+            const std::string type = ParamType(property);
+            if (type != "IntProperty" && type != "BoolProperty" && type != "ByteProperty" && type != "EnumProperty" && type != "FloatProperty" && type != "UInt32Property") {
+                mod::Log("[callints] refused: %s", property.c_str());
+                return true;
+            }
+        }
+        int32_t values[16] = {};
+        int count = 0;
+        while (count < 16 && (in >> values[count]))
+            ++count;
+        ue::FunctionRef ref { name.c_str(), function.c_str() };
+        int called = 0;
+        for (void* object : ue::AllObjectsOf(cls)) {
+            if (ue::Field<uint32_t>(object, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject)
+                continue;
+            int32_t params[16] = {};
+            std::copy(values, values + count, params);
+            if (ue::Call(object, ref, params)) {
+                ++called;
+                mod::Log("[callints] %s on %p: after %d %d %d %d", function.c_str(), object, params[0], params[1], params[2], params[3]);
+            }
+        }
+        mod::Log("[callints] %s.%s on %d objects", name.c_str(), function.c_str(), called);
+        return true;
+    }
+    if (command == "uistate") {
+        std::string buttons;
+        for (const std::string& button : gameui::QuestionButtons())
+            buttons += " [" + button + "]";
+        mod::Log("[ui] list %d tab %d rows %d fills %d, details %d slot %d, question %d shown %d:%s, open slot %d", gameui::ListUp(), gameui::ListTab(),
+                 gameui::ListRows(), gameui::ListFills(), gameui::DetailsUp(), gameui::DetailsSlot(), gameui::QuestionUp(), gameui::QuestionsShown(), buttons.c_str(),
+                 gameui::OpenSlot());
+        return true;
+    }
+    if (command == "uirow") {
+        // uirow <slot>: the row of the game's list that shows it
+        int slot = -1;
+        in >> slot;
+        mod::Log("[ui] slot %d is row %d", slot, gameui::RowOfSlot(slot));
+        return true;
+    }
+    if (command == "replaycopies") {
+        // Every replay record in the game's memory outside its block of slots.
+        for (const sharing::Copy& copy : sharing::Copies())
+            mod::Log("[copies] %p in a region of %zu MB at +0x%zX: played %llu, %s vs %s, matches slot %d", copy.Address, copy.RegionSize >> 20, copy.RegionOffset,
+                     static_cast<unsigned long long>(copy.Played), copy.Player1.c_str(), copy.Player2.c_str(), copy.Slot);
+        mod::Log("[copies] end");
+        return true;
+    }
+    return false;
+}
+
+// The commands for what 2.0 added: placed lights, props, effects, actors and takes, the picture's size, and ReShade.
+bool RunSceneCommand(const std::string& command, std::istringstream& in)
+{
+    recorder::Settings& r = recorder::Config();
+    double a = 0, b = 0;
+    int n = 0, m = 0;
+    if (command == "lightaim") {
+        // lightaim <index> <aim 0-3> <pitch> <yaw> <cone> <shadows 0|1>
+        int aim = 0, shadows = 1;
+        in >> n;
+        lights::Light& light = lights::Rig()[std::clamp(n, 0, lights::MaxLights - 1)];
+        in >> aim >> light.Direction[0] >> light.Direction[1] >> light.Cone >> shadows;
+        light.Aim = static_cast<lights::Aim>(std::clamp(aim, 0, 3));
+        light.Shadows = shadows != 0;
+    } else if (command == "lightcam") {
+        in >> n;
+        lights::PlaceAtCamera(n);
+    } else if (command == "assets") {
+        // assets <StaticMesh|NiagaraSystem|SkeletalMesh> [part of a name]: logs what's loaded, up to 80 of them
+        std::string className, part;
+        in >> className >> part;
+        const std::vector<std::string> names = ue::LoadedNames(className);
+        int shown = 0;
+        for (const std::string& name : names)
+            if ((part.empty() || name.find(part) != std::string::npos) && shown++ < 80)
+                mod::Log("[assets] %s", name.c_str());
+        mod::Log("[assets] %zu %s loaded, %d shown", names.size(), className.c_str(), std::min(shown, 80));
+    } else if (command == "assetpath") {
+        // assetpath <Class> <name>: the full path of a loaded asset
+        std::string className, name;
+        in >> className >> name;
+        void* object = ue::FindLoaded(className, name);
+        mod::Log("[assets] %s %s = %p %s", className.c_str(), name.c_str(), object, ue::PathOf(object).c_str());
+    } else if (command == "prop") {
+        // prop <index> <on> <asset> [x y z] [pitch yaw roll] [scale]
+        int on = 0;
+        std::string asset;
+        in >> n >> on >> asset;
+        spawner::Prop& prop = spawner::Props()[std::clamp(n, 0, spawner::MaxProps - 1)];
+        prop.On = on != 0;
+        if (asset != "-")
+            strncpy_s(prop.Asset, asset.c_str(), _TRUNCATE);
+        float scale = 0;
+        in >> prop.Location[0] >> prop.Location[1] >> prop.Location[2] >> prop.Rotation[0] >> prop.Rotation[1] >> prop.Rotation[2];
+        if (in >> scale)
+            prop.Scale[0] = prop.Scale[1] = prop.Scale[2] = scale;
+    } else if (command == "propcam") {
+        in >> n;
+        spawner::PlacePropAtCamera(n);
+    } else if (command == "vfx") {
+        // vfx <index> <on> <asset> <timeline 0|1> <start> <length> <rate> [x y z] [scale]
+        int on = 0, timeline = 1;
+        std::string asset;
+        in >> n >> on >> asset;
+        spawner::Effect& effect = spawner::Effects()[std::clamp(n, 0, spawner::MaxEffects - 1)];
+        effect.On = on != 0;
+        if (asset != "-")
+            strncpy_s(effect.Asset, asset.c_str(), _TRUNCATE);
+        in >> timeline >> effect.Start >> effect.Length >> effect.Rate >> effect.Location[0] >> effect.Location[1] >> effect.Location[2] >> effect.Scale;
+        effect.OnTimeline = timeline != 0;
+    } else if (command == "vfxcam") {
+        in >> n;
+        spawner::PlaceEffectAtCamera(n);
+    } else if (command == "vfxrestart") {
+        in >> n;
+        spawner::RestartEffect(n);
+    } else if (command == "take") {
+        // take <name> <side> <in> <out>
+        std::string name, error;
+        in >> name >> n >> a >> b;
+        if (!actors::StartTake(name, n, a, b, error))
+            mod::Log("[test] take: %s", error.c_str());
+    } else if (command == "takecancel") {
+        actors::CancelTake();
+    } else if (command == "takes") {
+        actors::RefreshTakes();
+        for (const actors::TakeInfo& take : actors::Takes())
+            mod::Log("[takes] %s: %d frames, P%d, %d meshes", take.Name.c_str(), take.Frames, take.Side + 1, take.Meshes);
+        mod::Log("[takes] status: %s", actors::TakeStatus().c_str());
+    } else if (command == "takedelete") {
+        std::string name;
+        in >> name;
+        actors::DeleteTake(name);
+    } else if (command == "actor") {
+        // actor <index> <on> <take> [start] [speed] [end 0-2] [body -1..1]
+        int on = 0;
+        std::string take;
+        in >> n >> on >> take;
+        n = std::clamp(n, 0, actors::MaxActors - 1);
+        actors::Actor& actor = actors::Cast()[n];
+        if (take != "-")
+            actors::SetTake(n, take);
+        in >> actor.Start >> actor.Speed >> actor.End >> actor.Body;
+        actor.On = on != 0;
+    } else if (command == "actorplace") {
+        // actorplace <index> <x> <y> <z> <yaw> [scale]
+        in >> n;
+        actors::Actor& actor = actors::Cast()[std::clamp(n, 0, actors::MaxActors - 1)];
+        in >> actor.Location[0] >> actor.Location[1] >> actor.Location[2] >> actor.Rotation[1] >> actor.Scale;
+    } else if (command == "actormove") {
+        // actormove <index> <dx> <dy> <dz> <dyaw>: from where it is
+        float dx = 0, dy = 0, dz = 0, dyaw = 0;
+        in >> n >> dx >> dy >> dz >> dyaw;
+        actors::Actor& actor = actors::Cast()[std::clamp(n, 0, actors::MaxActors - 1)];
+        actor.Location[0] += dx;
+        actor.Location[1] += dy;
+        actor.Location[2] += dz;
+        actor.Rotation[1] += dyaw;
+    } else if (command == "actorcam") {
+        in >> n;
+        actors::PlaceAtCamera(n);
+    } else if (command == "capsize") {
+        in >> r.CaptureWidth >> r.CaptureHeight;
+    } else if (command == "outsize") {
+        in >> r.OutputWidth >> r.OutputHeight;
+    } else if (command == "winsize") {
+        // winsize <w> <h>: the game's picture size, with no recording. 0 0 gives the window back
+        in >> n >> m;
+        window::SetCaptureSize(n, m);
+    } else if (command == "winmove") {
+        // winmove <x> <y>: moves the game window, to put it on another monitor
+        in >> n >> m;
+        if (HWND window = overlay::GameWindow())
+            SetWindowPos(window, nullptr, n, m, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    } else if (command == "shot") {
+        // shot <file name>: the frame as the game drew it, with no editor on it, as raw pixels in the mod's folder
+        std::string name;
+        in >> name;
+        overlay::RequestScreenshot(mod::DataDir() / name);
+    } else if (command == "preset") {
+        // preset save|load <name>, shotfile save|load <name>
+        std::string what, name;
+        in >> what >> name;
+        mod::Log("[test] preset %s %s: %d", what.c_str(), name.c_str(), what == "save" ? presets::SavePreset(name) : presets::LoadPreset(name));
+    } else if (command == "shotfile") {
+        std::string what, name;
+        in >> what >> name;
+        mod::Log("[test] shot %s %s: %d", what.c_str(), name.c_str(), what == "save" ? presets::SaveShot(name) : presets::LoadShot(name));
+    } else if (command == "reshade") {
+        mod::Log("[reshade] %s", reshadelink::StatusText().c_str());
+        for (const reshadelink::Technique& technique : reshadelink::Techniques())
+            mod::Log("[reshade] technique %s / %s: %d", technique.Effect.c_str(), technique.Name.c_str(), technique.On);
+        for (const reshadelink::Value& value : reshadelink::Values())
+            mod::Log("[reshade] value %s / %s (%s): %g %g %g %g, %g to %g, kind %d count %d", value.Effect.c_str(), value.Name.c_str(), value.Label.c_str(), value.Numbers[0], value.Numbers[1],
+                     value.Numbers[2], value.Numbers[3], value.Min, value.Max, static_cast<int>(value.Kind), value.Count);
+    } else if (command == "reshadetech") {
+        // reshadetech <effect file> <technique> <0|1>
+        std::string effect, name;
+        in >> effect >> name >> n;
+        reshadelink::SetTechnique(effect, name, n != 0);
+    } else if (command == "reshadevalue") {
+        // reshadevalue <effect file> <value> <a> [b c d]
+        std::string effect, name;
+        float numbers[4] = {};
+        in >> effect >> name >> numbers[0] >> numbers[1] >> numbers[2] >> numbers[3];
+        reshadelink::SetValue(effect, name, numbers);
+    } else {
+        return false;
+    }
+    return true;
+}
+
 void Run(const std::string& line)
 {
     std::istringstream in(line);
@@ -161,6 +443,8 @@ void Run(const std::string& line)
     double a = 0, b = 0, d = 0;
     int n = 0, m = 0;
 
+    if (RunSceneCommand(command, in) || RunReplayCommand(command, in))
+        return;
     if (command == "state") {
         WriteState();
     } else if (command == "menu") {
@@ -586,8 +870,9 @@ void Run(const std::string& line)
         camera::AttachSettings& at = camera::Attach();
         in >> at.OrbitDistance >> at.OrbitYaw >> at.OrbitPitch >> at.Smooth;
     } else if (command == "events") {
+        // events <0|1> [words, comma separated, that pick the functions logged with their parameters]
         in >> n;
-        savetrace::TraceEvents(n != 0);
+        savetrace::TraceEvents(n != 0, Rest(in));
     } else if (command == "preview") {
         camera::PlayShot();
     } else if (command == "recordshot") {
@@ -756,6 +1041,21 @@ void Run(const std::string& line)
         postfx::FocusConfig().Mode = static_cast<postfx::Focus>(n);
     } else if (command == "start") {
         game::SeekToStart();
+    } else if (command == "slotfind") {
+        int slot = 0;
+        unsigned value = 0;
+        in >> slot >> value;
+        sharing::FindInSlot(slot, value);
+    } else if (command == "unlockold") {
+        mod::Log("[test] unlocked %d older replays", sharing::UnlockOlderReplays());
+    } else if (command == "hudpreset") {
+        in >> n;
+        effects::ApplyHudPreset(n);
+    } else if (command == "gfxpreset") {
+        in >> n;
+        dvars::ApplyGraphicsPreset(n);
+    } else if (command == "owners") {
+        effects::LogVisibleOwners();
     } else if (command == "hudlist") {
         effects::LogVisibleWidgets();
     } else if (command == "hitlabels") {

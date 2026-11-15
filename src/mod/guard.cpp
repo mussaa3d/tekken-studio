@@ -186,7 +186,18 @@ int WSAAPI DetourWsaIoctl(SOCKET s, DWORD code, LPVOID in, DWORD inSize, LPVOID 
 
 void TurnOff(const std::string& reason)
 {
-    mod::Log("Online guard: %s. Turning the mod off.", reason.c_str());
+    TurnOffBecause("Online guard: " + reason,
+                   L"The game went online, so tekken8mvm turned itself off.\n\n"
+                   L"Close the game. Use Steam's Offline Mode before starting a cinematic session.");
+}
+} // namespace
+
+void TurnOffBecause(const std::string& reason, const wchar_t* message)
+{
+    static std::atomic<bool> once { false };
+    if (once.exchange(true))
+        return;
+    mod::Log("%s. Turning the mod off.", reason.c_str());
     game::RunOnGameThread([] {
         ue::SetGlobalTimeDilation(1.0f);
         game::ReleaseExactFrames();
@@ -195,11 +206,10 @@ void TurnOff(const std::string& reason)
     g_tripped = true;
     Sleep(250); // every detour now passes straight through
     game::Shutdown();
-    MessageBoxW(nullptr,
-                L"The game went online, so tekken8mvm turned itself off.\n\n"
-                L"Close the game. Use Steam's Offline Mode before starting a cinematic session.",
-                L"tekken8mvm", MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
+    MessageBoxW(nullptr, message, L"tekken8mvm", MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
 }
+
+namespace {
 
 DWORD WINAPI Watch(void*)
 {

@@ -1,4 +1,4 @@
-tekken8mvm: cinematic tools for Tekken 8 replays. Free camera, slow motion, camera paths, effect switches and recording.
+tekken8mvm: cinematic tools for Tekken 8 replays. Free camera, slow motion, camera paths, actors, lights, props and effects you place, effect switches, and recording at any size.
 
 What you need
 - Tekken 8 on Steam, already installed.

@@ -13,6 +13,9 @@ param(
     [double]$Speed = 0,
     [switch]$Ramp,
     [switch]$Dolly,
+    [switch]$ReShade,           # load the stand-in for ReShade first, so the mod's ReShade link runs
+    [string]$CaptureSize = "",  # the size to render at while recording, as 2560x1440
+    [string]$OutputSize = "",   # the size of the video, as 1280x720
     [int]$TimeoutSeconds = 60
 )
 
@@ -26,13 +29,16 @@ Remove-Item -Force "build\harness_shot_*" -ErrorAction SilentlyContinue
 Remove-Item -Force "$data\harness_audio.wav" -ErrorAction SilentlyContinue
 Set-Content -Path "$data\tekken8mvm.ini" -Value "output_dir = $out`nrecord_fps = 60`n" -Encoding ascii
 
-foreach ($name in "REC", "SHOT", "LOOKS", "SETTLE", "SAMPLES", "SHUTTER", "AUDIO", "UITEST", "PREVIEW", "SPEED", "RAMP", "DOLLY") { Remove-Item "Env:\TEKKEN8MVM_HARNESS_$name" -ErrorAction SilentlyContinue }
+foreach ($name in "REC", "SHOT", "LOOKS", "SETTLE", "SAMPLES", "SHUTTER", "AUDIO", "UITEST", "PREVIEW", "SPEED", "RAMP", "DOLLY", "RESHADE", "CAPSIZE", "OUTSIZE") { Remove-Item "Env:\TEKKEN8MVM_HARNESS_$name" -ErrorAction SilentlyContinue }
 $env:TEKKEN8MVM_HARNESS_REC = "$RecordFrames"
 if ($UiTest) { $env:TEKKEN8MVM_HARNESS_UITEST = "1" }
 if ($Live) { $env:TEKKEN8MVM_HARNESS_PREVIEW = "1" }
 if ($Speed) { $env:TEKKEN8MVM_HARNESS_SPEED = "$Speed" }
 if ($Ramp) { $env:TEKKEN8MVM_HARNESS_RAMP = "1" }
 if ($Dolly) { $env:TEKKEN8MVM_HARNESS_DOLLY = "1" }
+if ($ReShade) { $env:TEKKEN8MVM_HARNESS_RESHADE = "1" }
+if ($CaptureSize) { $env:TEKKEN8MVM_HARNESS_CAPSIZE = $CaptureSize }
+if ($OutputSize) { $env:TEKKEN8MVM_HARNESS_OUTSIZE = $OutputSize }
 if ($Screenshots) { $env:TEKKEN8MVM_HARNESS_SHOT = "$root\build\harness_shot" }
 if ($Looks) { $env:TEKKEN8MVM_HARNESS_LOOKS = $Looks }
 if ($Settle -ge 0) { $env:TEKKEN8MVM_HARNESS_SETTLE = "$Settle" }
@@ -47,7 +53,7 @@ if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
 } else {
     "harness exit: $($process.ExitCode)"
 }
-Get-Content "$data\tekken8mvm.log" -ErrorAction SilentlyContinue | Where-Object { $_ -match "stopped after|exited with code|took over|failed|couldn't|Harness audio|Harness end|\[uitest\] (FAIL|finished)" } | ForEach-Object { $_.Substring(0, [math]::Min(150, $_.Length)) }
+Get-Content "$data\tekken8mvm.log" -ErrorAction SilentlyContinue | Where-Object { $_ -match "stopped after|exited with code|took over|failed|couldn't|Harness audio|Harness end|\[uitest\] (FAIL|finished)|ReShade:|Window:|Recorder: the game" } | ForEach-Object { $_.Substring(0, [math]::Min(150, $_.Length)) }
 Get-ChildItem $out -ErrorAction SilentlyContinue | ForEach-Object { "{0,10} {1}" -f $_.Length, $_.Name }
 if ($Screenshots) {
     Get-ChildItem "build\harness_shot_*.raw" -ErrorAction SilentlyContinue | ForEach-Object {

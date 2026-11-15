@@ -35,6 +35,11 @@ void LoadExtra(); // reads dvars.ini
 void Changed(Slider& slider);
 void Reset(Slider& slider);
 
+// Graphics presets for the whole Quality group and the engine's quality sliders, from all low to past the game's own maximum.
+constexpr int GraphicsPresetCount = 6;
+const char* GraphicsPresetName(int preset); // 0 Low, 1 Medium, 2 High, 3 Epic, 4 Cinematic, 5 Extreme
+void ApplyGraphicsPreset(int preset);       // -1 gives every one of them back to the game
+
 struct Colors {
     float Fog[3] = { 0.45f, 0.55f, 0.7f };
     float Sun[3] = { 1, 1, 1 };

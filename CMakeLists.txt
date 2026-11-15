@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>") # no VC++ redist needed
 add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 add_compile_options(/W3 /utf-8 /permissive- /Zc:__cplusplus)
+# The finished files name their debug file without the folder it was built in.
+add_link_options(/PDBALTPATH:%_PDB%)
 
 set(IMGUI third_party/imgui)
 set(IMGUI_CORE ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp
@@ -21,13 +23,15 @@ add_library(tekken8mvm_mod SHARED
     src/mod/camera.cpp src/mod/effects.cpp src/mod/guard.cpp src/mod/recorder.cpp src/mod/overlay.cpp src/mod/depth.cpp src/mod/switcher.cpp src/mod/replaydisplay.cpp src/mod/sky.cpp
     src/mod/menu.cpp src/mod/savetrace.cpp src/mod/dvars.cpp src/mod/postfx.cpp src/mod/lights.cpp src/mod/audio.cpp
     src/mod/presets.cpp src/mod/replay.cpp src/mod/sharing.cpp src/mod/testcmd.cpp src/mod/pakmods.cpp src/mod/scene.cpp src/mod/inputblock.cpp src/common/version.rc src/common/config.cpp
+    src/mod/actors.cpp src/mod/spawner.cpp src/mod/window.cpp src/mod/reshadelink.cpp src/mod/fonts.rc
+    src/mod/events.cpp src/mod/gameui.cpp
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx12.cpp)
 set_target_properties(tekken8mvm_mod PROPERTIES OUTPUT_NAME dinput8)
-target_include_directories(tekken8mvm_mod PRIVATE src ${IMGUI} ${IMGUI}/backends)
+target_include_directories(tekken8mvm_mod PRIVATE src ${IMGUI} ${IMGUI}/backends third_party/reshade/include third_party/fonts)
 target_link_libraries(tekken8mvm_mod PRIVATE minhook d3d12 dxgi iphlpapi ws2_32 mmdevapi ole32 shell32 bcrypt)
 
 # ----- the launcher: installs the mod only for a cinematic session, and removes it afterwards
-add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp src/common/version.rc
+add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp src/common/version.rc src/launcher/icon.rc
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx11.cpp)
 target_include_directories(tekken8mvm PRIVATE src ${IMGUI} ${IMGUI}/backends)
 target_link_libraries(tekken8mvm PRIVATE d3d11 d3dcompiler dxgi shell32 ole32 dwmapi)
@@ -42,6 +46,10 @@ target_link_libraries(tekken8mvm_tests PRIVATE shell32 ole32)
 add_executable(tekken8mvm_harness WIN32 tools/harness/harness.cpp)
 set_target_properties(tekken8mvm_harness PROPERTIES LINK_FLAGS "/ENTRY:wmainCRTStartup")
 target_link_libraries(tekken8mvm_harness PRIVATE d3d12 dxgi winmm)
+
+# A stand-in for ReShade that the harness can load, for testing the mod's ReShade link with no ReShade and no game.
+add_library(tekken8mvm_fake_reshade SHARED tools/harness/fake_reshade.cpp)
+target_include_directories(tekken8mvm_fake_reshade PRIVATE third_party/reshade/include)
 
 # dist/ is the finished tool: run dist/tekken8mvm.exe.
 set(DIST ${CMAKE_SOURCE_DIR}/dist)

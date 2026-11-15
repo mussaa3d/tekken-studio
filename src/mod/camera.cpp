@@ -227,7 +227,8 @@ void OrbitInput()
         POINT cursor;
         GetCursorPos(&cursor);
         if (looking) {
-            g_attach.OrbitYaw = static_cast<float>(cine::WrapAngle(g_attach.OrbitYaw + (cursor.x - anchor.x) * 0.2));
+            // Counted past 180, like the free camera's yaw, so two look keys can hold a turn of any size around the bone.
+            g_attach.OrbitYaw = static_cast<float>(g_attach.OrbitYaw + (cursor.x - anchor.x) * 0.2);
             g_attach.OrbitPitch = std::clamp(g_attach.OrbitPitch + (cursor.y - anchor.y) * 0.2f, -85.0f, 85.0f);
             SetCursorPos(anchor.x, anchor.y);
         } else {
@@ -732,6 +733,8 @@ std::filesystem::path PathsDir()
 
 bool SavePath(const std::string& name)
 {
+    if (!mod::SafeFileName(name))
+        return false;
     std::ofstream file(PathsDir() / (name + ".t8path"), std::ios::trunc);
     if (!file)
         return false;
@@ -745,6 +748,8 @@ bool SavePath(const std::string& name)
 
 bool LoadPath(const std::string& name)
 {
+    if (!mod::SafeFileName(name))
+        return false;
     std::ifstream file(PathsDir() / (name + ".t8path"));
     if (!file)
         return false;

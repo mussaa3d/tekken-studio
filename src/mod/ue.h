@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/cinemath.h"
+#include "common/xform.h"
 
 namespace ue {
 
@@ -21,6 +22,7 @@ constexpr uintptr_t SuperStruct = 0x40;
 constexpr uintptr_t Children = 0x48;
 constexpr uintptr_t FieldNext = 0x28;
 constexpr uintptr_t FunctionFlags = 0xB0;
+constexpr uintptr_t FunctionParamsSize = 0xB6; // UFunction::ParmsSize, right after the flags and the parameter count
 constexpr uintptr_t ClassCastFlags = 0xD8;
 constexpr uintptr_t ClassDefaultObject = 0x110;
 constexpr uintptr_t ArrayChunks = 0x00;
@@ -113,6 +115,9 @@ struct FunctionRef {
     std::atomic<void*> DefaultObject { nullptr };
 };
 bool Call(void* object, FunctionRef& function, void* params);
+// The same with the function looked up on the object's own class every time, for Blueprint events: they only work found on the
+// live widget's class, and a Blueprint class can be loaded again at a new address. Game thread.
+bool CallOwn(void* object, const std::string& function, void* params);
 
 // A reflected struct such as "PostProcessSettings", and a bool property inside one (bools can be single bits).
 void* FindStruct(const std::string& name);
@@ -140,6 +145,26 @@ double WorldRealTime(); // the world's clock that time dilation doesn't touch, w
 bool ActorLocation(void* actor, cine::Vec3& out);
 void* CharacterMesh(void* character);
 void DestroyActor(void* actor);
+
+// Spawns an actor of a class at the world's origin, through the engine's own spawn functions. Null if the class isn't there.
+void* SpawnActor(const std::string& className);
+void SetActorPose(void* actor, cine::Vec3 location, cine::Rot rotation);
+void SetActorScale(void* actor, cine::Vec3 scale);
+void SetActorHidden(void* actor, bool hidden);
+void* ComponentOwner(void* component);
+// A component's place in the world.
+bool ComponentTransform(void* component, cine::Xform& out);
+void SetComponentPose(void* component, cine::Vec3 location, cine::Rot rotation);
+void SetComponentScale(void* component, cine::Vec3 scale);
+void SetMovable(void* component);
+
+// The full path of an object, such as /Game/Stage/Mesh/SM_Rock.SM_Rock.
+std::string PathOf(void* object);
+// A loaded object of a class by its short name or its full path, and the same after asking the engine to load it from the game's files.
+void* FindLoaded(const std::string& className, const std::string& nameOrPath);
+void* LoadAsset(const std::string& path);
+// Short names of every loaded object of a class, sorted. Game thread, in a running fight only.
+std::vector<std::string> LoadedNames(const std::string& className);
 
 enum class SlateVisibility : uint8_t { Visible, Collapsed, Hidden, HitTestInvisible, SelfHitTestInvisible };
 SlateVisibility WidgetVisibility(void* widget);

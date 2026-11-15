@@ -15,12 +15,14 @@
 #include "mod/camera.h"
 #include "mod/dvars.h"
 #include "mod/game.h"
+#include "mod/gameui.h"
 #include "mod/guard.h"
 #include "mod/log.h"
 #include "mod/inputblock.h"
 #include "mod/overlay.h"
 #include "mod/recorder.h"
 #include "mod/savetrace.h"
+#include "mod/sharing.h"
 #include "mod/testcmd.h"
 
 void LoadRealDinput8();
@@ -124,6 +126,7 @@ DWORD WINAPI GameThread(void*)
         if (game::Initialize()) {
             overlay::Install();
             inputblock::Install();
+            gameui::Install();
             guard::Start();
             Ini ini;
             ini.Load(mod::DataDir() / "tekken8mvm.ini");
@@ -131,6 +134,8 @@ DWORD WINAPI GameThread(void*)
                 savetrace::Start();
             if (ini.GetBool("test_commands", false))
                 testcmd::Enable();
+            sharing::OlderReplaysOn() = ini.GetBool("older_replays", true);
+            sharing::StartOlderReplays();
             mod::Log("tekken8mvm ready. Insert opens the menu.");
             return 0;
         }
@@ -181,6 +186,11 @@ DWORD WINAPI HarnessThread(void*)
         r.ShutterDegrees = static_cast<float>(_wtof(text));
     if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_SPEED", text, 32) > 0)
         game::Time().Speed = _wtof(text);
+    // Picture sizes under test, as 2560x1440: the size to render at and the size of the video.
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_CAPSIZE", text, 32) > 0)
+        swscanf_s(text, L"%dx%d", &r.CaptureWidth, &r.CaptureHeight);
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_OUTSIZE", text, 32) > 0)
+        swscanf_s(text, L"%dx%d", &r.OutputWidth, &r.OutputHeight);
     if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_RAMP", nullptr, 0) > 0)
         game::Time().UseSpeedRamp = true;
     if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_DOLLY", nullptr, 0) > 0)

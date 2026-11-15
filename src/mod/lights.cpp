@@ -1,8 +1,10 @@
 #include "mod/lights.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "common/cinemath.h"
+#include "mod/camera.h"
 #include "mod/game.h"
 #include "mod/log.h"
 #include "mod/ue.h"
@@ -18,65 +20,16 @@ struct Live {
     void* Component = nullptr;
     uint32_t Index = 0;
     bool Spot = false;
+    Light Applied;
+    bool HaveApplied = false;
 };
 std::array<Live, MaxLights> g_live;
-bool g_warned = false;
 
 struct LinearColor {
     float R, G, B, A;
 };
 
-// Identity transform: rotation quaternion, translation, scale, four doubles each.
-void WriteIdentity(uint8_t* at)
-{
-    auto* transform = reinterpret_cast<double*>(at);
-    transform[3] = 1.0;
-    transform[8] = transform[9] = transform[10] = 1.0;
-}
-
-// Spawns a light actor through the engine's own functions, with their parameter layout from reflection. A light on a fighter never
-// shows: the fighter's own actor is hidden, and that hides everything on it.
-void* SpawnLight(const char* className)
-{
-    void* library = ue::FindClass("GameplayStatics");
-    void* cls = ue::FindClass(className);
-    void* begin = library ? ue::FindFunction(library, "BeginDeferredActorSpawnFromClass") : nullptr;
-    void* finish = library ? ue::FindFunction(library, "FinishSpawningActor") : nullptr;
-    if (!cls || !begin || !finish)
-        return nullptr;
-    const int worldAt = ue::PropertyOffset(begin, "WorldContextObject");
-    const int classAt = ue::PropertyOffset(begin, "ActorClass");
-    const int transformAt = ue::PropertyOffset(begin, "SpawnTransform");
-    const int collisionAt = ue::PropertyOffset(begin, "CollisionHandlingOverride");
-    const int returnAt = ue::PropertyOffset(begin, "ReturnValue");
-    const int finishActorAt = ue::PropertyOffset(finish, "Actor");
-    const int finishTransformAt = ue::PropertyOffset(finish, "SpawnTransform");
-    if (worldAt < 0 || classAt < 0 || transformAt < 0 || returnAt < 0 || finishActorAt < 0 || finishTransformAt < 0) {
-        if (!g_warned)
-            mod::Log("Lights: the spawn functions have an unexpected layout");
-        g_warned = true;
-        return nullptr;
-    }
-    alignas(16) uint8_t params[0x200] = {};
-    *reinterpret_cast<void**>(params + worldAt) = ue::World();
-    *reinterpret_cast<void**>(params + classAt) = cls;
-    WriteIdentity(params + transformAt);
-    if (collisionAt >= 0)
-        params[collisionAt] = 1; // always spawn
-    static ue::FunctionRef beginRef { "GameplayStatics", "BeginDeferredActorSpawnFromClass" };
-    ue::Call(nullptr, beginRef, params);
-    void* actor = *reinterpret_cast<void**>(params + returnAt);
-    if (!actor)
-        return nullptr;
-
-    alignas(16) uint8_t finishParams[0x200] = {};
-    *reinterpret_cast<void**>(finishParams + finishActorAt) = actor;
-    WriteIdentity(finishParams + finishTransformAt);
-    static ue::FunctionRef finishRef { "GameplayStatics", "FinishSpawningActor" };
-    ue::Call(nullptr, finishRef, finishParams);
-    return actor;
-}
-
+// A light on a fighter never shows: the fighter's own actor is hidden, and that hides everything on it. So each light is an actor of its own.
 void* LightOf(void* actor)
 {
     void* base = ue::FindClass("Light");
@@ -88,11 +41,7 @@ void* LightOf(void* actor)
         return nullptr;
 
     // A light has to be movable to follow anything, and fighters can sit on their own lighting channel.
-    struct {
-        uint8_t Mobility;
-    } mobility { 2 };
-    static ue::FunctionRef setMobility { "SceneComponent", "SetMobility" };
-    ue::Call(light, setMobility, &mobility);
+    ue::SetMovable(light);
     struct {
         bool Channel0, Channel1, Channel2;
     } channels { true, true, true };
@@ -106,29 +55,50 @@ void* LightOf(void* actor)
     return light;
 }
 
-void SetWorldLocation(void* component, cine::Vec3 location)
+// Only what changed is sent to the engine, since look keys can move these every frame.
+void Configure(Live& live, const Light& light)
 {
-    static ue::FunctionRef setLocation { "SceneComponent", "K2_SetWorldLocation" };
-    alignas(16) uint8_t params[0x400] = {}; // room for the FHitResult output the function also takes
-    *reinterpret_cast<cine::Vec3*>(params) = location;
-    ue::Call(component, setLocation, params);
-}
-
-void Configure(void* component, const Light& light)
-{
+    void* component = live.Component;
+    const Light& was = live.Applied;
+    const bool all = !live.HaveApplied;
     struct {
         float Value;
-    } intensity { light.Intensity }, radius { light.Radius };
-    static ue::FunctionRef setIntensity { "LightComponent", "SetIntensity" };
-    static ue::FunctionRef setRadius { "LocalLightComponent", "SetAttenuationRadius" };
-    static ue::FunctionRef setColor { "LightComponent", "SetLightColor" };
-    ue::Call(component, setIntensity, &intensity);
-    ue::Call(component, setRadius, &radius);
-    struct {
-        LinearColor Value;
-        bool SRGB;
-    } color { { light.Color[0], light.Color[1], light.Color[2], 1 }, true };
-    ue::Call(component, setColor, &color);
+    } value {};
+    if (all || was.Intensity != light.Intensity) {
+        value.Value = light.Intensity;
+        static ue::FunctionRef setIntensity { "LightComponent", "SetIntensity" };
+        ue::Call(component, setIntensity, &value);
+    }
+    if (all || was.Radius != light.Radius) {
+        value.Value = light.Radius;
+        static ue::FunctionRef setRadius { "LocalLightComponent", "SetAttenuationRadius" };
+        ue::Call(component, setRadius, &value);
+    }
+    if (all || std::memcmp(was.Color, light.Color, sizeof(light.Color)) != 0) {
+        struct {
+            LinearColor Value;
+            bool SRGB;
+        } color { { light.Color[0], light.Color[1], light.Color[2], 1 }, true };
+        static ue::FunctionRef setColor { "LightComponent", "SetLightColor" };
+        ue::Call(component, setColor, &color);
+    }
+    if (all || was.Shadows != light.Shadows) {
+        struct {
+            bool Value;
+        } shadows { light.Shadows };
+        static ue::FunctionRef setShadows { "LightComponent", "SetCastShadows" };
+        ue::Call(component, setShadows, &shadows);
+    }
+    if (light.Spot && (all || was.Cone != light.Cone)) {
+        value.Value = std::clamp(light.Cone, 1.0f, 80.0f);
+        static ue::FunctionRef setOuter { "SpotLightComponent", "SetOuterConeAngle" };
+        ue::Call(component, setOuter, &value);
+        value.Value *= 0.6f; // a soft edge
+        static ue::FunctionRef setInner { "SpotLightComponent", "SetInnerConeAngle" };
+        ue::Call(component, setInner, &value);
+    }
+    live.Applied = light;
+    live.HaveApplied = true;
 }
 
 void Destroy(Live& live)
@@ -153,9 +123,27 @@ std::array<Light, MaxLights>& Rig()
     return g_rig;
 }
 
+void PlaceAtCamera(int index)
+{
+    const camera::View view = camera::LastView();
+    if (!view.Valid || index < 0 || index >= MaxLights)
+        return;
+    Light& light = g_rig[index];
+    light.On = true;
+    light.Follow = Follow::World;
+    light.Aim = Aim::Direction;
+    light.Offset[0] = static_cast<float>(view.Location.X);
+    light.Offset[1] = static_cast<float>(view.Location.Y);
+    light.Offset[2] = static_cast<float>(view.Location.Z);
+    light.Direction[0] = static_cast<float>(view.Rotation.Pitch);
+    light.Direction[1] = static_cast<float>(cine::WrapAngle(view.Rotation.Yaw));
+}
+
 void OnFightFound()
 {
-    g_live = {}; // the old fight's actors went with their lights
+    // If the stage was loaded again its lights went with it. If it wasn't, they're still there and have to go before they're made again.
+    for (Live& live : g_live)
+        Destroy(live);
 }
 
 void OnGameTick()
@@ -172,7 +160,7 @@ void OnGameTick()
         if (live.Component && (!ue::StillAlive(live.Component, live.Index) || live.Spot != light.Spot))
             Destroy(live);
         if (!live.Component) {
-            live.Actor = SpawnLight(light.Spot ? "SpotLight" : "PointLight");
+            live.Actor = ue::SpawnActor(light.Spot ? "SpotLight" : "PointLight");
             live.Component = live.Actor ? LightOf(live.Actor) : nullptr;
             if (!live.Component)
                 continue;
@@ -180,7 +168,7 @@ void OnGameTick()
             live.Spot = light.Spot;
             mod::Log("Lights: added light %d", i + 1);
         }
-        Configure(live.Component, light);
+        Configure(live, light);
 
         cine::Vec3 anchor, p1, p2;
         const bool have1 = game::FighterLocation(0, p1), have2 = game::FighterLocation(1, p2);
@@ -190,7 +178,17 @@ void OnGameTick()
             anchor = p2;
         else if (light.Follow == Follow::Between && have1 && have2)
             anchor = cine::Lerp(p1, p2, 0.5);
-        SetWorldLocation(live.Component, anchor + cine::Vec3 { light.Offset[0], light.Offset[1], light.Offset[2] });
+        const cine::Vec3 location = anchor + cine::Vec3 { light.Offset[0], light.Offset[1], light.Offset[2] };
+
+        cine::Rot rotation { light.Direction[0], light.Direction[1], 0 };
+        if (light.Spot && light.Aim != Aim::Direction) {
+            // A fighter's location is at their feet, so the light aims at about chest height.
+            cine::Vec3 target = light.Aim == Aim::P1 ? p1 : (light.Aim == Aim::P2 ? p2 : cine::Lerp(p1, p2, 0.5));
+            target.Z += 100;
+            if ((light.Aim == Aim::P1 && have1) || (light.Aim == Aim::P2 && have2) || (light.Aim == Aim::Between && have1 && have2))
+                rotation = cine::LookAt(location, target);
+        }
+        ue::SetComponentPose(live.Component, location, rotation);
     }
 }
 
