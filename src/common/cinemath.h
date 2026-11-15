@@ -104,6 +104,34 @@ inline Quat Multiply(Quat a, Quat b)
 }
 inline Quat Conjugate(Quat q) { return { -q.X, -q.Y, -q.Z, q.W }; }
 
+// TQuat::RotateVector
+inline Vec3 RotateVector(Quat q, Vec3 v)
+{
+    const Vec3 axis { q.X, q.Y, q.Z };
+    auto cross = [](Vec3 a, Vec3 b) { return Vec3 { a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X }; };
+    const Vec3 t = cross(axis, v) * 2.0;
+    return v + t * q.W + cross(axis, t);
+}
+
+// A point in the world as the camera sees it: X ahead, Y right, Z up.
+inline Vec3 ToCameraSpace(Vec3 cameraLocation, Rot cameraRotation, Vec3 point)
+{
+    return RotateVector(Conjugate(ToQuat(cameraRotation)), point - cameraLocation);
+}
+
+// A point in the world on a picture of the given width / height, for a camera whose field of view is across the width, as Unreal does.
+// x goes from -1 at the left edge to 1 at the right, y from -1 at the bottom to 1 at the top. False when the point is behind the camera.
+inline bool ProjectPoint(Vec3 cameraLocation, Rot cameraRotation, double fov, double aspect, Vec3 point, double& x, double& y)
+{
+    const Vec3 local = ToCameraSpace(cameraLocation, cameraRotation, point);
+    if (local.X < 1.0)
+        return false;
+    const double half = std::tan(std::clamp(fov, 1.0, 170.0) * Pi / 360.0);
+    x = local.Y / (local.X * half);
+    y = local.Z / (local.X * half) * aspect;
+    return true;
+}
+
 struct CameraKey {
     double Time = 0; // seconds on the path's clock
     Vec3 Location;

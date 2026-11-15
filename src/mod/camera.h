@@ -35,6 +35,7 @@ struct Settings {
     bool PathOnRealTime = false; // true: the dolly plays in real seconds even while the game is paused
     cine::PathStyle PathStyle = cine::PathStyle::Smooth;
     bool RuleOfThirds = false; // guides over the picture, never in a recording
+    bool ShowPath = true;      // the dolly path and its keys drawn in the picture, to click and drag; never in a recording
 };
 Settings& Config();
 
@@ -94,6 +95,8 @@ void RemoveKey(size_t index);
 void ClearKeys();
 void GoToKey(size_t index);
 size_t MoveKey(size_t index, double time); // returns where the key ended up after re-sorting
+size_t SetKey(size_t index, const cine::CameraKey& key); // place, turn, lens and time; returns where it ended up
+void KeyFromView(size_t index); // the key takes the camera's place, turn and lens as they are now, and keeps its time
 bool SavePath(const std::string& name);
 bool LoadPath(const std::string& name);
 std::vector<std::string> SavedPaths();

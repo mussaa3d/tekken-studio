@@ -86,6 +86,7 @@ void WriteLook(Ini& ini)
     for (int row = 0; row < replaydisplay::Rows; ++row)
         ini.SetNumber("replay_display." + std::to_string(row), replaydisplay::Choice(row));
     ini.SetBool("camera.thirds", camera::Config().RuleOfThirds);
+    ini.SetBool("camera.show_path", camera::Config().ShowPath);
 
     const camera::Settings& c = camera::Config();
     ini.SetNumber("camera.filter", static_cast<int>(c.Filter));
@@ -280,6 +281,7 @@ void ReadLook(const Ini& ini, bool whole = true)
         replaydisplay::Choice(row) = choice;
     }
     camera::Config().RuleOfThirds = ini.GetBool("camera.thirds", camera::Config().RuleOfThirds);
+    camera::Config().ShowPath = ini.GetBool("camera.show_path", camera::Config().ShowPath);
     const dvars::Colors tintBefore = dvars::Tint();
 
     camera::Settings& c = camera::Config();

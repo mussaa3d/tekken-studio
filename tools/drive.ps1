@@ -2,9 +2,10 @@
 # The game's menus take a click only once the pointer is already there, so click twice, about a second apart.
 #   drive.ps1 shot  [-Out file.png]            picture of the primary screen at 1280x720
 #   drive.ps1 click -X 960 -Y 540              left click, in real screen pixels
+#   drive.ps1 drag -X 100 -Y 100 -ToX 200 -ToY 50   left button held from one point to another
 #   drive.ps1 key   -Keys m,k -HoldMs 200      keys held the way a keyboard holds them
 #   drive.ps1 focus                            brings the game's window to the front
-param([Parameter(Mandatory)][string]$Action, [int]$X = 0, [int]$Y = 0, [string]$Out = "", [string[]]$Keys = @(), [int]$HoldMs = 200, [int]$Monitor = 0)
+param([Parameter(Mandatory)][string]$Action, [int]$X = 0, [int]$Y = 0, [int]$ToX = 0, [int]$ToY = 0, [string]$Out = "", [string[]]$Keys = @(), [int]$HoldMs = 200, [int]$Monitor = 0)
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
@@ -47,6 +48,20 @@ switch ($Action) {
         Start-Sleep -Milliseconds 90
         [T8D.U]::mouse_event(4, 0, 0, 0, [System.UIntPtr]::Zero)
         "clicked $X,$Y"
+    }
+    "drag" {
+        # drag -X -Y -ToX -ToY: left button held from one point to the other in small steps, the way a hand drags
+        [T8D.U]::SetCursorPos($X, $Y) | Out-Null
+        Start-Sleep -Milliseconds 150
+        [T8D.U]::mouse_event(2, 0, 0, 0, [System.UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 120
+        for ($i = 1; $i -le 30; $i++) {
+            [T8D.U]::SetCursorPos([int]($X + ($ToX - $X) * $i / 30), [int]($Y + ($ToY - $Y) * $i / 30)) | Out-Null
+            Start-Sleep -Milliseconds 25
+        }
+        Start-Sleep -Milliseconds 120
+        [T8D.U]::mouse_event(4, 0, 0, 0, [System.UIntPtr]::Zero)
+        "dragged $X,$Y to $ToX,$ToY"
     }
     "key" {
         $map = @{ insert = 0x2D; up = 0x26; down = 0x28; left = 0x25; right = 0x27; space = 0x20; esc = 0x1B; enter = 0x0D; home = 0x24; f5 = 0x74; f7 = 0x76; f9 = 0x78 }

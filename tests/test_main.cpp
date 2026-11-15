@@ -52,6 +52,34 @@ static void TestRotations()
     CHECK(Near(r.Y, 1));
     CHECK(Near(UpOf({ 0, 0, 0 }).Z, 1));
     CHECK(Near(WrapAngle(190), -170));
+
+    // The quaternion turn agrees with the flying axes when there's no roll.
+    for (const Rot turn : { Rot { 0, 0, 0 }, Rot { 30, 45, 0 }, Rot { -20, 170, 0 } }) {
+        const Vec3 a = RotateVector(ToQuat(turn), { 1, 0, 0 }), b = ForwardOf(turn);
+        CHECK(Near(a.X, b.X, 1e-9) && Near(a.Y, b.Y, 1e-9) && Near(a.Z, b.Z, 1e-9));
+        const Vec3 c = RotateVector(ToQuat(turn), { 0, 0, 1 }), d = UpOf(turn);
+        CHECK(Near(c.X, d.X, 1e-9) && Near(c.Y, d.Y, 1e-9) && Near(c.Z, d.Z, 1e-9));
+    }
+}
+
+static void TestProjection()
+{
+    double x = 9, y = 9;
+    // Straight ahead is the middle of the picture.
+    CHECK(ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, 90, 16.0 / 9, { 500, 0, 0 }, x, y) && Near(x, 0) && Near(y, 0));
+    // At 90 degrees across the width, a point 45 degrees to the right is on the right edge.
+    CHECK(ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, 90, 16.0 / 9, { 100, 100, 0 }, x, y) && Near(x, 1) && Near(y, 0));
+    // Up is up, and the height is the width over the aspect.
+    CHECK(ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, 90, 2.0, { 100, 0, 25 }, x, y) && Near(y, 0.5));
+    // Turned and moved: a camera at 100,0 looking along +Y sees 100,300 in the middle.
+    CHECK(ProjectPoint({ 100, 0, 0 }, { 0, 90, 0 }, 60, 1.5, { 100, 300, 0 }, x, y) && Near(x, 0, 1e-9) && Near(y, 0, 1e-9));
+    // Looking down at a point below.
+    CHECK(ProjectPoint({ 0, 0, 200 }, { -90, 0, 0 }, 60, 1.5, { 0, 0, 0 }, x, y) && Near(x, 0, 1e-6) && Near(y, 0, 1e-6));
+    // Behind the camera isn't on the picture.
+    CHECK(!ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, 90, 1.5, { -100, 0, 0 }, x, y));
+    // Rolled 90 degrees, a point to the right of the camera is straight above or below it in the picture.
+    const Vec3 local = ToCameraSpace({ 0, 0, 0 }, { 0, 0, 90 }, { 100, 50, 0 });
+    CHECK(Near(local.X, 100, 1e-9) && Near(std::fabs(local.Z), 50, 1e-9) && Near(local.Y, 0, 1e-9));
 }
 
 static std::vector<CameraKey> SampleKeys()
@@ -707,6 +735,7 @@ int main()
     TestXform();
     TestTakeCursor();
     TestRotations();
+    TestProjection();
     TestPath();
     TestRelativeCamera();
     TestSpeedRamp();

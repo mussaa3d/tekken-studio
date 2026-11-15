@@ -703,6 +703,33 @@ size_t MoveKey(size_t index, double time)
     return position;
 }
 
+size_t SetKey(size_t index, const CameraKey& key)
+{
+    std::lock_guard lock(g_keysMutex);
+    if (index >= g_keys.size())
+        return index;
+    g_keys.erase(g_keys.begin() + index);
+    const auto at = std::lower_bound(g_keys.begin(), g_keys.end(), key.Time, [](const CameraKey& k, double t) { return k.Time < t; });
+    const size_t position = static_cast<size_t>(at - g_keys.begin());
+    g_keys.insert(at, key);
+    return position;
+}
+
+void KeyFromView(size_t index)
+{
+    const View view = LastView();
+    if (!view.Valid)
+        return;
+    std::lock_guard lock(g_keysMutex);
+    if (index >= g_keys.size())
+        return;
+    CameraKey& key = g_keys[index];
+    key.Location = view.Location;
+    // The yaw is counted, so take the short way from what the key had.
+    key.Rotation = { view.Rotation.Pitch, key.Rotation.Yaw + cine::WrapAngle(view.Rotation.Yaw - key.Rotation.Yaw), view.Rotation.Roll };
+    key.Fov = view.Fov;
+}
+
 void ClearKeys()
 {
     std::lock_guard lock(g_keysMutex);

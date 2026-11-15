@@ -502,6 +502,96 @@ void AttachControls()
     ImGui::SliderFloat("##Smoothing", &a.Smooth, 0.0f, 0.98f, "%.2f");
 }
 
+int& SelectedCameraKey(); // shared with the timeline and the path in the picture
+
+bool DragDoubles(const char* label, double* values, int count, double speed, const char* format)
+{
+    Row(label);
+    return ImGui::DragScalarN((std::string("##") + label).c_str(), ImGuiDataType_Double, values, count, static_cast<float>(speed), nullptr, nullptr, format);
+}
+
+// Every number of one key, after IWXMVM's keyframe editor: pick a key in the picture or on the timeline, or step to the key before or after
+// this moment, and change it while the replay plays.
+void CameraKeysGroup()
+{
+    camera::Settings& s = camera::Config();
+    Section("Camera keys");
+    int& selected = SelectedCameraKey();
+    const std::vector<cine::CameraKey> keys = camera::Keys();
+    if (selected >= static_cast<int>(keys.size()))
+        selected = -1;
+
+    const double now = camera::PathClock();
+    ImGui::BeginDisabled(keys.empty() || s.PathOnRealTime);
+    if (ImGui::ArrowButton("##prevkey", ImGuiDir_Left)) {
+        for (int i = static_cast<int>(keys.size()) - 1; i >= 0; --i)
+            if (keys[i].Time < now - 0.001) {
+                game::SeekTo(keys[i].Time);
+                selected = i;
+                break;
+            }
+    }
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##nextkey", ImGuiDir_Right)) {
+        for (int i = 0; i < static_cast<int>(keys.size()); ++i)
+            if (keys[i].Time > now + 0.001) {
+                game::SeekTo(keys[i].Time);
+                selected = i;
+                break;
+            }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::Text(keys.size() == 1 ? "1 key" : "%d keys", static_cast<int>(keys.size()));
+    Help("The arrows go to the key before or after this moment. Click a key's little camera in the picture, or its diamond on the timeline, to change it here.\n\n"
+         "Changing the path while it plays: with the free camera on (F5), the path and its keys are in the picture. Click a key's camera and drag its "
+         "arrows to move it or its rings to turn it, while the replay runs, and the path changes at once. Double-click it to switch between moving "
+         "and turning. Or press F5 in the middle of Preview shot to take the camera from where the path has it, fly it, and press K for a key at that moment.");
+
+    if (selected < 0) {
+        ImGui::TextColored(Dim, keys.empty() ? "No keys yet: fly the free camera and press K" : "No key picked");
+        return;
+    }
+    cine::CameraKey key = keys[selected];
+    ImGui::Text("Key %d", selected + 1);
+    bool changed = false;
+    changed |= DragDoubles("Time##key", &key.Time, 1, 0.01, "%.3f s");
+    double place[3] = { key.Location.X, key.Location.Y, key.Location.Z };
+    if (DragDoubles("Place##key", place, 3, 1.0, "%.1f")) {
+        key.Location = { place[0], place[1], place[2] };
+        changed = true;
+    }
+    double turn[3] = { key.Rotation.Pitch, key.Rotation.Yaw, key.Rotation.Roll };
+    if (DragDoubles("Pitch, yaw, roll##key", turn, 3, 0.2, "%.1f")) {
+        key.Rotation = { std::clamp(turn[0], -89.9, 89.9), turn[1], cine::WrapAngle(turn[2]) };
+        changed = true;
+    }
+    changed |= DragDoubles("Field of view##key", &key.Fov, 1, 0.1, "%.1f");
+    if (changed) {
+        key.Time = std::max(key.Time, 0.0);
+        key.Fov = std::clamp(key.Fov, 5.0, 130.0);
+        selected = static_cast<int>(camera::SetKey(static_cast<size_t>(selected), key));
+    }
+
+    if (ImGui::SmallButton("From the view##key"))
+        camera::KeyFromView(static_cast<size_t>(selected));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The key takes the camera's place, turn and lens as they are now, and keeps its time");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Go there##key")) {
+        if (!s.PathOnRealTime)
+            game::SeekTo(key.Time);
+        camera::GoToKey(static_cast<size_t>(selected));
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Goes to the key's moment and puts the free camera where the key is");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Delete##key")) {
+        camera::RemoveKey(static_cast<size_t>(selected));
+        selected = -1;
+    }
+}
+
 void CameraTab()
 {
     camera::Settings& s = camera::Config();
@@ -589,6 +679,8 @@ void CameraTab()
         ImGui::SameLine();
     }
     ImGui::NewLine();
+
+    CameraKeysGroup();
 
     const camera::View view = camera::LastView();
     if (view.Valid) {
@@ -1546,6 +1638,11 @@ struct TimelineState {
     double DragSceneOffset = 0;
 } g_timeline;
 
+int& SelectedCameraKey()
+{
+    return g_timeline.SelectedCamera;
+}
+
 float TimeToX(double time, float left, float width)
 {
     return left + static_cast<float>((time - g_timeline.Start) / (g_timeline.End - g_timeline.Start)) * width;
@@ -1568,23 +1665,28 @@ double YToSpeed(float y, float top, float height)
     return std::exp(std::log(MinSpeed) + u * (std::log(MaxSpeed) - std::log(MinSpeed)));
 }
 
+// The part of the picture the game draws into: inside the bars a fixed aspect ratio adds.
+void InnerPicture(ImVec2& min, ImVec2& max)
+{
+    const scene::Settings& s = scene::Config();
+    if (s.Frame != scene::Frame::Fixed)
+        return;
+    const float width = max.x - min.x, height = max.y - min.y;
+    if (s.AspectRatio > width / height) {
+        const float inset = (height - width / s.AspectRatio) * 0.5f;
+        min.y += inset;
+        max.y -= inset;
+    } else {
+        const float inset = (width - height * s.AspectRatio) * 0.5f;
+        min.x += inset;
+        max.x -= inset;
+    }
+}
+
 // Guides over the picture. They're drawn with the editor, after the frame is captured, so they never end up in a recording.
 void DrawThirds(ImDrawList* draw, ImVec2 min, ImVec2 max)
 {
-    const scene::Settings& s = scene::Config();
-    if (s.Frame == scene::Frame::Fixed) {
-        // Inside the bars a fixed aspect ratio adds.
-        const float width = max.x - min.x, height = max.y - min.y;
-        if (s.AspectRatio > width / height) {
-            const float inset = (height - width / s.AspectRatio) * 0.5f;
-            min.y += inset;
-            max.y -= inset;
-        } else {
-            const float inset = (width - height * s.AspectRatio) * 0.5f;
-            min.x += inset;
-            max.x -= inset;
-        }
-    }
+    InnerPicture(min, max);
     const ImU32 colour = IM_COL32(255, 255, 255, 110);
     for (int i = 1; i <= 2; ++i) {
         const float x = min.x + (max.x - min.x) * i / 3.0f, y = min.y + (max.y - min.y) * i / 3.0f;
@@ -2145,6 +2247,7 @@ void MenuBar()
         ImGui::MenuItem("Hide hit labels and frame data", nullptr, &effects::Config().HideHitLabels);
         ImGui::MenuItem("Follow the playhead", nullptr, &g_timeline.Follow);
         ImGui::MenuItem("Rule of thirds", nullptr, &camera::Config().RuleOfThirds);
+        ImGui::MenuItem("Camera path in the picture", nullptr, &camera::Config().ShowPath);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Keys")) {
@@ -2671,6 +2774,296 @@ void ApplyStyle(float fontSize)
     c[ImGuiCol_ModalWindowDimBg] = Colour(0x000000, 0.5f);
 }
 
+// ----- The dolly path in the picture, after IWXMVM: the path itself, a little camera at each key, and handles to move and turn the
+// selected key while the replay runs. Drawn with the editor, after the frame is captured, so none of it is ever in a recording.
+
+enum class PathHandle { None, Axis0, Axis1, Axis2 };
+enum class PathTool { MoveOwn, MoveWorld, Turn };
+
+struct PathViewState {
+    PathTool Tool = PathTool::MoveOwn;
+    PathHandle Drag = PathHandle::None;
+} g_pathView;
+
+struct PictureProjector {
+    camera::View View;
+    ImVec2 Min, Max;
+
+    bool operator()(cine::Vec3 point, ImVec2& out) const
+    {
+        double x = 0, y = 0;
+        const double aspect = (Max.x - Min.x) / std::max(Max.y - Min.y, 1.0f);
+        if (!cine::ProjectPoint(View.Location, View.Rotation, View.Fov, aspect, point, x, y))
+            return false;
+        out = { Min.x + static_cast<float>((x + 1.0) * 0.5 * (Max.x - Min.x)), Min.y + static_cast<float>((1.0 - y) * 0.5 * (Max.y - Min.y)) };
+        return std::fabs(x) < 50 && std::fabs(y) < 50; // far off the picture only makes long stray lines
+    }
+
+    // How many centimetres one pixel of the picture covers at this point, so handles keep the same size on screen.
+    double CmPerPixel(cine::Vec3 point) const
+    {
+        const double depth = std::max(cine::ToCameraSpace(View.Location, View.Rotation, point).X, 1.0);
+        return depth * std::tan(std::clamp(View.Fov, 1.0, 170.0) * cine::Pi / 360.0) * 2.0 / std::max(Max.x - Min.x, 1.0f);
+    }
+};
+
+float DistanceToSegment(ImVec2 p, ImVec2 a, ImVec2 b)
+{
+    const float dx = b.x - a.x, dy = b.y - a.y;
+    const float length = dx * dx + dy * dy;
+    const float t = length > 0 ? std::clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / length, 0.0f, 1.0f) : 0.0f;
+    const float ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+    return std::sqrt(ex * ex + ey * ey);
+}
+
+const char* PathToolName(PathTool tool)
+{
+    switch (tool) {
+    case PathTool::MoveWorld:
+        return "Move along the stage";
+    case PathTool::Turn:
+        return "Turn";
+    default:
+        return "Move along the key";
+    }
+}
+
+void PathView(ImDrawList* draw, ImVec2 min, ImVec2 max)
+{
+    camera::Settings& s = camera::Config();
+    PathViewState& v = g_pathView;
+    const camera::View view = camera::LastView();
+    std::vector<cine::CameraKey> keys = camera::Keys();
+    // Looking through the path itself there's nothing to see of it.
+    if (!s.ShowPath || s.Mode == camera::Mode::Dolly || !view.Valid || keys.empty() || recorder::Active()) {
+        v.Drag = PathHandle::None;
+        return;
+    }
+    InnerPicture(min, max);
+    const PictureProjector project { view, min, max };
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool mouseInPicture = mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
+    const bool free = mouseInPicture && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && !ImGui::IsAnyItemActive()
+                      && !ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::GetIO().WantTextInput;
+    int& selected = g_timeline.SelectedCamera;
+    if (selected >= static_cast<int>(keys.size()))
+        selected = -1;
+
+    draw->PushClipRect(min, max, true);
+
+    // The path, sampled the way the dolly flies it.
+    const ImU32 pathColour = IM_COL32(255, 204, 0, 220);
+    if (keys.size() >= 2) {
+        const double start = keys.front().Time, end = keys.back().Time;
+        const int steps = std::clamp(static_cast<int>(keys.size()) * 48, 96, 800);
+        ImVec2 previous;
+        bool havePrevious = false;
+        for (int i = 0; i <= steps; ++i) {
+            const cine::CameraSample sample = cine::SamplePathStyled(keys, start + (end - start) * i / steps, s.PathStyle);
+            ImVec2 at;
+            const bool ok = project(sample.Location, at);
+            if (ok && havePrevious)
+                draw->AddLine(previous, at, pathColour, 2.5f);
+            previous = at;
+            havePrevious = ok;
+        }
+        // Where the dolly would be at this moment of the replay.
+        const double now = camera::PathClock();
+        ImVec2 at;
+        if (now >= start && now <= end && project(cine::SamplePathStyled(keys, now, s.PathStyle).Location, at)) {
+            draw->AddCircleFilled(at, 5.0f, IM_COL32_WHITE);
+            draw->AddCircle(at, 5.0f, IM_COL32(0, 0, 0, 200), 0, 1.5f);
+        }
+    }
+
+    // The selected key's handles. They come first so a click on a handle never selects the key behind it.
+    PathHandle hoveredHandle = PathHandle::None;
+    if (selected >= 0) {
+        cine::CameraKey key = keys[selected];
+        const cine::Quat turn = cine::ToQuat(key.Rotation);
+        const double cm = project.CmPerPixel(key.Location);
+        const ImU32 colours[3] = { IM_COL32(235, 70, 70, 255), IM_COL32(80, 210, 90, 255), IM_COL32(70, 130, 255, 255) };
+        ImVec2 centre;
+        const bool centreOk = project(key.Location, centre);
+        float best = 7.0f;
+
+        if (v.Tool == PathTool::Turn) {
+            // Rings: yaw around the stage's up, pitch around the key's right, roll around where it looks.
+            const double radius = cm * 60.0;
+            const cine::Vec3 forward = cine::RotateVector(turn, { 1, 0, 0 }), right = cine::RotateVector(turn, { 0, 1, 0 }), up = cine::RotateVector(turn, { 0, 0, 1 });
+            const cine::Vec3 flatForward = cine::ForwardOf({ 0, key.Rotation.Yaw, 0 }), flatRight = cine::RightOf({ 0, key.Rotation.Yaw, 0 });
+            const cine::Vec3 planes[3][2] = { { forward, up }, { flatForward, flatRight }, { right, up } }; // pitch, yaw, roll
+            for (int axis = 0; axis < 3; ++axis) {
+                ImVec2 previous;
+                bool havePrevious = false;
+                const bool lit = v.Drag == static_cast<PathHandle>(axis + 1);
+                for (int i = 0; i <= 64; ++i) {
+                    const double a = i * 2.0 * cine::Pi / 64;
+                    const cine::Vec3 point = key.Location + planes[axis][0] * (std::cos(a) * radius) + planes[axis][1] * (std::sin(a) * radius);
+                    ImVec2 at;
+                    const bool ok = project(point, at);
+                    if (ok && havePrevious) {
+                        draw->AddLine(previous, at, colours[axis], lit ? 4.0f : 2.5f);
+                        const float distance = DistanceToSegment(mouse, previous, at);
+                        if (free && distance < best) {
+                            best = distance;
+                            hoveredHandle = static_cast<PathHandle>(axis + 1);
+                        }
+                    }
+                    previous = at;
+                    havePrevious = ok;
+                }
+            }
+            if (centreOk)
+                draw->AddText({ centre.x + 10, centre.y - 10 - ImGui::GetFontSize() * 3 }, IM_COL32_WHITE, "red pitch  green yaw  blue roll");
+            // Dragging turns by how far the mouse goes, as IWXMVM's rings do.
+            if (v.Drag != PathHandle::None) {
+                const ImVec2 delta = ImGui::GetIO().MouseDelta;
+                const double amount = (delta.x - delta.y) * 0.4;
+                if (amount != 0) {
+                    if (v.Drag == PathHandle::Axis0)
+                        key.Rotation.Pitch = std::clamp(key.Rotation.Pitch + amount, -89.9, 89.9);
+                    else if (v.Drag == PathHandle::Axis1)
+                        key.Rotation.Yaw += amount; // counted, so the path turns the way it was dragged
+                    else
+                        key.Rotation.Roll = cine::WrapAngle(key.Rotation.Roll + amount);
+                    camera::SetKey(static_cast<size_t>(selected), key);
+                }
+            }
+        } else {
+            // Arrows: along the key's own ahead, right and up, or along the stage's X, Y and up.
+            const bool world = v.Tool == PathTool::MoveWorld;
+            const cine::Vec3 axes[3] = { world ? cine::Vec3 { 1, 0, 0 } : cine::RotateVector(turn, { 1, 0, 0 }),
+                                         world ? cine::Vec3 { 0, 1, 0 } : cine::RotateVector(turn, { 0, 1, 0 }),
+                                         world ? cine::Vec3 { 0, 0, 1 } : cine::RotateVector(turn, { 0, 0, 1 }) };
+            const char* names[3] = { world ? "X" : "ahead", world ? "Y" : "right", world ? "Z" : "up" };
+            const double length = cm * 80.0;
+            ImVec2 tips[3];
+            bool tipOk[3] = {};
+            for (int axis = 0; axis < 3; ++axis) {
+                tipOk[axis] = centreOk && project(key.Location + axes[axis] * length, tips[axis]);
+                if (!tipOk[axis])
+                    continue;
+                const bool lit = v.Drag == static_cast<PathHandle>(axis + 1);
+                draw->AddLine(centre, tips[axis], colours[axis], lit ? 5.0f : 3.0f);
+                draw->AddCircleFilled(tips[axis], lit ? 7.0f : 5.5f, colours[axis]);
+                draw->AddText({ tips[axis].x + 8, tips[axis].y - ImGui::GetFontSize() * 0.5f }, colours[axis], names[axis]);
+                const float distance = DistanceToSegment(mouse, centre, tips[axis]);
+                if (free && distance < best) {
+                    best = distance;
+                    hoveredHandle = static_cast<PathHandle>(axis + 1);
+                }
+            }
+            // Dragging moves the key along the arrow by as much as the mouse went along it on the picture.
+            if (v.Drag != PathHandle::None) {
+                const int axis = static_cast<int>(v.Drag) - 1;
+                if (tipOk[axis]) {
+                    const float sx = tips[axis].x - centre.x, sy = tips[axis].y - centre.y;
+                    const float pixels = std::sqrt(sx * sx + sy * sy);
+                    if (pixels > 4.0f) {
+                        const ImVec2 delta = ImGui::GetIO().MouseDelta;
+                        const double along = (delta.x * sx + delta.y * sy) / pixels;
+                        if (along != 0) {
+                            key.Location = key.Location + axes[axis] * (along * length / pixels);
+                            camera::SetKey(static_cast<size_t>(selected), key);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (free && hoveredHandle != PathHandle::None && v.Drag == PathHandle::None && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            v.Drag = hoveredHandle;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        v.Drag = PathHandle::None;
+
+    // A little camera at each key, looking the way the key looks, with its number.
+    int hoveredKey = -1;
+    float nearest = 14.0f;
+    for (int i = 0; i < static_cast<int>(keys.size()); ++i) {
+        const cine::CameraKey& key = keys[i];
+        ImVec2 apex;
+        if (!project(key.Location, apex))
+            continue;
+        const cine::Quat turn = cine::ToQuat(key.Rotation);
+        const double size = project.CmPerPixel(key.Location) * 16.0;
+        const double spread = std::tan(std::clamp(key.Fov, 5.0, 150.0) * cine::Pi / 360.0);
+        const cine::Vec3 ahead = cine::RotateVector(turn, { 1, 0, 0 }) * (size * 1.6), right = cine::RotateVector(turn, { 0, 1, 0 }) * (size * 1.6 * spread),
+                         up = cine::RotateVector(turn, { 0, 0, 1 }) * (size * 1.6 * spread * 0.5625);
+        ImVec2 corners[4];
+        bool ok = true;
+        const double signs[4][2] = { { -1, 1 }, { 1, 1 }, { 1, -1 }, { -1, -1 } };
+        for (int c = 0; c < 4 && ok; ++c)
+            ok = project(key.Location + ahead + right * signs[c][0] + up * signs[c][1], corners[c]);
+        const float distance = std::hypot(mouse.x - apex.x, mouse.y - apex.y);
+        if (free && distance < nearest) {
+            nearest = distance;
+            hoveredKey = i;
+        }
+        const bool isSelected = i == selected;
+        const ImU32 colour = isSelected ? IM_COL32_WHITE : (i == hoveredKey ? IM_COL32(255, 235, 140, 255) : pathColour);
+        const float thickness = isSelected ? 2.5f : 1.8f;
+        if (ok) {
+            for (int c = 0; c < 4; ++c) {
+                draw->AddLine(apex, corners[c], colour, thickness);
+                draw->AddLine(corners[c], corners[(c + 1) % 4], colour, thickness);
+            }
+            // A notch on the top edge says which way is up.
+            const ImVec2 topMid { (corners[0].x + corners[1].x) * 0.5f, (corners[0].y + corners[1].y) * 0.5f };
+            draw->AddLine(topMid, { topMid.x + (topMid.x - apex.x) * 0.15f, topMid.y + (topMid.y - apex.y) * 0.15f }, colour, thickness);
+        }
+        draw->AddCircleFilled(apex, isSelected ? 5.0f : 4.0f, colour);
+        char label[8];
+        snprintf(label, sizeof(label), "%d", i + 1);
+        draw->AddText({ apex.x + 7, apex.y + 4 }, colour, label);
+    }
+
+    // Clicks: a key selects it, a double-click on the selected key changes the tool, empty picture lets go of the selection.
+    if (free && v.Drag == PathHandle::None && hoveredHandle == PathHandle::None) {
+        if (hoveredKey >= 0) {
+            ImGui::SetTooltip("Key %d at %.2f s\nClick to pick it, double-click to switch between moving and turning", hoveredKey + 1, keys[hoveredKey].Time);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && hoveredKey == selected)
+                v.Tool = static_cast<PathTool>((static_cast<int>(v.Tool) + 1) % 3);
+            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                selected = hoveredKey;
+        } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            selected = -1;
+        }
+    }
+
+    draw->PopClipRect();
+
+    // The tool buttons, at the picture's top left, while a key is picked.
+    if (selected >= 0) {
+        ImGui::SetNextWindowPos({ min.x + 8, min.y + 8 });
+        ImGui::SetNextWindowBgAlpha(0.75f);
+        if (ImGui::Begin("##pathtools", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+                                                     | ImGuiWindowFlags_NoFocusOnAppearing)) {
+            ImGui::Text("Key %d", selected + 1);
+            for (int t = 0; t < 3; ++t) {
+                ImGui::SameLine();
+                const char* icons[3] = { ICON_FA_MAXIMIZE, ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, ICON_FA_ROTATE };
+                const bool on = static_cast<int>(v.Tool) == t;
+                if (on)
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                if (ImGui::SmallButton((std::string(icons[t]) + "##tool" + std::to_string(t)).c_str()))
+                    v.Tool = static_cast<PathTool>(t);
+                if (on)
+                    ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", PathToolName(static_cast<PathTool>(t)));
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("From the view"))
+                camera::KeyFromView(static_cast<size_t>(selected));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The key takes the camera's place, turn and lens as they are now, and keeps its time");
+        }
+        ImGui::End();
+    }
+}
+
 void Draw()
 {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -2704,7 +3097,7 @@ void Draw()
     const char* hint = nullptr;
     switch (camera::Config().Mode) {
     case camera::Mode::Free:
-        hint = "hold right mouse  look      W A S D  fly      K  add a key      Space  play";
+        hint = "hold right mouse  look      W A S D  fly      K  add a key      Space  play      click a key's camera  move or turn it";
         break;
     case camera::Mode::Dolly:
         hint = "playing the camera path";
@@ -2727,6 +3120,7 @@ void Draw()
 
     if (camera::Config().RuleOfThirds)
         DrawThirds(background, viewMin, viewMax);
+    PathView(background, viewMin, viewMax);
     presets::UndoWatch(!ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left));
 
     g_layout.ViewCenter = { (viewMin.x + viewMax.x) * 0.5f, (viewMin.y + viewMax.y) * 0.5f };
