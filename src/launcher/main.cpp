@@ -713,7 +713,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* commandLine, int sho
     RegisterClassExW(&windowClass);
 
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT { 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
-    HWND window = CreateWindowW(windowClass.lpszClassName, L"tekken8mvm", WS_OVERLAPPEDWINDOW, 100, 100, static_cast<int>(760 * scale),
+    HWND window = CreateWindowW(windowClass.lpszClassName, L"tekken8mvm v0.1 beta (early access)", WS_OVERLAPPEDWINDOW, 100, 100, static_cast<int>(760 * scale),
                                 static_cast<int>(640 * scale), nullptr, nullptr, instance, nullptr);
     BOOL dark = TRUE;
     DwmSetWindowAttribute(window, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark));

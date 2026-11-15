@@ -4,7 +4,7 @@
 ; downloads a pinned release from GitHub and checks its SHA-256 before using it.
 
 #define AppName "tekken8mvm"
-#define AppVersion "2.1"
+#define AppVersion "0.1"
 #define FfmpegVersion "9.0.2"
 #define FfmpegUrl "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
 #define FfmpegSha256 "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
@@ -14,8 +14,8 @@
 AppId={{0F81B8E8-9138-4408-BD65-3C51D081EB80}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName} {#AppVersion}
-VersionInfoVersion=2.1.0.0
+AppVerName={#AppName} {#AppVersion} beta (early access)
+VersionInfoVersion=0.1.0.0
 AppPublisher={#AppName}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes

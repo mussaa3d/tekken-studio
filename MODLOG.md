@@ -332,3 +332,7 @@ Presets, shots, camera paths, actor takes and `.t8replay` files can be passed be
 - The Discord early-access gate is gone: `src/common/discordlink.h`, `src/common/licence.h`, the launcher's sign-in screen and the mod's every-minute check. The tool and the mod run for anyone with the installer. The bot in `bot/` left the repo too.
 - The updater now asks the `mussaa3d/tekken8mvm` repo itself for its latest release, and `tools/publish_release.ps1` publishes there. While the repo is private GitHub answers 404 and the tool offers no update.
 - Built; unit tests 245 checks, 0 failed (the key and Discord tests went with the code they tested). Not run in the game after this change.
+
+## 0.1 beta: first public numbering (15 November)
+- The first release under the new repo is called **v0.1 beta (early access)**: version 0.1 in the exe, the installer (`tekken8mvm-0.1-setup.exe`), the editor's menu bar and the launcher's title. Earlier numbers (1.0 to 2.1) were private builds.
+- Releases are not marked as GitHub pre-releases, because the updater asks for `/releases/latest`, which skips those. The title says beta instead.

@@ -1,6 +1,8 @@
-# tekken8mvm
+# tekken8mvm (beta, early access v0.1)
 
 Cinematic and movie-making tools for **Tekken 8** on PC, in the spirit of CoDMVM, HLAE and IWXMVM. Offline only.
+
+> **This is an early-access beta, version 0.1.** Most of it is tested in the real game, but expect rough edges and things that break after a game patch. Please report what goes wrong in [Issues](../../issues).
 
 ## Legal
 tekken8mvm is an unofficial fan-made tool. It isn't made, endorsed or supported by Bandai Namco Entertainment, and TEKKEN is their trademark. It contains no game files and no game code: you need your own copy of Tekken 8 on Steam. Mods for the game may be against its terms of use, and Bandai Namco lists unauthorized mods among its ban reasons, so use it at your own risk and only offline (see [Bans and anti-cheat](#bans-and-anti-cheat)). It's free software under the GNU GPL v3, with no warranty of any kind (see [LICENSE](LICENSE)).
@@ -21,22 +23,6 @@ tekken8mvm is an unofficial fan-made tool. It isn't made, endorsed or supported 
 ![Your own sky](docs/images/sky.png)
 
 Tested in the real game on version 3.02.02 (Steam build 25221600) and 3.03.01 (Steam build 26155785), on replays and through real mouse and keyboard input. What wasn't tested is listed under [Not verified](#not-verified).
-
-## New in 2.1
-- **HUD presets** (Look tab, HUD and screen): one pick for what's left on screen. **Fragmovie** keeps the health bars, the timer and the hit combo and damage text. There are also **Health bars and timer**, **Broadcast** (the match HUD without the replay's panels), **Combo text only**, **Clean** and **The game's own**.
-- **Graphics presets** (Look tab, Quality): All low, Medium, High, Epic, Cinematic and Extreme, which set every quality setting and the engine's bloom, motion blur, depth of field and resolution scale in one go. Extreme renders at 150% resolution, for recording.
-- **Replays from older versions play.** The game refuses a replay saved before its last update. tekken8mvm marks older replays with the current version, so they play from the game's own list (Replays tab, *Play replays from older versions*, on by default). Older `.t8replay` files load too.
-- **Works on game version 3.03.01** (Steam build 26155785).
-- **No sign-in.** Anyone with the installer can use it: no account, key or Discord needed.
-
-## New in 2.0
-- **Actors** (Scene tab): copies of a fighter that you place on the stage, playing motion you recorded from a replay.
-- **Lights, props and effects** (Scene tab): eight lights you can put anywhere, any mesh the game has as a prop, and any of the game's particle effects, placed where you like.
-- **Any picture size, on any monitor** (Record tab): record at 4K or any other size on a 1080p monitor, on whichever monitor the game is on, and write the video at that size or smaller.
-- **A new look for the editor,** after [Iris Studio](https://github.com/yerbisonline/IrisStudio)'s: grey panels, tabs with icons, each control's name on its left, and a timeline ruler in minutes and seconds. The VISUALS tab is now called **Look**.
-- **Everything on look keys, ReShade included:** a look key now holds the lights, props, effects and actors, the attached camera and ReShade's effects as well as the visuals.
-
-Each has its own section under [What's in it](#whats-in-it), and what wasn't tested is under [Not verified](#not-verified).
 
 ## What's in it
 The editor (Insert) is laid out like Iris Studio's: the game picture on the left under a strip that says which camera it's from, the tabs Replays, Camera, Look, Scene and Record on the right, and the playback bar and a keyframe timeline along the bottom.
@@ -97,7 +83,7 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 - **Replay vault:** snapshot your own saves on this PC, tagged with the game build, and restore them.
 
 ## Install
-Download `tekken8mvm-2.1-setup.exe` from this repo's [Releases](../../releases) and run it. It installs over older versions. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
+Download `tekken8mvm-0.1-setup.exe` from this repo's [Releases](../../releases) and run it. It installs over an older version. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
 
 The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
 

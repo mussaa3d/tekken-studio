@@ -137,7 +137,7 @@ inline bool Newer(const std::string& candidate, const std::string& current)
     return false;
 }
 
-// This build's version, from the exe's own ProductVersion ("2.1").
+// This build's version, from the exe's own ProductVersion ("0.1").
 inline std::string CurrentVersion()
 {
     wchar_t exe[MAX_PATH];
