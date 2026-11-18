@@ -100,6 +100,11 @@ fs::path ModDllPath()
     return g_app.Home / "mod" / "dinput8.dll";
 }
 
+fs::path ReplaySaverPath()
+{
+    return g_app.Home / "replay-saver" / "dinput8.dll";
+}
+
 fs::path SkinsDir()
 {
     return g_app.Home / "skins";
@@ -303,6 +308,8 @@ void PlayTab()
         ImGui::TextWrapped("%s", list.c_str());
         ImGui::TextColored(Warn, "tekken8mvm didn't put these there and leaves them alone. Remove them yourself before playing online.");
     }
+    if (g_app.Game.Found && files::ReplaySaverInstalled(g_app.Game))
+        ImGui::TextColored(Dim, "The replay saver is in and stays in, online too: it saves your replays as you play. The Replays tab takes it out.");
     ImGui::BeginDisabled(!canPlay);
     if (ImGui::Button("Start normal game", ImVec2(260, 32)))
         LaunchNormal();
@@ -478,7 +485,26 @@ void ReplaysTab()
             fs::create_directories(ini.parent_path(), ignored);
             settings.Save(ini);
         }
-        ImGui::TextColored(Dim, "Each match is saved a few seconds after it ends, into my_replays. Online matches are saved the next time you start a session.");
+        ImGui::TextColored(Dim, "In a cinematic session each replay is saved a few seconds after the game adds it, into my_replays.");
+
+        // The replay saver: the same saving while you play normally, online included.
+        static int saver = -1;
+        if (saver < 0)
+            saver = files::ReplaySaverInstalled(g_app.Game) ? 1 : 0;
+        bool saverOn = saver == 1;
+        ImGui::BeginDisabled(GameProcessRunning() || !fs::exists(ReplaySaverPath()));
+        if (ImGui::Checkbox("Save my replays while I play, online too", &saverOn)) {
+            const files::InstallResult result = saverOn ? files::InstallReplaySaver(g_app.Game, ReplaySaverPath()) : files::RemoveReplaySaver(g_app.Game);
+            SetStatus(result.Message, !result.Ok);
+            saver = files::ReplaySaverInstalled(g_app.Game) ? 1 : 0;
+        }
+        ImGui::EndDisabled();
+        ImGui::TextWrapped("Puts a small mod (dinput8.dll) in the game folder that stays there, like a pak mod. While you play, ranked included, it saves "
+                           "each of your replays into my_replays a few seconds after the game adds it to its list. It only reads the replay list and "
+                           "writes files: no hooks, nothing changed in the game.");
+        ImGui::TextColored(Warn, "Bandai Namco's ban reasons include unauthorized mods. Using it online is your call and your account's risk.");
+        if (GameProcessRunning())
+            ImGui::TextColored(Dim, "Close the game to put it in or take it out.");
     }
     const std::vector<std::string> waiting = SharedReplayNames();
     if (waiting.empty()) {
@@ -961,9 +987,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* commandLine, int sho
     if (g_app.Game.Found && !GameProcessRunning())
         UseGameSettings("normal"); // in case a session ended with nothing here to put them back
 
+    // An installed replay saver gets this version's copy.
+    if (g_app.Game.Found && !GameProcessRunning() && files::ReplaySaverInstalled(g_app.Game) && fs::exists(ReplaySaverPath()))
+        files::InstallReplaySaver(g_app.Game, ReplaySaverPath());
+
     // The uninstaller runs this first, so nothing of the mod is left in the game folder once the launcher is gone.
-    if (commandLine && wcsstr(commandLine, L"--cleanup"))
+    if (commandLine && wcsstr(commandLine, L"--cleanup")) {
+        if (g_app.Game.Found && !GameProcessRunning())
+            files::RemoveReplaySaver(g_app.Game);
         return GameProcessRunning() ? 1 : 0;
+    }
 
     WNDCLASSEXW windowClass = { sizeof(windowClass) };
     windowClass.style = CS_CLASSDC;

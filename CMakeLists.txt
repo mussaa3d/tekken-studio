@@ -30,6 +30,13 @@ set_target_properties(tekken8mvm_mod PROPERTIES OUTPUT_NAME dinput8)
 target_include_directories(tekken8mvm_mod PRIVATE src ${IMGUI} ${IMGUI}/backends third_party/reshade/include third_party/fonts)
 target_link_libraries(tekken8mvm_mod PRIVATE minhook d3d12 dxgi iphlpapi ws2_32 mmdevapi ole32 shell32 bcrypt)
 
+# ----- the replay saver: a dinput8.dll of its own that only saves your replays as files, online too (dist/replay-saver)
+add_library(tekken_studio_replay_saver SHARED src/saver/saver.cpp src/mod/proxy.cpp src/mod/sharing.cpp src/common/config.cpp src/common/version.rc)
+set_target_properties(tekken_studio_replay_saver PROPERTIES OUTPUT_NAME dinput8 RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/replay-saver
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/replay-saver PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/replay-saver)
+target_include_directories(tekken_studio_replay_saver PRIVATE src)
+target_link_libraries(tekken_studio_replay_saver PRIVATE shell32 ole32)
+
 # ----- the launcher: installs the mod only for a cinematic session, and removes it afterwards
 add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp src/common/version.rc src/launcher/icon.rc
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx11.cpp)
@@ -59,6 +66,9 @@ add_custom_command(TARGET tekken8mvm POST_BUILD
 add_custom_command(TARGET tekken8mvm_mod POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}/mod
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tekken8mvm_mod> ${DIST}/mod/dinput8.dll)
+add_custom_command(TARGET tekken_studio_replay_saver POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}/replay-saver
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tekken_studio_replay_saver> ${DIST}/replay-saver/dinput8.dll)
 # The harness with no arguments is the preview: the editor with no game.
 add_custom_command(TARGET tekken8mvm_harness POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}

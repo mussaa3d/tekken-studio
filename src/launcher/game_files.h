@@ -75,6 +75,13 @@ InstallResult RemoveMod(const GameInstall& game);
 
 // Is the file at this path a tekken8mvm build? (Looks for our marker string.)
 bool IsOurDll(const fs::path& path);
+
+// The replay saver: a dinput8.dll of its own that only saves your replays as files while you play, online too. It stays in the game
+// folder until it's taken out. For a session, InstallMod sets it aside like any other mod's dinput8.dll and RemoveMod puts it back.
+bool IsReplaySaver(const fs::path& path);
+bool ReplaySaverInstalled(const GameInstall& game); // in place, or set aside for a session
+InstallResult InstallReplaySaver(const GameInstall& game, const fs::path& saverDll);
+InstallResult RemoveReplaySaver(const GameInstall& game);
 bool ModFilesPresent(const GameInstall& game);
 
 // Pak mods and other mods' DLLs that tekken8mvm didn't put there. They load in every launch, online too, so the launcher warns

@@ -7,10 +7,11 @@ $version = ((Get-Content "$root\installer\tekken8mvm.iss" | Select-String '#defi
 $name = "tekken-studio-$version-portable"
 $stage = Join-Path $env:TEMP $name
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-New-Item -ItemType Directory -Force "$stage\mod", "$stage\licenses" | Out-Null
+New-Item -ItemType Directory -Force "$stage\mod", "$stage\replay-saver", "$stage\licenses" | Out-Null
 
 Copy-Item "$root\dist\tekken-studio.exe" $stage
 Copy-Item "$root\dist\mod\dinput8.dll" "$stage\mod"
+Copy-Item "$root\dist\replay-saver\dinput8.dll" "$stage\replay-saver"
 Copy-Item "$root\README.md" $stage
 # Tekken Studio for TTT2: the scripts and sources the launcher's TTT2 tab builds from.
 New-Item -ItemType Directory -Force "$stage\ttt2\src" | Out-Null

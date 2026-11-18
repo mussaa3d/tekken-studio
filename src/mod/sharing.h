@@ -4,10 +4,15 @@
 // near Bandai's servers. Nothing is decrypted here and no save file is touched: the game does its own saving, and only saves a
 // slot's file when something in that file's group of slots changes through the game's own menus.
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 namespace sharing {
+
+// Where recordings go; shared_replays and my_replays are made in it. The studio's mod hands over the recorder's folder, the replay
+// saver its own. Until one is set, Videos\tekken8mvm.
+void SetOutputDirSource(std::filesystem::path (*source)());
 
 struct Slot {
     int Index = 0;

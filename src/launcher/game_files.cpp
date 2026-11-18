@@ -43,6 +43,7 @@ std::string Lower(std::string text)
 
 constexpr const char* Marker = "TEKKEN8MVM-BUILD-MARKER";
 constexpr const char* OldMarker = "T8CINE-BUILD-MARKER"; // the name this tool had before
+constexpr const char* SaverMarker = "TEKKEN-STUDIO-REPLAY-SAVER";
 constexpr const wchar_t* BackupName = L"dinput8.dll.tekken8mvm-backup";
 
 uint64_t FolderBytes(const fs::path& folder, int* fileCount = nullptr)
@@ -271,6 +272,57 @@ bool IsOurDll(const fs::path& path)
     return ReadShared(path, contents) && HasMarker(contents);
 }
 
+bool IsReplaySaver(const fs::path& path)
+{
+    std::string contents;
+    return ReadShared(path, contents) && contents.find(SaverMarker) != std::string::npos;
+}
+
+bool ReplaySaverInstalled(const GameInstall& game)
+{
+    std::error_code error;
+    for (const fs::path& path : { game.Win64 / "dinput8.dll", game.Win64 / BackupName })
+        if (fs::exists(path, error) && IsReplaySaver(path))
+            return true;
+    return false;
+}
+
+InstallResult InstallReplaySaver(const GameInstall& game, const fs::path& saverDll)
+{
+    std::error_code error;
+    if (!fs::exists(saverDll, error))
+        return Fail("The replay saver is missing: " + saverDll.string());
+    if (!fs::exists(game.Win64, error))
+        return Fail("The game folder isn't there yet: " + game.Win64.string());
+    // Set aside for a session: it's updated there, and comes back when the session ends.
+    fs::path target = game.Win64 / "dinput8.dll";
+    if (fs::exists(game.Win64 / BackupName, error) && IsReplaySaver(game.Win64 / BackupName))
+        target = game.Win64 / BackupName;
+    else if (fs::exists(target, error) && !IsReplaySaver(target))
+        return Fail(IsOurDll(target) ? "Tekken Studio's session mod is in the game folder. Close the game first."
+                                     : "Another mod's dinput8.dll is in the game folder, and only one can be there. Take that one out first.");
+    if (!WithRetries([&] {
+            error.clear();
+            fs::copy_file(saverDll, target, fs::copy_options::overwrite_existing, error);
+            return !error;
+        }))
+        return Fail("Couldn't copy the replay saver in (is the game running?): " + error.message());
+    return { true, "Replay saver in the game folder" };
+}
+
+InstallResult RemoveReplaySaver(const GameInstall& game)
+{
+    std::error_code error;
+    for (const fs::path& path : { game.Win64 / "dinput8.dll", game.Win64 / BackupName })
+        if (fs::exists(path, error) && IsReplaySaver(path) && !WithRetries([&] {
+                error.clear();
+                fs::remove(path, error);
+                return !error;
+            }))
+            return Fail("Couldn't take the replay saver out (is the game running?): " + error.message());
+    return { true, "Replay saver taken out" };
+}
+
 bool ModFilesPresent(const GameInstall& game)
 {
     std::error_code error;
@@ -291,7 +343,7 @@ std::vector<std::string> OtherMods(const GameInstall& game)
                 found.push_back(file.path().stem().string());
     }
     const fs::path dll = game.Win64 / "dinput8.dll";
-    if (fs::exists(dll, error) && !IsOurDll(dll))
+    if (fs::exists(dll, error) && !IsOurDll(dll) && !IsReplaySaver(dll))
         found.push_back("dinput8.dll (another mod's loader)");
     std::sort(found.begin(), found.end());
     return found;

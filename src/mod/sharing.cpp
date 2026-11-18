@@ -14,7 +14,6 @@
 #include <tuple>
 
 #include "mod/log.h"
-#include "mod/recorder.h"
 
 namespace sharing {
 
@@ -158,9 +157,20 @@ std::string Utf8Of(const std::filesystem::path& path)
     return std::string(reinterpret_cast<const char*>(text.data()), text.size());
 }
 
+std::filesystem::path (*g_outputDirSource)() = nullptr;
+
+std::filesystem::path OutputDir()
+{
+    if (g_outputDirSource)
+        return g_outputDirSource();
+    wchar_t profile[MAX_PATH] = L".";
+    GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
+    return std::filesystem::path(profile) / "Videos" / "tekken8mvm";
+}
+
 std::filesystem::path FolderPath()
 {
-    const std::filesystem::path folder = recorder::Config().OutputDir / "shared_replays";
+    const std::filesystem::path folder = OutputDir() / "shared_replays";
     std::error_code ignored;
     std::filesystem::create_directories(folder, ignored);
     return folder;
@@ -174,7 +184,7 @@ std::filesystem::path PathOf(const std::string& fileName)
 // Where your own replays are exported to on their own: apart from the shared folder, so they aren't loaded back into the game.
 std::filesystem::path MyFolderPath()
 {
-    const std::filesystem::path folder = recorder::Config().OutputDir / "my_replays";
+    const std::filesystem::path folder = OutputDir() / "my_replays";
     std::error_code ignored;
     std::filesystem::create_directories(folder, ignored);
     return folder;
@@ -270,6 +280,11 @@ bool DescribePath(const std::filesystem::path& path, Slot& out, std::string& err
 }
 
 } // namespace
+
+void SetOutputDirSource(std::filesystem::path (*source)())
+{
+    g_outputDirSource = source;
+}
 
 std::vector<Slot> Slots()
 {

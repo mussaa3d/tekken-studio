@@ -45,6 +45,7 @@ Name: "desktopicon"; Description: "Desktop shortcut"; Flags: unchecked
 [Files]
 Source: "..\dist\{#FileName}.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\mod\dinput8.dll"; DestDir: "{app}\mod"; Flags: ignoreversion
+Source: "..\dist\replay-saver\dinput8.dll"; DestDir: "{app}\replay-saver"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 ; Tekken Studio for TTT2 (BlueSpark): its scripts and sources, built on the user's PC from the launcher's TTT2 tab.
