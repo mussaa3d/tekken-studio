@@ -4,8 +4,8 @@
 ; downloads a pinned release from GitHub and checks its SHA-256 before using it.
 
 #define AppName "Tekken Studio"
-; The files, the folder and the setup file keep the old name, so updates and existing installs carry on.
-#define FileName "tekken8mvm"
+; The program, the setup file and new installs' folder. An install from before keeps its folder (Inno uses the one it has).
+#define FileName "tekken-studio"
 #define AppVersion "0.1"
 #define FfmpegVersion "9.0.2"
 #define FfmpegUrl "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
@@ -28,7 +28,7 @@ LicenseFile=..\LICENSE
 InfoBeforeFile=before_install.txt
 OutputDir=..\release
 OutputBaseFilename={#FileName}-{#AppVersion}-setup
-UninstallDisplayIcon={app}\tekken8mvm.exe
+UninstallDisplayIcon={app}\{#FileName}.exe
 SetupIconFile=logo\tekken8mvm.ico
 WizardSmallImageFile=logo\wizard_small.bmp
 WizardImageFile=logo\wizard_large.bmp
@@ -43,7 +43,7 @@ Name: "ffmpeg"; Description: "Download ffmpeg {#FfmpegVersion} for recording (ab
 Name: "desktopicon"; Description: "Desktop shortcut"; Flags: unchecked
 
 [Files]
-Source: "..\dist\tekken8mvm.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\{#FileName}.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\mod\dinput8.dll"; DestDir: "{app}\mod"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
@@ -60,20 +60,22 @@ Source: "..\third_party\fonts\IconFontCppHeaders-licence.txt"; DestDir: "{app}\l
 Type: files; Name: "{autoprograms}\tekken8mvm.lnk"
 Type: files; Name: "{autoprograms}\tekken8mvm README.lnk"
 Type: files; Name: "{autodesktop}\tekken8mvm.lnk"
+; The program under its old name, in an install from before.
+Type: files; Name: "{app}\tekken8mvm.exe"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\tekken8mvm.exe"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#FileName}.exe"
 Name: "{autoprograms}\{#AppName} README"; Filename: "{app}\README.md"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\tekken8mvm.exe"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#FileName}.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\tekken8mvm.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#FileName}.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
 ; An update from inside the tool runs this installer with /SILENT (a progress bar, no pages), then starts the tool again.
-Filename: "{app}\tekken8mvm.exe"; Flags: nowait skipifnotsilent
+Filename: "{app}\{#FileName}.exe"; Flags: nowait skipifnotsilent
 
 [UninstallRun]
 ; Takes the mod and any skins back out of the game folder before the launcher that would do it is gone.
-Filename: "{app}\tekken8mvm.exe"; Parameters: "--cleanup"; Flags: waituntilterminated; RunOnceId: "cleanup"
+Filename: "{app}\{#FileName}.exe"; Parameters: "--cleanup"; Flags: waituntilterminated; RunOnceId: "cleanup"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\ffmpeg"

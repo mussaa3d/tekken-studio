@@ -51,11 +51,11 @@ target_link_libraries(tekken8mvm_harness PRIVATE d3d12 dxgi winmm)
 add_library(tekken8mvm_fake_reshade SHARED tools/harness/fake_reshade.cpp)
 target_include_directories(tekken8mvm_fake_reshade PRIVATE third_party/reshade/include)
 
-# dist/ is the finished tool: run dist/tekken8mvm.exe.
+# dist/ is the finished tool: run dist/tekken-studio.exe.
 set(DIST ${CMAKE_SOURCE_DIR}/dist)
 add_custom_command(TARGET tekken8mvm POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tekken8mvm> ${DIST}/tekken8mvm.exe)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tekken8mvm> ${DIST}/tekken-studio.exe)
 add_custom_command(TARGET tekken8mvm_mod POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}/mod
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tekken8mvm_mod> ${DIST}/mod/dinput8.dll)

@@ -1,5 +1,5 @@
 #pragma once
-// Updates from GitHub. Each release of the tekken8mvm repo has the setup .exe and a .sha256 file with its SHA-256. The tool
+// Updates from GitHub. Each release of the tekken-studio repo has the setup .exe and a .sha256 file with its SHA-256. The tool
 // asks GitHub for the latest release when it opens, and if it's newer than this build, offers to download it, checks the
 // SHA-256 and runs it. While the repo is private GitHub answers 404, and the tool simply offers nothing.
 #include <windows.h>
@@ -19,7 +19,7 @@
 
 namespace updater {
 
-inline constexpr const wchar_t* ReleasesRepo = L"mussaa3d/tekken8mvm";
+inline constexpr const wchar_t* ReleasesRepo = L"mussaa3d/tekken-studio";
 
 struct Release {
     bool Found = false;

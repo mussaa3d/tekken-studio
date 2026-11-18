@@ -84,12 +84,14 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 - **Replay vault:** snapshot your own saves on this PC, tagged with the game build, and restore them.
 
 ## Install
-Download `tekken8mvm-0.1-setup.exe` from this repo's [Releases](../../releases) and run it. It installs over an older version. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken8mvm`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
+Download `tekken-studio-0.1-setup.exe` from this repo's [Releases](../../releases) and run it. It installs over an older version. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken-studio`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
+
+Or take `tekken-studio-0.1-portable.zip` from the same page: the tool on its own, with no installer. Unzip it anywhere and run `tekken-studio.exe`. It keeps its settings, skins and replay vault in its own folder. For recording it needs ffmpeg on your PATH, or an `ffmpeg` folder next to it with `binfmpeg.exe` inside.
 
 The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
 
 ## Use
-1. Start **Tekken Studio** from the Start menu (or run `dist\tekken8mvm.exe` from a build).
+1. Start **Tekken Studio** from the Start menu (or run `dist\tekken-studio.exe` from a build).
 2. In Steam, choose **Steam > Go Offline**.
 3. Click **Start cinematic session**. Keep the launcher open: it cleans up when the game closes.
 4. In the game, open a replay: **Replay > My Replays & Tips**, then pick one.

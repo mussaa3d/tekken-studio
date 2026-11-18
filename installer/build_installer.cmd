@@ -1,5 +1,6 @@
 @echo off
-rem Builds the tool, then the installer: release\tekken8mvm-<version>-setup.exe. Needs Inno Setup 6 (winget install JRSoftware.InnoSetup).
+rem Builds the tool, then the installer and the portable zip: release\tekken-studio-<version>-setup.exe and
+rem release\tekken-studio-<version>-portable.zip. Needs Inno Setup 6 (winget install JRSoftware.InnoSetup).
 setlocal
 cd /d "%~dp0.."
 call "%CD%\build.cmd" || exit /b 1
@@ -10,5 +11,6 @@ if not exist "%ISCC%" (
     exit /b 1
 )
 "%ISCC%" /Q installer\tekken8mvm.iss || exit /b 1
-echo Installer: release\
-dir /b release\*.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\make_portable.ps1 || exit /b 1
+echo Release files: release\
+dir /b release\tekken-studio-*
