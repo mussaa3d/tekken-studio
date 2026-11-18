@@ -26,7 +26,7 @@ std::vector<std::string> SharedFiles();
 
 // False with the reason in `error`. File names are UTF-8.
 bool Export(int slot, const std::string& fileName, std::string& error);
-bool Import(const std::string& fileName, std::string& error);
+bool Import(const std::string& fileName, std::string& error, bool* alreadyThere = nullptr); // alreadyThere: the same fight is in the list
 
 // One slot, false if it's empty.
 bool SlotInfo(int index, Slot& out);
@@ -48,6 +48,12 @@ int UnlockOlderReplays();
 // On by default: a background thread unlocks older replays every few seconds, so they play from the game's own list.
 bool& OlderReplaysOn();
 void StartOlderReplays();
+
+// On by default: the same thread puts every .t8replay file in the shared folder into the game's Downloaded Replays once the game
+// has loaded its own, skipping any that are already in the list. A file added while the game runs is picked up within seconds.
+bool& AutoLoadOn();
+void AutoLoadTick();
+int AutoLoaded(); // how many files it has loaded this session
 
 // Test only: logs every offset in a slot where a 16 or 32 bit value equals `value`.
 void FindInSlot(int slot, uint32_t value);

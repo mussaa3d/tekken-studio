@@ -34,7 +34,7 @@ target_link_libraries(tekken8mvm_mod PRIVATE minhook d3d12 dxgi iphlpapi ws2_32 
 add_executable(tekken8mvm WIN32 src/launcher/main.cpp src/launcher/game_files.cpp src/common/config.cpp src/common/version.rc src/launcher/icon.rc
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx11.cpp)
 target_include_directories(tekken8mvm PRIVATE src ${IMGUI} ${IMGUI}/backends)
-target_link_libraries(tekken8mvm PRIVATE d3d11 d3dcompiler dxgi shell32 ole32 dwmapi)
+target_link_libraries(tekken8mvm PRIVATE d3d11 d3dcompiler dxgi shell32 ole32 dwmapi comdlg32)
 
 # ----- offline checks: no game needed
 add_executable(tekken8mvm_tests tests/test_main.cpp src/mod/scan.cpp src/launcher/game_files.cpp src/common/config.cpp)

@@ -400,6 +400,12 @@ void ReplaysTab()
     Help("Turns the greyed-out Show P2 Profile in the box a replay opens in the game's list into Export Replay. It saves that replay here, named after its date and players. The profiles can't be shown offline anyway.");
     ImGui::Checkbox("Play replays from older versions", &sharing::OlderReplaysOn());
     Help("The game won't play a replay saved before its last update. With this on, older replays (and older .t8replay files) are marked with the current version, so they play from the game's own list. If the list was open, leave it and come back. A replay is the players' button presses played through this version's moves, so if a patch changed a move they used, the fight can play out differently from the real match.");
+    ImGui::Checkbox("Load shared replay files on their own", &sharing::AutoLoadOn());
+    Help("Every .t8replay file in the shared folder goes into the game's Replay > Downloaded Replays by itself, a few seconds after the game has loaded its own replays, and a file you add while the game runs is picked up too. One that's already in the list is skipped. The launcher's Add replay files puts files in the folder before the game is open.");
+    if (sharing::AutoLoaded() > 0) {
+        ImGui::SameLine();
+        ImGui::TextColored(Good, "%d loaded", sharing::AutoLoaded());
+    }
     if (ImGui::SmallButton("Open the folder"))
         ShellExecuteA(nullptr, "open", sharing::Folder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     ImGui::TextColored(Dim, "Files here can be loaded:");
@@ -407,11 +413,12 @@ void ReplaysTab()
         ImGui::PushID(file.c_str());
         if (ImGui::SmallButton("Load")) {
             std::string error;
-            if (sharing::Import(file, error)) {
+            bool alreadyThere = false;
+            if (sharing::Import(file, error, &alreadyThere)) {
                 message = "Loaded. It's in the game's Replay > Downloaded Replays. If that screen is open, leave it and come back. It stays until you close the game.";
                 refresh();
             } else {
-                message = error;
+                message = alreadyThere ? "It's already in the game's replays." : error;
             }
         }
         ImGui::SameLine();

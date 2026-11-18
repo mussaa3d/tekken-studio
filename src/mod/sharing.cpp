@@ -8,6 +8,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <mutex>
 
 #include "mod/log.h"
@@ -500,12 +501,67 @@ void StartOlderReplays()
             Sleep(3000);
             if (OlderReplaysOn())
                 UnlockOlderReplays();
+            AutoLoadTick();
         }
     }, nullptr, 0, nullptr));
 }
 
-bool Import(const std::string& fileName, std::string& error)
+namespace {
+std::atomic<int> g_autoLoaded { 0 };
+} // namespace
+
+bool& AutoLoadOn()
 {
+    static bool on = true;
+    return on;
+}
+
+int AutoLoaded()
+{
+    return g_autoLoaded;
+}
+
+void AutoLoadTick()
+{
+    // Each file once per session (again if the file changes), so a file that can't load is logged once, not every few seconds.
+    static std::map<std::string, std::filesystem::file_time_type> handled;
+    static int lastCount = -1, steady = 0;
+    if (!AutoLoadOn() || !Available())
+        return;
+    // The game fills its slots from the saves as it starts. Wait until the count has held for a few checks, so nothing is put in a
+    // slot the game is about to fill.
+    const int used = static_cast<int>(Slots().size());
+    if (used != lastCount) {
+        lastCount = used;
+        steady = 0;
+        return;
+    }
+    if (++steady < 3)
+        return;
+
+    for (const std::string& name : SharedFiles()) {
+        std::error_code ignored;
+        const auto written = std::filesystem::last_write_time(PathOf(name), ignored);
+        const auto seen = handled.find(name);
+        if (seen != handled.end() && seen->second == written)
+            continue;
+        handled[name] = written;
+        std::string error;
+        bool alreadyThere = false;
+        if (Import(name, error, &alreadyThere)) {
+            ++g_autoLoaded;
+            mod::Log("Sharing: loaded %s on its own", name.c_str());
+        } else if (!alreadyThere) {
+            mod::Log("Sharing: couldn't load %s: %s", name.c_str(), error.c_str());
+        }
+    }
+    lastCount = static_cast<int>(Slots().size());
+}
+
+bool Import(const std::string& fileName, std::string& error, bool* alreadyThere)
+{
+    if (alreadyThere)
+        *alreadyThere = false;
     if (!mod::SafeFileName(fileName)) {
         error = "That isn't a tekken8mvm replay file";
         return false;
@@ -526,23 +582,6 @@ bool Import(const std::string& fileName, std::string& error)
         error = "This file is from a different version of the game";
         return false;
     }
-    // Replays only play on the game version they were made on, so an older one is marked with this version (see UnlockOlderReplays).
-    const uint32_t newest = NewestVersion();
-    int last = -1;
-    for (int i = 0; i < SlotCount(); ++i)
-        if (ReadU32(SlotAt(i) + HeaderTag) == SlotTag)
-            last = i;
-    // Right after the last used slot. Further along the block isn't all slots: the end of it holds other things.
-    const int empty = last + 1;
-    if (newest != 0 && header.GameVersion < newest && !OlderReplaysOn()) {
-        error = "This replay is from an older version of the game (" + std::to_string(header.GameVersion) + ", yours is " + std::to_string(newest) + "). Tick \"Play replays from older versions\" to load it";
-        return false;
-    }
-    if (empty < 0 || empty >= SlotCount() - 8) {
-        error = "All the game's replay slots are full";
-        return false;
-    }
-
     std::vector<uint8_t> data(g_slotSize);
     file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(header.Stored));
     if (!file) {
@@ -552,6 +591,34 @@ bool Import(const std::string& fileName, std::string& error)
     // The slot inside must look like the game's own, or the game's list of replays could be thrown off by it.
     if (ReadU32(data.data() + HeaderTag) != SlotTag || ReadU32(data.data() + HeaderSize) != g_slotSize || ReadU32(data.data() + HeaderGameVersion) != header.GameVersion) {
         error = "That isn't a tekken8mvm replay file";
+        return false;
+    }
+
+    // Replays only play on the game version they were made on, so an older one is marked with this version (see UnlockOlderReplays).
+    const uint32_t newest = NewestVersion();
+    const Slot incoming = Read(-1, data.data());
+    int last = -1;
+    for (int i = 0; i < SlotCount(); ++i) {
+        if (ReadU32(SlotAt(i) + HeaderTag) != SlotTag)
+            continue;
+        last = i;
+        // The same fight already in the list, loaded before and kept by the game's own saving, or the player's own: not again.
+        const Slot existing = Read(i, SlotAt(i));
+        if (existing.Played == incoming.Played && existing.Player1 == incoming.Player1 && existing.Player2 == incoming.Player2) {
+            if (alreadyThere)
+                *alreadyThere = true;
+            error = "This replay is already in the game's list";
+            return false;
+        }
+    }
+    // Right after the last used slot. Further along the block isn't all slots: the end of it holds other things.
+    const int empty = last + 1;
+    if (newest != 0 && header.GameVersion < newest && !OlderReplaysOn()) {
+        error = "This replay is from an older version of the game (" + std::to_string(header.GameVersion) + ", yours is " + std::to_string(newest) + "). Tick \"Play replays from older versions\" to load it";
+        return false;
+    }
+    if (empty < 0 || empty >= SlotCount() - 8) {
+        error = "All the game's replay slots are full";
         return false;
     }
     // It shows up as a downloaded replay, dated now in the "when it came in" field.

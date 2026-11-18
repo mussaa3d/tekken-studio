@@ -6,11 +6,13 @@
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <windows.h>
+#include <commdlg.h>
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -335,6 +337,87 @@ void SkinsTab()
     }
 }
 
+// Where shared replay files go: the shared_replays folder next to the recordings, as the mod has it.
+fs::path SharedReplaysDir()
+{
+    if (g_app.Game.Found) {
+        Ini ini;
+        ini.Load(files::DataDir(g_app.Game) / "tekken8mvm.ini");
+        const std::string output = ini.Get("output_dir");
+        if (!output.empty())
+            return fs::path(output) / "shared_replays";
+    }
+    wchar_t profile[MAX_PATH] = L".";
+    GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
+    return fs::path(profile) / "Videos" / "tekken8mvm" / "shared_replays";
+}
+
+std::vector<std::string> SharedReplayNames()
+{
+    std::vector<std::string> names;
+    std::error_code ignored;
+    for (const auto& entry : fs::directory_iterator(SharedReplaysDir(), ignored))
+        if (entry.path().extension() == ".t8replay") {
+            const std::u8string stem = entry.path().stem().u8string();
+            names.emplace_back(stem.begin(), stem.end());
+        }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+std::vector<fs::path> PickReplayFiles()
+{
+    std::vector<wchar_t> buffer(32768, 0);
+    OPENFILENAMEW dialog = { sizeof(dialog) };
+    dialog.hwndOwner = GetActiveWindow();
+    dialog.lpstrFilter = L"Replay files (*.t8replay)\0*.t8replay\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    dialog.lpstrTitle = L"Add replay files";
+    dialog.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    std::vector<fs::path> picked;
+    if (!GetOpenFileNameW(&dialog))
+        return picked;
+    // One file: its full path. Several: the folder, then each name, each ending in a zero, and an extra zero at the end.
+    const fs::path first = buffer.data();
+    const wchar_t* next = buffer.data() + wcslen(buffer.data()) + 1;
+    if (!*next)
+        picked.push_back(first);
+    for (; *next; next += wcslen(next) + 1)
+        picked.push_back(first / next);
+    return picked;
+}
+
+// Copies the files into the shared folder, where the mod loads them when the game starts.
+void AddReplayFiles(const std::vector<fs::path>& paths)
+{
+    if (paths.empty())
+        return;
+    const fs::path folder = SharedReplaysDir();
+    std::error_code error;
+    fs::create_directories(folder, error);
+    int added = 0, skipped = 0;
+    for (const fs::path& path : paths) {
+        if (path.extension() != ".t8replay") {
+            ++skipped;
+            continue;
+        }
+        if (fs::equivalent(path.parent_path(), folder, error)) {
+            ++added; // already there
+            continue;
+        }
+        error.clear();
+        fs::copy_file(path, folder / path.filename(), fs::copy_options::overwrite_existing, error);
+        error ? ++skipped : ++added;
+    }
+    std::string text = std::to_string(added) + (added == 1 ? " replay file added." : " replay files added.");
+    if (skipped)
+        text += " " + std::to_string(skipped) + " couldn't be added (only .t8replay files can).";
+    if (added)
+        text += g_app.State == Session::Idle ? " They go into the game's Downloaded Replays when you start a session." : " The game picks them up within a few seconds.";
+    SetStatus(text, added == 0);
+}
+
 void ReplaysTab()
 {
     const fs::path saves = files::SaveGamesDir();
@@ -346,16 +429,52 @@ void ReplaysTab()
     } else {
         ImGui::Text("%d replays, newest %s", static_cast<int>(g_app.Replays.size()), g_app.Replays.front().Modified.c_str());
     }
-    ImGui::TextWrapped("To send a replay to a friend, start a cinematic session and open the Replays tab in the editor: pick a replay and press Export. "
-                       "A file you received goes in the shared_replays folder next to your recordings, and Load puts it in the game's Downloaded Replays. "
-                       "It stays there until you close the game. Both of you need the same game version, and the file holds both players' names.");
-    if (ImGui::Button("Open shared replays")) {
-        wchar_t profile[MAX_PATH] = L".";
-        GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
-        const fs::path folder = fs::path(profile) / "Videos" / "tekken8mvm" / "shared_replays";
+    ImGui::Spacing();
+    ImGui::TextColored(Accent, "Replays from friends");
+    ImGui::Separator();
+    ImGui::TextWrapped("Add the .t8replay files a friend sent you, here or by dropping them on this window. When you start a session they go into the "
+                       "game's Replay > Downloaded Replays by themselves, a few seconds after the game has loaded its own. One that's already there is skipped. "
+                       "To send one, open the editor's Replays tab in a session and press Export, or choose Export Replay in the game's own replay box.");
+    if (ImGui::Button("Add replay files..."))
+        AddReplayFiles(PickReplayFiles());
+    ImGui::SameLine();
+    if (ImGui::Button("Open the folder")) {
+        const fs::path folder = SharedReplaysDir();
         std::error_code ignored;
         fs::create_directories(folder, ignored);
         OpenPath(folder.wstring());
+    }
+    if (g_app.Game.Found) {
+        static int autoLoad = -1;
+        const fs::path ini = files::DataDir(g_app.Game) / "tekken8mvm.ini";
+        Ini settings;
+        if (autoLoad < 0) {
+            settings.Load(ini);
+            autoLoad = settings.GetBool("auto_load_replays", true) ? 1 : 0;
+        }
+        bool on = autoLoad == 1;
+        if (ImGui::Checkbox("Load them into the game on their own", &on)) {
+            autoLoad = on ? 1 : 0;
+            settings.Load(ini);
+            settings.SetBool("auto_load_replays", on);
+            std::error_code ignored;
+            fs::create_directories(ini.parent_path(), ignored);
+            settings.Save(ini);
+        }
+        if (!on)
+            ImGui::TextColored(Dim, "Off: load each one with Load in the editor's Replays tab.");
+    }
+    const std::vector<std::string> waiting = SharedReplayNames();
+    if (waiting.empty()) {
+        ImGui::TextColored(Dim, "No replay files yet.");
+    } else {
+        ImGui::Text("%d replay file%s:", static_cast<int>(waiting.size()), waiting.size() == 1 ? "" : "s");
+        if (ImGui::BeginChild("sharedlist", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * std::min<float>(5.5f, static_cast<float>(waiting.size()) + 0.5f)),
+                              ImGuiChildFlags_Borders)) {
+            for (const std::string& name : waiting)
+                ImGui::TextUnformatted(name.c_str());
+        }
+        ImGui::EndChild();
     }
 
     ImGui::Spacing();
@@ -656,9 +775,22 @@ LRESULT WINAPI WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CLOSE:
         if (g_app.State != Session::Idle && g_app.ModSession
             && MessageBoxW(window, L"A cinematic session is running. If you close this now, the mod stays in the game folder until the next launch.\n\nClose anyway?",
-                           L"tekken8mvm", MB_YESNO | MB_ICONWARNING) != IDYES)
+                           L"Tekken Studio", MB_YESNO | MB_ICONWARNING) != IDYES)
             return 0;
         break;
+    case WM_DROPFILES: {
+        const auto drop = reinterpret_cast<HDROP>(wParam);
+        std::vector<fs::path> paths;
+        const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+        for (UINT i = 0; i < count; ++i) {
+            wchar_t path[MAX_PATH * 4];
+            if (DragQueryFileW(drop, i, path, static_cast<UINT>(std::size(path))))
+                paths.emplace_back(path);
+        }
+        DragFinish(drop);
+        AddReplayFiles(paths);
+        return 0;
+    }
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -715,6 +847,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* commandLine, int sho
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT { 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
     HWND window = CreateWindowW(windowClass.lpszClassName, L"Tekken Studio v0.1 beta", WS_OVERLAPPEDWINDOW, 100, 100, static_cast<int>(760 * scale),
                                 static_cast<int>(640 * scale), nullptr, nullptr, instance, nullptr);
+    DragAcceptFiles(window, TRUE); // .t8replay files dropped on the window go into the shared folder
     BOOL dark = TRUE;
     DwmSetWindowAttribute(window, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark));
 

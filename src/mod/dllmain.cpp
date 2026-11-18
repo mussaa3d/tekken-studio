@@ -135,6 +135,7 @@ DWORD WINAPI GameThread(void*)
             if (ini.GetBool("test_commands", false))
                 testcmd::Enable();
             sharing::OlderReplaysOn() = ini.GetBool("older_replays", true);
+            sharing::AutoLoadOn() = ini.GetBool("auto_load_replays", true);
             sharing::StartOlderReplays();
             mod::Log("tekken8mvm ready. Insert opens the menu.");
             return 0;
