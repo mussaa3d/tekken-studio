@@ -21,7 +21,7 @@ $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
 $sumFile = "$setup.sha256"
 Set-Content -Path $sumFile -Value "$hash  tekken8mvm-$version-setup.exe" -Encoding ascii -NoNewline
 
-if (-not $Notes) { $Notes = "tekken8mvm v$version beta (early access). Expect rough edges, and please report what breaks. Open the tool and press Update now, or install this over the old version." }
-gh release create "v$version" $setup $sumFile --repo "$owner/$repo" --title "tekken8mvm v$version beta (early access)" --notes $Notes
+if (-not $Notes) { $Notes = "Tekken Studio v$version beta. Expect rough edges, and please report what breaks. Open the tool and press Update now, or install this over the old version." }
+gh release create "v$version" $setup $sumFile --repo "$owner/$repo" --title "Tekken Studio v$version beta" --notes $Notes
 if ($LASTEXITCODE -ne 0) { throw "GitHub didn't take the release (see above)." }
 Write-Host "Published v$version to https://github.com/$owner/$repo/releases/tag/v$version"

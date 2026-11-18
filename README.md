@@ -1,11 +1,11 @@
-# tekken8mvm (beta, early access v0.1)
+# Tekken Studio (beta v0.1)
 
 Cinematic and movie-making tools for **Tekken 8** on PC, in the spirit of CoDMVM, HLAE and IWXMVM. Offline only.
 
 > **This is an early-access beta, version 0.1.** Most of it is tested in the real game, but expect rough edges and things that break after a game patch. Please report what goes wrong in [Issues](../../issues).
 
 ## Legal
-tekken8mvm is an unofficial fan-made tool. It isn't made, endorsed or supported by Bandai Namco Entertainment, and TEKKEN is their trademark. It contains no game files and no game code: you need your own copy of Tekken 8 on Steam. Mods for the game may be against its terms of use, and Bandai Namco lists unauthorized mods among its ban reasons, so use it at your own risk and only offline (see [Bans and anti-cheat](#bans-and-anti-cheat)). It's free software under the GNU GPL v3, with no warranty of any kind (see [LICENSE](LICENSE)).
+Tekken Studio (tekken8mvm) is an unofficial fan-made tool. It isn't made, endorsed or supported by Bandai Namco Entertainment, and TEKKEN is their trademark. It contains no game files and no game code: you need your own copy of Tekken 8 on Steam. Mods for the game may be against its terms of use, and Bandai Namco lists unauthorized mods among its ban reasons, so use it at your own risk and only offline (see [Bans and anti-cheat](#bans-and-anti-cheat)). It's free software under the GNU GPL v3, with no warranty of any kind (see [LICENSE](LICENSE)).
 
 ## What it can do
 ![The editor](docs/images/editor.png)
@@ -89,7 +89,7 @@ Download `tekken8mvm-0.1-setup.exe` from this repo's [Releases](../../releases) 
 The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
 
 ## Use
-1. Start **tekken8mvm** from the Start menu (or run `dist\tekken8mvm.exe` from a build).
+1. Start **Tekken Studio** from the Start menu (or run `dist\tekken8mvm.exe` from a build).
 2. In Steam, choose **Steam > Go Offline**.
 3. Click **Start cinematic session**. Keep the launcher open: it cleans up when the game closes.
 4. In the game, open a replay: **Replay > My Replays & Tips**, then pick one.
@@ -138,7 +138,7 @@ In the editor's Replays tab, press **Export this replay** while a replay plays, 
 - The file holds both players' names.
 - Loading only changes the game's memory, so the replay is gone when you close the game, unless the game itself saves that group of replays, which happens when you download or delete a replay nearby. Your existing replays aren't touched.
 
-The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by tekken8mvm and no save file is edited.
+The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by Tekken Studio and no save file is edited.
 
 ## Good to know
 - **An actor's jacket and straps hang still.** The game moves those with its own cloth solver, which an actor doesn't have. Hair and anything else moved by bones plays as it was recorded.
@@ -175,7 +175,7 @@ The game keeps every replay decoded in fixed slots in memory, so sharing copies 
 - **A friend's PC.** Export and load were tested on one PC and one Steam account, by loading a replay exported moments earlier.
 
 ## Bans and anti-cheat
-Bandai Namco's stated ban reasons include unauthorized mods, and no mod can promise you're safe. tekken8mvm doesn't hide from anything. It stays off online play instead:
+Bandai Namco's stated ban reasons include unauthorized mods, and no mod can promise you're safe. Tekken Studio doesn't hide from anything. It stays off online play instead:
 - A cinematic session only starts with Steam in Offline Mode.
 - While the mod runs, it stops the game's outgoing internet connections. Even in Steam's Offline Mode the game keeps trying to reach servers, and the log lists each connection it stopped.
 - If Steam goes online, the mod turns itself off until the game restarts.
@@ -190,7 +190,7 @@ If the mod stops working, `tekken8mvm\tekken8mvm.log` in the game's `Win64` fold
 Needs Visual Studio 2022 Build Tools. Run `build.cmd`. `installer\build_installer.cmd` builds the tool and then the installer into `release\`, and needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). Tests: `build\tekken8mvm_tests.exe` and `tools\harness\run_all.ps1`. `tools\` also has the scripts used to test against the real game, with `test_commands = 1` in `tekken8mvm\tekken8mvm.ini`. `tools\harness\run_all.ps1` includes a stand-in for ReShade (`tools\harness\fake_reshade.cpp`), built from ReShade's headers in `third_party\reshade`.
 
 ## Where it comes from
-tekken8mvm was written from scratch, but it stands on other people's work. Thank you to all of them.
+Tekken Studio was written from scratch, but it stands on other people's work. Thank you to all of them.
 
 **Ideas and research**
 - [CoDMVM](https://codmvm.com), [HLAE](https://github.com/advancedfx/advancedfx) and [IWXMVM](https://github.com/reallyluckyy/IWXMVM): the movie-making tools for other games this one follows. The CoDMVM path style and HLAE's CamIO camera format come from them, and the way the dolly path is shown and edited in the picture (a camera at each key, arrows to move it and rings to turn it, the key before and after) follows IWXMVM's dollycam.

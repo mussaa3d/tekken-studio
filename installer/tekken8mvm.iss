@@ -3,7 +3,9 @@
 ; replay vault next to itself. The one thing the tool needs that Windows doesn't have is ffmpeg, for recording: the installer
 ; downloads a pinned release from GitHub and checks its SHA-256 before using it.
 
-#define AppName "tekken8mvm"
+#define AppName "Tekken Studio"
+; The files, the folder and the setup file keep the old name, so updates and existing installs carry on.
+#define FileName "tekken8mvm"
 #define AppVersion "0.1"
 #define FfmpegVersion "9.0.2"
 #define FfmpegUrl "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
@@ -14,10 +16,10 @@
 AppId={{0F81B8E8-9138-4408-BD65-3C51D081EB80}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName} {#AppVersion} beta (early access)
+AppVerName={#AppName} {#AppVersion} beta
 VersionInfoVersion=0.1.0.0
 AppPublisher={#AppName}
-DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultDirName={localappdata}\Programs\{#FileName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -25,7 +27,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=..\LICENSE
 InfoBeforeFile=before_install.txt
 OutputDir=..\release
-OutputBaseFilename={#AppName}-{#AppVersion}-setup
+OutputBaseFilename={#FileName}-{#AppVersion}-setup
 UninstallDisplayIcon={app}\tekken8mvm.exe
 SetupIconFile=logo\tekken8mvm.ico
 WizardSmallImageFile=logo\wizard_small.bmp
@@ -52,6 +54,12 @@ Source: "..\third_party\reshade\LICENSE.md"; DestDir: "{app}\licenses"; DestName
 Source: "..\third_party\fonts\Rubik-OFL.txt"; DestDir: "{app}\licenses"; DestName: "Rubik font.txt"; Flags: ignoreversion
 Source: "..\third_party\fonts\FontAwesome-LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "Font Awesome Free.txt"; Flags: ignoreversion
 Source: "..\third_party\fonts\IconFontCppHeaders-licence.txt"; DestDir: "{app}\licenses"; DestName: "IconFontCppHeaders.txt"; Flags: ignoreversion
+
+[InstallDelete]
+; Shortcuts under the old name, from an install before the rename.
+Type: files; Name: "{autoprograms}\tekken8mvm.lnk"
+Type: files; Name: "{autoprograms}\tekken8mvm README.lnk"
+Type: files; Name: "{autodesktop}\tekken8mvm.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\tekken8mvm.exe"
