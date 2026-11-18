@@ -601,6 +601,8 @@ void ReplaysTab()
 
 // The BlueSpark release this studio is made for: it names things inside BlueSpark's prebuilt library, which move between releases.
 constexpr int Ttt2Release = 23;
+// The TTT2 tab stays out of the launcher until the studio there is ready to hand out.
+constexpr bool ShowTtt2Tab = false;
 
 fs::path Ttt2Scripts()
 {
@@ -836,7 +838,7 @@ void DrawUi(double now)
             ReplaysTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("TTT2")) {
+        if (ShowTtt2Tab && ImGui::BeginTabItem("TTT2")) {
             Ttt2Tab();
             ImGui::EndTabItem();
         }

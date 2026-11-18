@@ -13,10 +13,6 @@ Copy-Item "$root\dist\tekken-studio.exe" $stage
 Copy-Item "$root\dist\mod\dinput8.dll" "$stage\mod"
 Copy-Item "$root\dist\replay-saver\dinput8.dll" "$stage\replay-saver"
 Copy-Item "$root\README.md" $stage
-# Tekken Studio for TTT2: the scripts and sources the launcher's TTT2 tab builds from.
-New-Item -ItemType Directory -Force "$stage\ttt2\src" | Out-Null
-Copy-Item "$root\ttt2\build-studio.ps1", "$root\ttt2\run-studio.ps1" "$stage\ttt2"
-Copy-Item "$root\ttt2\src\*" "$stage\ttt2\src"
 Copy-Item "$root\LICENSE" "$stage\LICENSE.txt"
 # The licences of the libraries built into the tool, which ask to be passed on with it.
 $licences = @{

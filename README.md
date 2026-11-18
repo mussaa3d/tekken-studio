@@ -149,11 +149,11 @@ In the editor's Replays tab, press **Export this replay** while a replay plays, 
 The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by Tekken Studio and no save file is edited.
 
 ## Tekken Tag Tournament 2 (BlueSpark)
-The launcher's **TTT2** tab puts the studio into Tekken Tag Tournament 2 running on [BlueSpark](https://github.com/avim2/BlueSpark), the fan-made native PC port of the Xbox 360 game. You need BlueSpark's play test installed and built once with its own Start Here, and your own copy of the game, as BlueSpark asks. This part is new and rougher than the Tekken 8 side.
+Work in progress, and not in the launcher or the installer for now: the scripts in this repo's `ttt2` folder build and start it. This puts the studio into Tekken Tag Tournament 2 running on [BlueSpark](https://github.com/avim2/BlueSpark), the fan-made native PC port of the Xbox 360 game. You need BlueSpark's play test installed and built once with its own Start Here, and your own copy of the game, as BlueSpark asks. This part is new and rougher than the Tekken 8 side.
 
-1. Paste your BlueSpark play test folder into the TTT2 tab. It must be BlueSpark release 23 (4.7.4): the studio names things inside BlueSpark's prebuilt library, and those move between releases.
-2. Press **Install the studio**. A window builds `ttt2-studio.exe` in `rex\out\build\tekken-studio`, with the compiler BlueSpark's own install already downloaded. It takes under a minute. BlueSpark's own `ttt2.exe` and its files are not changed. After a BlueSpark update, install again.
-3. **Watch replays (simple)** or **Open the studio** starts that copy of the game. It is offline only: the studio's copy starts without BlueSpark's sign-in, matchmaking, uploads and update check. Play online with BlueSpark's own Start Here.
+1. You need BlueSpark release 23 (4.7.4): the studio names things inside BlueSpark's prebuilt library, and those move between releases.
+2. `powershell -ExecutionPolicy Bypass -File ttt2\build-studio.ps1 -Playtest <your play test folder>` builds `ttt2-studio.exe` in `rex\out\build\tekken-studio`, with the compiler BlueSpark's own install already downloaded. It takes under a minute. BlueSpark's own `ttt2.exe` and its files are not changed. After a BlueSpark update, build again.
+3. `ttt2\run-studio.ps1 -Playtest <folder> -Mode simple` (or `-Mode studio`) starts that copy of the game. It is offline only: the studio's copy starts without BlueSpark's sign-in, matchmaking, uploads and update check. Play online with BlueSpark's own Start Here.
 
 **Replays.** BlueSpark already records every offline Versus match and every online match as a `.ttt2replay` in `rex\userdata\replays`, so Tekken Studio doesn't record its own: it uses those. Matches you play online in BlueSpark show up in the studio's copy, since both read the same folder. BlueSpark's **REPLAYS** tab lists them and A watches one; the studio's Replays tab lists the same files.
 
