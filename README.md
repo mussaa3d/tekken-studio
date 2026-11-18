@@ -1,5 +1,7 @@
 # Tekken Studio (beta v0.1)
 
+![Tekken Studio](docs/images/logo.png)
+
 Cinematic and movie-making tools for **Tekken 8** on PC, in the spirit of CoDMVM, HLAE and IWXMVM. Offline only.
 
 > **This is an early-access beta, version 0.1.** Most of it is tested in the real game, but expect rough edges and things that break after a game patch. Please report what goes wrong in [Issues](../../issues).
