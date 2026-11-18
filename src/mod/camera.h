@@ -65,6 +65,8 @@ std::vector<std::string> Bones(int fighter); // bone names, once a fight is on
 // The game takes its field of view from the view it hands the projection function, not from the camera cache. This reports
 // what the game wanted there and returns what to use.
 float ProjectionFov(float gameFov);
+// Whether ProjectionFov puts the studio's own field of view in place of the game's.
+bool OverridesFov();
 
 // Game thread, once per rendered frame, just after the engine updated its camera.
 void OnCameraUpdate(void* cameraManager);

@@ -375,4 +375,32 @@ inline bool IsCinematicJump(const RelativeCamera& normal, const RelativeCamera& 
         || std::fabs(now.Fov - normal.Fov) > 2.0;
 }
 
+// The horizontal field of view that shows a picture of another shape with the fighters where the game's 16:9 picture has them.
+// fit 0 keeps the height of the 16:9 view, so the fighters are the same size and in the same place: a wider shape (21:9, 32:9)
+// shows more at the sides, a portrait shape (9:16) is the middle of the 16:9 view. fit 1 keeps the 16:9 view's width, so a
+// portrait picture still holds everything the 16:9 one did, smaller. In between goes smoothly from one to the other.
+// Degrees in and out; the field of view is horizontal, as the game's is.
+inline double FovForAspect(double fov16x9, double aspect, double fit = 0.0)
+{
+    constexpr double PiValue = 3.14159265358979323846, Wide = 16.0 / 9.0;
+    if (!(fov16x9 > 0.0 && fov16x9 < 179.0) || !(aspect > 0.0))
+        return fov16x9;
+    fit = std::clamp(fit, 0.0, 1.0);
+    const double factor = std::pow(aspect / Wide, 1.0 - fit);
+    const double half = std::tan(fov16x9 * PiValue / 360.0) * factor;
+    return std::clamp(std::atan(half) * 360.0 / PiValue, 0.5, 175.0);
+}
+
+// A game that widens its own view for wider screens: it multiplies the 16:9 view's width (in tangent) by the picture's aspect over
+// 16:9, held between `lowest` and `highest`. This gives back the 16:9 view from the one such a game handed over for a picture of
+// `pictureAspect`. Tekken 8 does this between 16:10 and 21:9 (measured).
+inline double FovAt16x9(double fov, double pictureAspect, double lowest, double highest)
+{
+    constexpr double PiValue = 3.14159265358979323846, Wide = 16.0 / 9.0;
+    if (!(fov > 0.0 && fov < 179.0) || !(pictureAspect > 0.0))
+        return fov;
+    const double factor = std::clamp(pictureAspect, lowest, highest) / Wide;
+    return std::atan(std::tan(fov * PiValue / 360.0) / factor) * 360.0 / PiValue;
+}
+
 } // namespace cine

@@ -55,6 +55,14 @@ bool& AutoLoadOn();
 void AutoLoadTick();
 int AutoLoaded(); // how many files it has loaded this session
 
+// On by default: the same thread writes every replay of your own in the game's list to a .t8replay in MyFolder(), once. A match
+// that ends while the game runs is written within seconds of the game adding it to its list. Online matches (played without the
+// mod, which stays off online) are in the game's list the next time a session starts, and are written then.
+bool& AutoExportOn();
+void AutoExportTick();
+int AutoExported(); // how many it has written this session
+std::string MyFolder();
+
 // Test only: logs every offset in a slot where a 16 or 32 bit value equals `value`.
 void FindInSlot(int slot, uint32_t value);
 

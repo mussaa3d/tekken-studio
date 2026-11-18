@@ -91,6 +91,12 @@ void WriteState()
     window::PictureSize(pictureWidth, pictureHeight);
     recorder::VideoSize(pictureWidth, pictureHeight, videoWidth, videoHeight);
     out << "picture " << pictureWidth << " " << pictureHeight << " video " << videoWidth << " " << videoHeight << "\n";
+    {
+        float fovIn = 0, fovOut = 0;
+        int constraint = -1;
+        game::LastProjection(fovIn, fovOut, constraint);
+        out << "projection " << fovIn << " " << fovOut << " constraint " << constraint << "\n";
+    }
     out << "take recording " << actors::RecordingTake() << " takes " << actors::Takes().size() << " status " << actors::TakeStatus() << "\n";
     for (int i = 0; i < actors::MaxActors; ++i)
         if (actors::Cast()[i].On)
@@ -960,6 +966,10 @@ void Run(const std::string& line)
             sc.Frame = static_cast<scene::Frame>(static_cast<int>(a));
         else if (what == "aspect")
             sc.AspectRatio = static_cast<float>(a);
+        else if (what == "keep")
+            sc.KeepFighters = a != 0;
+        else if (what == "fit")
+            sc.Fit = static_cast<float>(a);
     } else if (command == "subprop") {
         // subprop <Class> <Property> [float]: reads, and can write, a value on every object of a class
         std::string name, property;

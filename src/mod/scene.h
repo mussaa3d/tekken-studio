@@ -14,6 +14,10 @@ struct Settings {
     bool NoCameraShake = false;
     Frame Frame = Frame::Game;
     float AspectRatio = 2.39f; // width over height, for Frame::Fixed
+    // With a fixed shape, the field of view follows it so the fighters stay where the game's 16:9 picture has them: a wider shape
+    // shows more at the sides, a portrait one is the middle of the 16:9 view. Off, the shape is a crop of the game's picture.
+    bool KeepFighters = true;
+    float Fit = 0; // 0 keeps the 16:9 view's height, 1 its width (for portrait: everything the 16:9 picture showed, smaller)
 };
 Settings& Config();
 
@@ -22,8 +26,11 @@ void OnGameTick();
 
 // Camera hook, before the game updates the camera.
 void BeforeCameraUpdate(void* cameraManager);
-// Projection hook: the view the game is about to turn into a projection, so its shape can change.
-void AdjustView(void* minimalViewInfo);
+// Projection hook: the view the game is about to turn into a projection, so its shape can change. `fov` is the view's own (horizontal,
+// degrees) and is widened or narrowed for the shape.
+// fromGame: `fov` is the game's own camera's, which the game has already widened for the picture's shape; false for the studio's
+// cameras, whose field of view is meant for 16:9.
+void AdjustView(void* minimalViewInfo, float& fov, bool fromGame);
 
 // How many lights and meshes the last scan found, for the menu.
 struct Counts {

@@ -450,12 +450,13 @@ void ReplaysTab()
         OpenPath(folder.wstring());
     }
     if (g_app.Game.Found) {
-        static int autoLoad = -1;
+        static int autoLoad = -1, autoExport = -1;
         const fs::path ini = files::DataDir(g_app.Game) / "tekken8mvm.ini";
         Ini settings;
         if (autoLoad < 0) {
             settings.Load(ini);
             autoLoad = settings.GetBool("auto_load_replays", true) ? 1 : 0;
+            autoExport = settings.GetBool("auto_export_replays", true) ? 1 : 0;
         }
         bool on = autoLoad == 1;
         if (ImGui::Checkbox("Load them into the game on their own", &on)) {
@@ -468,6 +469,16 @@ void ReplaysTab()
         }
         if (!on)
             ImGui::TextColored(Dim, "Off: load each one with Load in the editor's Replays tab.");
+        bool exportOn = autoExport == 1;
+        if (ImGui::Checkbox("Export my replays to .t8replay files on their own", &exportOn)) {
+            autoExport = exportOn ? 1 : 0;
+            settings.Load(ini);
+            settings.SetBool("auto_export_replays", exportOn);
+            std::error_code ignored;
+            fs::create_directories(ini.parent_path(), ignored);
+            settings.Save(ini);
+        }
+        ImGui::TextColored(Dim, "Each match is saved a few seconds after it ends, into my_replays. Online matches are saved the next time you start a session.");
     }
     const std::vector<std::string> waiting = SharedReplayNames();
     if (waiting.empty()) {

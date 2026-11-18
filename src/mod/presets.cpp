@@ -135,6 +135,8 @@ void WriteLook(Ini& ini)
     ini.SetBool("scene.no_camera_shake", sc.NoCameraShake);
     ini.SetNumber("scene.frame", static_cast<int>(sc.Frame));
     ini.SetNumber("scene.aspect_ratio", sc.AspectRatio);
+    ini.SetBool("scene.keep_fighters", sc.KeepFighters);
+    ini.SetNumber("scene.fit", sc.Fit);
     ini.SetBool("fx.no_hit", e.NoHitEffects);
     ini.SetBool("fx.fog_hides_mist", e.FogHidesMist);
     ini.SetBool("fx.no_drama", e.NoDramaManager);
@@ -333,7 +335,9 @@ void ReadLook(const Ini& ini, bool whole = true)
     dvars::Tint().FogFromCamera = ini.GetBool("fog.from_camera", dvars::Tint().FogFromCamera);
     sc.NoCameraShake = ini.GetBool("scene.no_camera_shake", sc.NoCameraShake);
     sc.Frame = static_cast<scene::Frame>(static_cast<int>(ini.GetNumber("scene.frame", static_cast<int>(sc.Frame))));
-    sc.AspectRatio = static_cast<float>(ini.GetNumber("scene.aspect_ratio", sc.AspectRatio));
+    sc.AspectRatio = std::clamp(static_cast<float>(ini.GetNumber("scene.aspect_ratio", sc.AspectRatio)), 0.3f, 5.0f);
+    sc.KeepFighters = ini.GetBool("scene.keep_fighters", sc.KeepFighters);
+    sc.Fit = std::clamp(static_cast<float>(ini.GetNumber("scene.fit", sc.Fit)), 0.0f, 1.0f);
     e.NoHitEffects = ini.GetBool("fx.no_hit", e.NoHitEffects);
     e.FogHidesMist = ini.GetBool("fx.fog_hides_mist", e.FogHidesMist);
     e.NoDramaManager = ini.GetBool("fx.no_drama", e.NoDramaManager);
@@ -553,7 +557,7 @@ bool MovesSmoothly(const std::string& key)
     for (const char* prefix : { "pp.", "fog_color.", "sun_color.", "scene.character_light_", "depth." })
         if (starts(prefix))
             return true;
-    return key == "scene.aspect_ratio" || key == "sky.sun_yaw" || key == "sky.sun_height" || key == "sky.rotation" || key == "sky.hdri_brightness" || key == "cam.fov"
+    return key == "scene.aspect_ratio" || key == "scene.fit" || key == "sky.sun_yaw" || key == "sky.sun_height" || key == "sky.rotation" || key == "sky.hdri_brightness" || key == "cam.fov"
         || key == "cam.roll";
 }
 } // namespace

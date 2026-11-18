@@ -408,6 +408,14 @@ void ReplaysTab()
     }
     if (ImGui::SmallButton("Open the folder"))
         ShellExecuteA(nullptr, "open", sharing::Folder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ImGui::Checkbox("Export my replays on their own", &sharing::AutoExportOn());
+    Help("Every replay of your own in the game's list is saved as a .t8replay in the my_replays folder, once. A match that ends while the game runs is saved a few seconds after the game adds it to its list. Matches played online (the mod stays off online) are saved the next time you start a session, once the game has loaded its replays. Downloaded replays aren't, and a fight already in the folder isn't saved again.");
+    if (sharing::AutoExported() > 0) {
+        ImGui::SameLine();
+        ImGui::TextColored(Good, "%d saved", sharing::AutoExported());
+    }
+    if (ImGui::SmallButton("Open my_replays"))
+        ShellExecuteW(nullptr, L"open", (recorder::Config().OutputDir / "my_replays").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     ImGui::TextColored(Dim, "Files here can be loaded:");
     for (const std::string& file : files) {
         ImGui::PushID(file.c_str());
@@ -995,17 +1003,66 @@ void VisualsTab()
             s.Frame = static_cast<scene::Frame>(frame);
         if (s.Frame == scene::Frame::Fixed) {
             Row("Aspect ratio");
-            ImGui::SliderFloat("##Aspect ratio", &s.AspectRatio, 1.0f, 3.0f, "%.2f : 1");
-            for (const float preset : { 1.78f, 2.0f, 2.39f, 2.76f }) {
-                char label[16];
-                snprintf(label, sizeof(label), "%.2f##ar", preset);
+            ImGui::SliderFloat("##Aspect ratio", &s.AspectRatio, 0.5f, 4.0f, "%.3f : 1", ImGuiSliderFlags_Logarithmic);
+            struct Shape {
+                const char* Name;
+                float Aspect;
+                int Width, Height; // a render size for recording at this shape
+            };
+            static const Shape shapes[] = { { "16:9", 16.0f / 9, 3840, 2160 }, { "21:9", 21.0f / 9, 5040, 2160 }, { "32:9", 32.0f / 9, 7680, 2160 },
+                                            { "2.39", 2.39f, 5160, 2160 }, { "9:16", 9.0f / 16, 2160, 3840 }, { "10:16", 10.0f / 16, 2160, 3456 } };
+            const Shape* chosen = nullptr;
+            for (const Shape& shape : shapes) {
+                const bool on = std::fabs(s.AspectRatio - shape.Aspect) < 0.002f;
+                if (on)
+                    chosen = &shape;
+                if (on)
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                char label[24];
+                snprintf(label, sizeof(label), "%s##shape", shape.Name);
                 if (ImGui::SmallButton(label))
-                    s.AspectRatio = preset;
+                    s.AspectRatio = shape.Aspect;
+                if (on)
+                    ImGui::PopStyleColor();
                 ImGui::SameLine();
             }
             ImGui::NewLine();
+            ImGui::Checkbox("Keep the fighters where they are", &s.KeepFighters);
+            Help("The game's camera, the free camera and the dolly path all keep their 16:9 framing: the field of view follows the shape, so the fighters keep their size and place. 21:9 and 32:9 show more of the stage at the sides, and 9:16 or 10:16 is the middle of the 16:9 picture, for TikTok, Reels and Shorts. Off, the shape is a crop of the game's own picture.");
+            if (s.KeepFighters && s.AspectRatio < 16.0f / 9 - 0.01f) {
+                Row("Fit");
+                ImGui::SliderFloat("##Fit", &s.Fit, 0.0f, 1.0f, s.Fit < 0.01f ? "same size" : s.Fit > 0.99f ? "whole 16:9 width" : "%.2f");
+                Help("Same size keeps the fighters as big as in 16:9, so two fighters far apart can leave the sides of a portrait picture. Towards the whole width, the view widens until it holds everything the 16:9 picture did, with the fighters smaller.");
+            }
+            // The recording only has the full shape, without bars, when the game draws at that shape.
+            const recorder::Settings& r = recorder::Config();
+            int pictureWidth = 0, pictureHeight = 0;
+            window::PictureSize(pictureWidth, pictureHeight);
+            const int renderWidth = r.CaptureWidth > 0 && r.CaptureHeight > 0 ? r.CaptureWidth : pictureWidth;
+            const int renderHeight = r.CaptureWidth > 0 && r.CaptureHeight > 0 ? r.CaptureHeight : pictureHeight;
+            const bool matches = renderHeight > 0 && std::fabs(static_cast<float>(renderWidth) / renderHeight - s.AspectRatio) < 0.01f;
+            if (matches) {
+                ImGui::TextColored(Dim, "Records at %d x %d, the whole picture in this shape.", renderWidth, renderHeight);
+            } else {
+                ImGui::TextColored(Dim, "Recording now draws at %d x %d, so the video has the bars too.", renderWidth, renderHeight);
+                const int height = chosen ? chosen->Height : 2160;
+                const int width = chosen ? chosen->Width : (static_cast<int>(height * s.AspectRatio) + 1) / 2 * 2;
+                char label[64];
+                snprintf(label, sizeof(label), "Record at %d x %d", width, height);
+                if (ImGui::SmallButton(label)) {
+                    recorder::Config().CaptureWidth = width;
+                    recorder::Config().CaptureHeight = height;
+                }
+                ImGui::SameLine();
+                snprintf(label, sizeof(label), "half (%d x %d)", width / 2 / 2 * 2, height / 2 / 2 * 2);
+                if (ImGui::SmallButton(label)) {
+                    recorder::Config().CaptureWidth = width / 2 / 2 * 2;
+                    recorder::Config().CaptureHeight = height / 2 / 2 * 2;
+                }
+                Help("Sets the Record tab's render size to this shape. While it records, the game draws at that size, bigger than the screen if need be, so the video is the full shape with no bars. On screen you see it with bars.");
+            }
         }
-        Help("Fill the screen takes away the bars the game adds on screens that aren't 16:9. A fixed aspect ratio adds bars of its own, such as 2.39 for a cinema look, and they're in the recording too.");
+        Help("Fill the screen takes away the bars the game adds on screens that aren't 16:9. A fixed aspect ratio gives the picture any shape: wide, cinema, or portrait for phones.");
     }
 
     if (Group("ReShade"))
@@ -2847,7 +2904,16 @@ void PathView(ImDrawList* draw, ImVec2 min, ImVec2 max)
         return;
     }
     InnerPicture(min, max);
-    const PictureProjector project { view, min, max };
+    // The field of view the picture really has, after the game's own widening and a fixed shape's.
+    camera::View shown = view;
+    {
+        float fovIn = 0, fovOut = 0;
+        int constraint = 0;
+        game::LastProjection(fovIn, fovOut, constraint);
+        if (fovOut > 1.0f && fovOut < 170.0f)
+            shown.Fov = fovOut;
+    }
+    const PictureProjector project { shown, min, max };
     const ImVec2 mouse = ImGui::GetMousePos();
     const bool mouseInPicture = mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
     const bool free = mouseInPicture && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && !ImGui::IsAnyItemActive()

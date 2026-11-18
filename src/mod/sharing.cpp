@@ -10,6 +10,8 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <set>
+#include <tuple>
 
 #include "mod/log.h"
 #include "mod/recorder.h"
@@ -169,6 +171,82 @@ std::filesystem::path PathOf(const std::string& fileName)
     return FolderPath() / Utf8Path(fileName + ".t8replay");
 }
 
+// Where your own replays are exported to on their own: apart from the shared folder, so they aren't loaded back into the game.
+std::filesystem::path MyFolderPath()
+{
+    const std::filesystem::path folder = recorder::Config().OutputDir / "my_replays";
+    std::error_code ignored;
+    std::filesystem::create_directories(folder, ignored);
+    return folder;
+}
+
+// A file name from the replay's date and players in `folder`, with " (2)" and so on when it's taken.
+std::string NameIn(const std::filesystem::path& folder, const Slot& slot)
+{
+    const time_t played = static_cast<time_t>(slot.Played);
+    tm local {};
+    localtime_s(&local, &played);
+    char date[32];
+    strftime(date, sizeof(date), "%Y-%m-%d %H-%M-%S", &local);
+    std::string name = std::string(date) + " " + slot.Player1 + " vs " + slot.Player2;
+    for (char& c : name)
+        if (static_cast<unsigned char>(c) < 32 || std::strchr("\\/:*?\"<>|", c))
+            c = '_';
+    while (!name.empty() && (name.back() == ' ' || name.back() == '.'))
+        name.pop_back();
+    std::error_code ignored;
+    std::string unique = name;
+    for (int n = 2; std::filesystem::exists(folder / Utf8Path(unique + ".t8replay"), ignored) && n < 1000; ++n)
+        unique = name + " (" + std::to_string(n) + ")";
+    return unique;
+}
+
+// Writes one slot to `path`. The caller holds g_mutex and has found the block.
+bool WriteSlot(int index, const std::filesystem::path& path, std::string& error)
+{
+    if (index < 0 || index >= SlotCount() || ReadU32(SlotAt(index) + HeaderTag) != SlotTag) {
+        error = "There's no replay in that slot";
+        return false;
+    }
+    const uint8_t* slot = SlotAt(index);
+    size_t used = g_slotSize;
+    while (used > 0 && slot[used - 1] == 0)
+        --used;
+    FileHeader header;
+    header.RecordSize = g_slotSize;
+    header.GameVersion = ReadU32(slot + HeaderGameVersion);
+    header.Stored = used;
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    file.write(reinterpret_cast<const char*>(slot), static_cast<std::streamsize>(used));
+    if (!file) {
+        error = "Couldn't write the file";
+        return false;
+    }
+    mod::Log("Sharing: exported slot %d to %s, %zu bytes", index, Utf8Of(path).c_str(), used);
+    return true;
+}
+
+// What the file at `path` holds.
+bool DescribePath(const std::filesystem::path& path, Slot& out, std::string& error)
+{
+    std::ifstream file(path, std::ios::binary);
+    FileHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(header));
+    if (!file || !HeaderOk(header)) {
+        error = "That isn't a tekken8mvm replay file";
+        return false;
+    }
+    std::vector<uint8_t> data(std::max<size_t>(header.RecordSize, Player2Name + NameBytes));
+    file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(std::min<uint64_t>(header.Stored, data.size())));
+    if (!file) {
+        error = "The file is cut short";
+        return false;
+    }
+    out = Read(-1, data.data());
+    return true;
+}
+
 } // namespace
 
 std::vector<Slot> Slots()
@@ -216,22 +294,7 @@ bool SlotInfo(int index, Slot& out)
 
 std::string FileNameFor(const Slot& slot)
 {
-    const time_t played = static_cast<time_t>(slot.Played);
-    tm local {};
-    localtime_s(&local, &played);
-    char date[32];
-    strftime(date, sizeof(date), "%Y-%m-%d %H-%M-%S", &local);
-    std::string name = std::string(date) + " " + slot.Player1 + " vs " + slot.Player2;
-    for (char& c : name)
-        if (static_cast<unsigned char>(c) < 32 || std::strchr("\\/:*?\"<>|", c))
-            c = '_';
-    while (!name.empty() && (name.back() == ' ' || name.back() == '.'))
-        name.pop_back();
-    std::error_code ignored;
-    std::string unique = name;
-    for (int n = 2; std::filesystem::exists(PathOf(unique), ignored) && n < 1000; ++n)
-        unique = name + " (" + std::to_string(n) + ")";
-    return unique;
+    return NameIn(FolderPath(), slot);
 }
 
 bool ExportNamed(int index, std::string& fileName, std::string& error)
@@ -294,27 +357,7 @@ bool Export(int index, const std::string& fileName, std::string& error)
         error = "The game's replays aren't loaded yet";
         return false;
     }
-    if (index < 0 || index >= SlotCount() || ReadU32(SlotAt(index) + HeaderTag) != SlotTag) {
-        error = "There's no replay in that slot";
-        return false;
-    }
-    const uint8_t* slot = SlotAt(index);
-    size_t used = g_slotSize;
-    while (used > 0 && slot[used - 1] == 0)
-        --used;
-    FileHeader header;
-    header.RecordSize = g_slotSize;
-    header.GameVersion = ReadU32(slot + HeaderGameVersion);
-    header.Stored = used;
-    std::ofstream file(PathOf(fileName), std::ios::binary | std::ios::trunc);
-    file.write(reinterpret_cast<const char*>(&header), sizeof(header));
-    file.write(reinterpret_cast<const char*>(slot), static_cast<std::streamsize>(used));
-    if (!file) {
-        error = "Couldn't write the file";
-        return false;
-    }
-    mod::Log("Sharing: exported slot %d to %s, %zu bytes", index, fileName.c_str(), used);
-    return true;
+    return WriteSlot(index, PathOf(fileName), error);
 }
 
 bool Describe(const std::string& fileName, Slot& out, std::string& error)
@@ -323,21 +366,7 @@ bool Describe(const std::string& fileName, Slot& out, std::string& error)
         error = "That isn't a tekken8mvm replay file";
         return false;
     }
-    std::ifstream file(PathOf(fileName), std::ios::binary);
-    FileHeader header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(header));
-    if (!file || !HeaderOk(header)) {
-        error = "That isn't a tekken8mvm replay file";
-        return false;
-    }
-    std::vector<uint8_t> data(std::max<size_t>(header.RecordSize, Player2Name + NameBytes));
-    file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(header.Stored));
-    if (!file) {
-        error = "The file is cut short";
-        return false;
-    }
-    out = Read(-1, data.data());
-    return true;
+    return DescribePath(PathOf(fileName), out, error);
 }
 
 // The newest version any replay has had, kept between sessions: with only older replays in the list, the list alone can't tell.
@@ -502,6 +531,7 @@ void StartOlderReplays()
             if (OlderReplaysOn())
                 UnlockOlderReplays();
             AutoLoadTick();
+            AutoExportTick();
         }
     }, nullptr, 0, nullptr));
 }
@@ -635,6 +665,82 @@ bool Import(const std::string& fileName, std::string& error, bool* alreadyThere)
     std::memcpy(SlotAt(empty), data.data(), g_slotSize);
     mod::Log("Sharing: imported %s into slot %d", fileName.c_str(), empty);
     return true;
+}
+
+namespace {
+std::atomic<int> g_autoExported { 0 };
+} // namespace
+
+bool& AutoExportOn()
+{
+    static bool on = true;
+    return on;
+}
+
+int AutoExported()
+{
+    return g_autoExported;
+}
+
+std::string MyFolder()
+{
+    return Utf8Of(MyFolderPath());
+}
+
+void AutoExportTick()
+{
+    // Every replay of your own in the game's list, once. The ones already in the folder are known by their fight (date and both
+    // names), so nothing is written twice, across sessions too. A match that ends while the game runs is written within seconds of
+    // the game putting it in its list; one played online, without the mod, is written the next time a session starts and the game
+    // has loaded its replays.
+    using Fight = std::tuple<uint64_t, std::string, std::string>;
+    static std::set<Fight> known;
+    static bool scanned = false;
+    static int lastCount = -1, steady = 0;
+    if (!AutoExportOn() || !Available())
+        return;
+    const std::vector<Slot> slots = Slots();
+    const int used = static_cast<int>(slots.size());
+    if (used != lastCount) {
+        lastCount = used;
+        steady = 0;
+        return;
+    }
+    if (++steady < 3)
+        return;
+    const std::filesystem::path folder = MyFolderPath();
+    if (!scanned) {
+        scanned = true;
+        std::error_code ignored;
+        for (const auto& entry : std::filesystem::directory_iterator(folder, ignored)) {
+            Slot slot;
+            std::string error;
+            if (entry.path().extension() == ".t8replay" && DescribePath(entry.path(), slot, error))
+                known.insert({ slot.Played, slot.Player1, slot.Player2 });
+        }
+    }
+    for (const Slot& slot : slots) {
+        // A downloaded replay, or one loaded from a shared file, is someone else's.
+        if (slot.Downloaded || slot.Played == 0)
+            continue;
+        const Fight fight { slot.Played, slot.Player1, slot.Player2 };
+        if (known.count(fight))
+            continue;
+        known.insert(fight); // tried once a session, written or not
+        std::lock_guard lock(g_mutex);
+        if (!FindBlock())
+            return;
+        const Slot now = Read(slot.Index, SlotAt(slot.Index));
+        if (now.Played != slot.Played || now.Player1 != slot.Player1 || now.Player2 != slot.Player2) {
+            known.erase(fight); // the list moved since it was read: the next look finds it
+            continue;
+        }
+        std::string error;
+        if (WriteSlot(slot.Index, folder / Utf8Path(NameIn(folder, slot) + ".t8replay"), error))
+            ++g_autoExported;
+        else
+            mod::Log("Sharing: couldn't export slot %d on its own: %s", slot.Index, error.c_str());
+    }
 }
 
 } // namespace sharing

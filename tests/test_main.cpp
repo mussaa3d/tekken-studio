@@ -62,6 +62,32 @@ static void TestRotations()
     }
 }
 
+static void TestFovForAspect()
+{
+    // A point the 16:9 picture shows: in any other shape at fit 0 it's at the same height in the picture and the same distance
+    // from the middle measured in picture heights, so the fighters keep their size and place.
+    const Vec3 point { 400, 90, -40 };
+    double x0 = 0, y0 = 0;
+    CHECK(ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, 60, 16.0 / 9, point, x0, y0));
+    for (const double aspect : { 21.0 / 9, 32.0 / 9, 9.0 / 16, 10.0 / 16 }) {
+        double x = 0, y = 0;
+        CHECK(ProjectPoint({ 0, 0, 0 }, { 0, 0, 0 }, FovForAspect(60, aspect), aspect, point, x, y));
+        CHECK(Near(y, y0, 1e-9));
+        CHECK(Near(x * aspect, x0 * 16.0 / 9, 1e-9));
+    }
+    // 16:9 itself is left alone, and fit 1 keeps the width.
+    CHECK(Near(FovForAspect(60, 16.0 / 9), 60, 1e-9));
+    CHECK(Near(FovForAspect(60, 9.0 / 16, 1.0), 60, 1e-9));
+    // Tekken 8's own widening, as measured: 65 at 16:9 came as 79.8017 at 21:9 and wider, 71.2586 at 2:1, 59.6567 at 16:10 and narrower.
+    CHECK(Near(FovAt16x9(79.8017, 21.0 / 9, 1.6, 7.0 / 3), 65, 1e-3));
+    CHECK(Near(FovAt16x9(79.8017, 32.0 / 9, 1.6, 7.0 / 3), 65, 1e-3));
+    CHECK(Near(FovAt16x9(71.2586, 2.0, 1.6, 7.0 / 3), 65, 1e-3));
+    CHECK(Near(FovAt16x9(59.6567, 9.0 / 16, 1.6, 7.0 / 3), 65, 1e-3));
+    CHECK(Near(FovAt16x9(65, 16.0 / 9, 1.6, 7.0 / 3), 65, 1e-9));
+    // Wider shapes widen the view, portrait narrows it.
+    CHECK(FovForAspect(60, 32.0 / 9) > FovForAspect(60, 21.0 / 9) && FovForAspect(60, 21.0 / 9) > 60 && FovForAspect(60, 9.0 / 16) < 60);
+}
+
 static void TestProjection()
 {
     double x = 9, y = 9;
@@ -736,6 +762,7 @@ int main()
     TestTakeCursor();
     TestRotations();
     TestProjection();
+    TestFovForAspect();
     TestPath();
     TestRelativeCamera();
     TestSpeedRamp();

@@ -444,18 +444,21 @@ std::vector<uint8_t> TakeBuffer(Encoder& encoder, size_t bytes)
 }
 
 // Reads the mapped image into a tightly packed buffer.
-void CopyRows(const D3D12_PLACED_SUBRESOURCE_FOOTPRINT& footprint, int bytesPerPixel, uint8_t* destination)
+bool CopyRows(const D3D12_PLACED_SUBRESOURCE_FOOTPRINT& footprint, int bytesPerPixel, uint8_t* destination)
 {
     const UINT rowBytes = footprint.Footprint.Width * bytesPerPixel;
-    D3D12_RANGE range { 0, static_cast<SIZE_T>(footprint.Footprint.RowPitch) * footprint.Footprint.Height };
+    // The last row ends at its own width, not at the row pitch: asking for the pitch there runs past the buffer when a row isn't a
+    // multiple of 256 bytes (2520 or 5040 pixels wide, for 21:9), and then the map fails and the frame is black.
+    D3D12_RANGE range { 0, static_cast<SIZE_T>(footprint.Offset + static_cast<UINT64>(footprint.Footprint.RowPitch) * (footprint.Footprint.Height - 1) + rowBytes) };
     void* mapped = nullptr;
     if (FAILED(g_gpu.Readback->Map(0, &range, &mapped)))
-        return;
+        return false;
     const auto* source = static_cast<const uint8_t*>(mapped) + footprint.Offset;
     for (UINT y = 0; y < footprint.Footprint.Height; ++y)
         memcpy(destination + static_cast<size_t>(y) * rowBytes, source + static_cast<size_t>(y) * footprint.Footprint.RowPitch, rowBytes);
     D3D12_RANGE nothing { 0, 0 };
     g_gpu.Readback->Unmap(0, &nothing);
+    return true;
 }
 
 // Handles one captured pass: blends it into its output, and emits the finished frame on the last blended sample.
@@ -474,7 +477,12 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
     Output& output = g_outputs[pass.Output];
 
     std::vector<uint8_t> image = TakeBuffer(*output.Encoder, bytes);
-    CopyRows(footprint, bytesPerPixel, image.data());
+    if (!CopyRows(footprint, bytesPerPixel, image.data())) {
+        // A black frame would go in the video without a word: stop and say so instead.
+        SetError("couldn't read the frame back from the graphics card");
+        g_stopRequested = true;
+        return;
+    }
 
     // With the depth buffer the key is already on the frame, and exact.
     if (pass.Pass == Pass::Greenscreen && !depth::Working()) {
@@ -812,7 +820,7 @@ int SaveRawFrame(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource
     const int bytes = BytesPerPixel(footprint.Footprint.Format);
     const UINT rowBytes = footprint.Footprint.Width * bytes;
     void* mapped = nullptr;
-    D3D12_RANGE range { 0, static_cast<SIZE_T>(footprint.Footprint.RowPitch) * footprint.Footprint.Height };
+    D3D12_RANGE range { 0, static_cast<SIZE_T>(footprint.Offset + static_cast<UINT64>(footprint.Footprint.RowPitch) * (footprint.Footprint.Height - 1) + rowBytes) };
     if (FAILED(g_gpu.Readback->Map(0, &range, &mapped)))
         return 0;
     std::ofstream file(path, std::ios::binary | std::ios::trunc);

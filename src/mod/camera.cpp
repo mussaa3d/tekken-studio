@@ -478,6 +478,11 @@ float ProjectionFov(float gameFov)
     return wanted > 0 ? wanted : gameFov;
 }
 
+bool OverridesFov()
+{
+    return g_wantedFov.load(std::memory_order_relaxed) > 0;
+}
+
 void OnFightJump()
 {
     g_gameCamera = {};

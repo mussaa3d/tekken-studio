@@ -758,12 +758,18 @@ void DetourCamera(void* manager, float dt)
         camera::OnCameraUpdate(manager);
 }
 
+std::atomic<float> g_projectionIn { 0 }, g_projectionOut { 0 };
+std::atomic<int> g_projectionConstraint { -1 };
+
 void DetourProjection(void* view, uint8_t constraint, void* a, void* b)
 {
     if (!guard::Tripped()) {
         float& fov = Field<float>(view, off::ViewInfoFov);
+        g_projectionIn.store(fov, std::memory_order_relaxed);
         fov = camera::ProjectionFov(fov);
-        scene::AdjustView(view);
+        scene::AdjustView(view, fov, !camera::OverridesFov());
+        g_projectionOut.store(fov, std::memory_order_relaxed);
+        g_projectionConstraint.store(constraint, std::memory_order_relaxed);
     }
     oProjection(view, constraint, a, b);
 }
@@ -1164,6 +1170,13 @@ void PreviewFrame()
     DetourTick(StepSeconds);
     DetourGameModeTick(nullptr, 0);
     camera::OnCameraUpdate(cameraManager);
+}
+
+void LastProjection(float& fovIn, float& fovOut, int& constraint)
+{
+    fovIn = g_projectionIn.load(std::memory_order_relaxed);
+    fovOut = g_projectionOut.load(std::memory_order_relaxed);
+    constraint = g_projectionConstraint.load(std::memory_order_relaxed);
 }
 
 } // namespace game

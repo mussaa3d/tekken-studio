@@ -7,7 +7,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "common/cinemath.h"
 #include "mod/effects.h"
+#include "mod/window.h"
 #include "mod/lights.h"
 #include "mod/log.h"
 #include "mod/ue.h"
@@ -377,7 +379,7 @@ void BeforeCameraUpdate(void* cameraManager)
     ue::Call(cameraManager, ref, &params);
 }
 
-void AdjustView(void* view)
+void AdjustView(void* view, float& fov, bool fromGame)
 {
     if (g_settings.Frame == Frame::Game || !view)
         return;
@@ -396,6 +398,18 @@ void AdjustView(void* view)
     } else {
         constrain |= g_constrainMask;
         ue::Field<float>(view, g_aspectAt) = std::max(g_settings.AspectRatio, 0.2f);
+        // With the shape held, the engine takes the field of view across the width. The game widens its own camera's view for the
+        // window's shape, between 16:10 and 21:9 (measured), so that comes off first, to give the view it has at 16:9.
+        if (g_settings.KeepFighters) {
+            double base = fov;
+            if (fromGame) {
+                int width = 0, height = 0;
+                window::PictureSize(width, height);
+                if (width > 0 && height > 0)
+                    base = cine::FovAt16x9(fov, static_cast<double>(width) / height, 1.6, 7.0 / 3.0);
+            }
+            fov = static_cast<float>(cine::FovForAspect(base, std::max(g_settings.AspectRatio, 0.2f), g_settings.Fit));
+        }
     }
 }
 
