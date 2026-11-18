@@ -2285,7 +2285,7 @@ void MenuBar()
         ImGui::TextUnformatted("Layout after IWXMVM. Engine notes from the Tekken Overlay rebuild.");
         ImGui::EndMenu();
     }
-    const char* label = "tekken8mvm v0.1 beta";
+    const char* label = "Tekken Studio v0.1 beta";
     ImGui::SameLine(ImGui::GetIO().DisplaySize.x - ImGui::CalcTextSize(label).x - ImGui::GetStyle().WindowPadding.x * 2);
     ImGui::TextColored(Dim, "%s", label);
     ImGui::EndMainMenuBar();
