@@ -869,12 +869,12 @@ void OnGameTick()
             t.UseSpeedRamp = false;
         }
         if (repeats[VK_DOWN]) {
-            t.Speed = std::max(t.Speed * 0.5, 0.01);
+            t.Speed = std::max(t.Speed * 0.5, 0.05);
             t.UseSpeedRamp = false;
         }
     }
     if (repeats[VK_OEM_4]) {
-        t.Speed = std::max(t.Speed * 0.5, 0.01);
+        t.Speed = std::max(t.Speed * 0.5, 0.05);
         t.UseSpeedRamp = false;
     }
     if (repeats[VK_OEM_6]) {

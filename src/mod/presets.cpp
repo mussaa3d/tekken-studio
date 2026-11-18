@@ -267,7 +267,7 @@ void WriteLook(Ini& ini)
 void ReadLook(const Ini& ini, bool whole = true)
 {
     game::TimeControl& t = game::Time();
-    t.Speed = std::clamp(ini.GetNumber("time.speed", t.Speed), 0.01, 4.0);
+    t.Speed = std::clamp(ini.GetNumber("time.speed", t.Speed), 0.05, 4.0);
     t.ScaleEffects = ini.GetBool("time.effects", t.ScaleEffects);
     t.Interpolate = ini.GetBool("time.blend", t.Interpolate);
     camera::Config().PathStyle = static_cast<cine::PathStyle>(std::clamp(static_cast<int>(ini.GetNumber("camera.path_style", static_cast<int>(camera::Config().PathStyle))), 0, 2));

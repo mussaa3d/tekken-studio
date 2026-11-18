@@ -89,7 +89,7 @@ const ImVec4 Accent = Colour(pal::Bad); // what needs looking at: a recording ru
 const ImVec4 Dim = Colour(pal::Muted);
 const ImVec4 Good = Colour(pal::Ok);
 const ImVec4 Warn = Colour(pal::Warning);
-constexpr double MinSpeed = 0.01, MaxSpeed = 4.0;
+constexpr double MinSpeed = 0.05, MaxSpeed = 4.0;
 
 int g_tab = 0;
 char g_notice[160] = "";
@@ -2175,7 +2175,7 @@ void ControlBar(ImVec2 position, ImVec2 size)
     g_layout.SliderMax = ImGui::GetItemRectMax();
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Timescale");
-    for (const float preset : { 0.01f, 0.1f, 0.25f, 0.5f, 1.0f }) {
+    for (const float preset : { 0.05f, 0.1f, 0.25f, 0.5f, 1.0f }) {
         ImGui::SameLine(0, gap);
         char label[16];
         snprintf(label, sizeof(label), "%gx", preset);
@@ -2521,7 +2521,7 @@ bool RunUiTest()
             const auto keys = game::SpeedKeys();
             return keys.size() == speedBefore + 1 && std::fabs(keys.back().Time - 18.0) < 0.2 && keys.back().Speed < speedValue;
         });
-        check("speed keys never go below 0.01", [] { return game::SpeedKeys().back().Speed >= MinSpeed - 1e-9; });
+        check("speed keys never go below 0.05", [] { return game::SpeedKeys().back().Speed >= MinSpeed - 1e-9; });
         click([speedAt] { return speedAt(99); }, 1);
         check("right-clicking a speed key deletes it", [] { return game::SpeedKeys().size() == speedBefore; });
 
@@ -2555,7 +2555,7 @@ bool RunUiTest()
         wait(1);
         drag([] { return ImVec2((g_layout.SliderMin.x + g_layout.SliderMax.x) * 0.5f, (g_layout.SliderMin.y + g_layout.SliderMax.y) * 0.5f); },
              [] { return ImVec2(g_layout.SliderMin.x - 50, (g_layout.SliderMin.y + g_layout.SliderMax.y) * 0.5f); });
-        check("the timescale slider reaches 0.01", [] { return std::fabs(game::Time().Speed - 0.01) < 0.0005; });
+        check("the timescale slider reaches 0.05", [] { return std::fabs(game::Time().Speed - 0.05) < 0.0025; });
         click([] { return g_layout.OneX; });
         check("the 1x button goes back to normal speed", [] { return game::Time().Speed == 1.0; });
 

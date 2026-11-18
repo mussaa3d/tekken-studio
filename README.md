@@ -10,7 +10,7 @@ Tekken Studio (tekken8mvm) is an unofficial fan-made tool. It isn't made, endors
 ## What it can do
 ![The editor](docs/images/editor.png)
 
-- **A full editor inside the game** (Insert): a timeline with the replay's real frames, rewinding to any frame in under a second, pause, frame step and slow motion down to 0.01x with cloth and hair slowing too.
+- **A full editor inside the game** (Insert): a timeline with the replay's real frames, rewinding to any frame in under a second, pause, frame step and slow motion down to 0.05x with cloth and hair slowing too.
 - **Cameras:** a free camera, dolly paths with keyframes (Smooth, Linear and CoDMVM styles) that show in the picture and can be dragged and turned while the replay plays, as in IWXMVM, a camera attached to a bone, fighter POV, and export to HLAE CamIO for After Effects or Blender.
 - **Recording:** frame-locked video through ffmpeg (H.264, H.265, ProRes or PNG) at any size up to 8K, whatever your monitor, with real motion blur and a separate audio pass.
 - **Streams for compositing:** picture, greenscreen, stage only, fighters on black, depth and effects on black, all lined up frame for frame.
@@ -69,7 +69,7 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 - **Rule of thirds:** guides over the picture (View menu), never in a recording.
 - **No slow motion on big hits and KOs** (Time group) runs straight through the moments where the game almost stops the fight, so the action carries on with no pause. The replay clock skips ahead with them, so a camera path jumps by that much at those moments.
 - **Change replay from inside a replay** or from the game's replay list: in the Replays tab, pick one and press **Play this replay**, or double-click it. It makes the calls the game's own screens make when you click them, so it doesn't press keys or move the mouse, works with the game in the background, and finds the replay by its date and players however the list is sorted. About 10 seconds from the list, a little longer from inside a replay.
-- **Time control:** pause, frame step and slow motion down to 0.01x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight: at 0.01x a jacket strap moves at 0.01 speed. In very deep slow motion cloth moves in small hops rather than a perfect glide (about 5 a second at 0.023x), because its solver comes apart in slices shorter than 1/480 s of fight time. Rewinding to a moment gives the same clothes every time.
+- **Time control:** pause, frame step and slow motion down to 0.05x, with poses blended between the game's 60 Hz steps. Clothes, people, plants and the stage slow and stop along with the fight: at 0.05x a jacket strap moves at 0.05 speed. In very deep slow motion cloth moves in small hops rather than a perfect glide (several a second at the slowest speeds), because its solver comes apart in slices shorter than 1/480 s of fight time. Rewinding to a moment gives the same clothes every time.
 - **Dolly paths:** keyframes on the timeline in three styles: Smooth, Linear and CoDMVM. A key can turn the camera further than half a circle, and the path goes the way you turned. Save, load, and export HLAE CamIO for After Effects or Blender.
 - **The path in the picture** (after [IWXMVM](https://github.com/reallyluckyy/IWXMVM)'s dollycam): with any camera but the dolly itself, the path is drawn over the picture as a yellow line, with a little camera at each key looking the way the key looks and a white dot where the dolly is at this moment. Click a key's camera to pick it: arrows move it along its own ahead, right and up (or the stage's X, Y and Z), and rings turn its pitch, yaw and roll. Double-click it, or use the buttons at the picture's top left, to switch between them. It all works while the replay plays, so you can fix a shot as you watch it, and **From the view** gives the key the camera's place as it is now. To take over in the middle of a shot, press F5 during Preview shot: the free camera starts where the path had it, and K adds a key at that moment. Camera tab > **Camera keys** steps to the key before or after this moment and has every number of the picked key. View > Camera path in the picture hides it. None of it is ever in a recording.
 - **Rage art and heat smash camera:** keep the normal fight camera through cinematics and big-hit zooms, or use a fixed classic 2D camera all fight.
@@ -209,8 +209,6 @@ Tekken Studio was written from scratch, but it stands on other people's work. Th
 **Used at run time, not included**
 - [ffmpeg](https://ffmpeg.org) for writing video. The installer downloads the [GyanD build](https://github.com/GyanD/codexffmpeg) and checks its SHA-256.
 - [ReShade](https://reshade.me), if you install it yourself.
-
-Written with Claude.
 
 ## License
 GPL-3.0, see [LICENSE](LICENSE). Contains no game files. Not affiliated with Bandai Namco.

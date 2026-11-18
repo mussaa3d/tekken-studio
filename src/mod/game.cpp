@@ -346,7 +346,7 @@ void DetourTick(double dt)
     if (g_time.UseSpeedRamp) {
         std::lock_guard lock(g_speedMutex);
         if (!g_speedKeys.empty())
-            g_time.Speed = std::clamp(cine::SampleSpeed(g_speedKeys, Clock()), 0.01, 4.0);
+            g_time.Speed = std::clamp(cine::SampleSpeed(g_speedKeys, Clock()), 0.05, 4.0);
     }
 
     // Seeking overrides everything.
