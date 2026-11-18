@@ -69,7 +69,7 @@ void SetStatus(const std::string& text, bool error = false)
     g_app.StatusIsError = error;
 }
 
-bool GameProcessRunning()
+bool ProcessRunning(const wchar_t* exe)
 {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE)
@@ -77,12 +77,17 @@ bool GameProcessRunning()
     PROCESSENTRY32W entry = { sizeof(entry) };
     bool found = false;
     for (BOOL more = Process32FirstW(snapshot, &entry); more; more = Process32NextW(snapshot, &entry))
-        if (_wcsicmp(entry.szExeFile, files::GameExe) == 0) {
+        if (_wcsicmp(entry.szExeFile, exe) == 0) {
             found = true;
             break;
         }
     CloseHandle(snapshot);
     return found;
+}
+
+bool GameProcessRunning()
+{
+    return ProcessRunning(files::GameExe);
 }
 
 void OpenPath(const std::wstring& target)
@@ -553,6 +558,118 @@ void ReplaysTab()
     }
 }
 
+// ----- Tekken Tag Tournament 2, on the BlueSpark recompilation. The studio there is linked into a separate copy of the game on this
+// PC (BlueSpark's own game and its files stay as they are), so "install" means building that copy with the compiler BlueSpark's own
+// Install already downloaded. The scripts and the studio's sources are in the ttt2 folder next to this launcher.
+
+// The BlueSpark release this studio is made for: it names things inside BlueSpark's prebuilt library, which move between releases.
+constexpr int Ttt2Release = 23;
+
+fs::path Ttt2Scripts()
+{
+    std::error_code ignored;
+    for (const fs::path& candidate : { g_app.Home / "ttt2", g_app.Home.parent_path() / "ttt2" }) // installed, or run from a build
+        if (fs::exists(candidate / "build-studio.ps1", ignored))
+            return candidate;
+    return {};
+}
+
+// What the play test folder holds: its release number, 0 if it isn't a built BlueSpark play test.
+int Ttt2PlaytestRelease(const fs::path& folder)
+{
+    std::error_code ignored;
+    if (folder.empty() || !fs::exists(folder / "rex" / "out" / "build" / "win-amd64-release" / "ttt2.exe", ignored))
+        return 0;
+    std::ifstream info(folder / "rex" / "package-info.txt");
+    std::string line;
+    while (std::getline(info, line))
+        if (line.rfind("patch=", 0) == 0)
+            return atoi(line.c_str() + 6);
+    return 0;
+}
+
+void RunTtt2Script(const fs::path& script, const std::wstring& arguments, bool show)
+{
+    const std::wstring command = L"-NoProfile -ExecutionPolicy Bypass " + std::wstring(show ? L"-NoExit " : L"") + L"-File \"" + script.wstring() + L"\" " + arguments;
+    ShellExecuteW(nullptr, L"open", L"powershell.exe", command.c_str(), script.parent_path().c_str(), show ? SW_SHOWNORMAL : SW_HIDE);
+}
+
+void Ttt2Tab()
+{
+    static char folder[MAX_PATH] = "";
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        strncpy_s(folder, g_app.Settings.Get("ttt2_playtest").c_str(), _TRUNCATE);
+    }
+    ImGui::TextColored(Accent, "Tekken Tag Tournament 2 (BlueSpark)");
+    ImGui::Separator();
+    ImGui::TextWrapped("Tekken Studio for TTT2 runs on BlueSpark, the fan-made native port of the Xbox 360 game (github.com/avim2/BlueSpark). BlueSpark records every "
+                       "offline Versus match and every online match by itself. The studio is a separate, offline-only copy of the game on your PC: BlueSpark's own "
+                       "game, your online account and its files are not touched.");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Your BlueSpark play test folder (the one with Start Here in it):");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFontSize() * 6);
+    if (ImGui::InputText("##ttt2folder", folder, sizeof(folder))) {
+        g_app.Settings.Set("ttt2_playtest", folder);
+        g_app.Settings.Save(g_app.Home / "launcher.ini");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open##ttt2") && folder[0])
+        OpenPath(fs::path(folder).wstring());
+
+    const fs::path playtest = folder;
+    const fs::path scripts = Ttt2Scripts();
+    const int release = Ttt2PlaytestRelease(playtest);
+    std::error_code ignored;
+    const fs::path studioExe = playtest / "rex" / "out" / "build" / "tekken-studio" / "ttt2-studio.exe";
+    const bool built = release != 0 && fs::exists(studioExe, ignored);
+    const bool running = ProcessRunning(L"ttt2-studio.exe") || ProcessRunning(L"ttt2.exe");
+
+    if (scripts.empty()) {
+        ImGui::TextColored(Warn, "The studio's TTT2 files (the ttt2 folder) aren't next to this launcher. Install Tekken Studio again.");
+        return;
+    }
+    if (release == 0) {
+        ImGui::TextColored(Warn, folder[0] ? "That folder isn't a BlueSpark play test that has been built. Open its Start Here and run Install first."
+                                           : "Paste the folder's path above. BlueSpark must be installed and built once with its Start Here.");
+        return;
+    }
+    if (release != Ttt2Release) {
+        ImGui::TextColored(Warn, "This BlueSpark is release %d, and this Tekken Studio is made for release %d. Update one so they match.", release, Ttt2Release);
+        return;
+    }
+    ImGui::TextColored(Good, built ? "BlueSpark release %d found, and the studio is installed." : "BlueSpark release %d found. The studio isn't installed yet.", release);
+
+    ImGui::Spacing();
+    if (ImGui::Button(built ? "Install again (after an update)" : "Install the studio", ImVec2(ImGui::GetFontSize() * 16, 0))) {
+        RunTtt2Script(scripts / "build-studio.ps1", L"-Playtest \"" + playtest.wstring() + L"\"", true);
+        SetStatus("Building the studio in a window of its own: it takes under a minute. Close that window when it says Built.");
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("links the studio into a copy of the game, about 90 MB");
+
+    ImGui::Spacing();
+    ImGui::BeginDisabled(!built || running);
+    if (ImGui::Button("Watch replays (simple)", ImVec2(ImGui::GetFontSize() * 16, ImGui::GetFontSize() * 2.2f))) {
+        RunTtt2Script(scripts / "run-studio.ps1", L"-Mode simple -Playtest \"" + playtest.wstring() + L"\"", false);
+        SetStatus("TTT2 is starting. Its REPLAYS tab lists your matches: A watches one.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open the studio", ImVec2(ImGui::GetFontSize() * 16, ImGui::GetFontSize() * 2.2f))) {
+        RunTtt2Script(scripts / "run-studio.ps1", L"-Mode studio -Playtest \"" + playtest.wstring() + L"\"", false);
+        SetStatus("TTT2 is starting with the studio open. Insert closes and opens it.");
+    }
+    ImGui::EndDisabled();
+    if (running)
+        ImGui::TextColored(Dim, "TTT2 is running. Close it before starting the studio: they share your saves.");
+    ImGui::Spacing();
+    ImGui::TextWrapped("Simple is for watching: BlueSpark's own replay viewer with the studio's playback bar. Studio adds the editor: a free camera, camera paths "
+                       "on a timeline, and pause, slow motion and frame steps in Practice and offline fights. Inside a replay the camera works, and time is "
+                       "BlueSpark's own: A pauses, LB goes back 3 seconds. Insert switches between them at any time, and Home hides the bar.");
+    ImGui::TextColored(Dim, "The studio never goes online: no sign-in, no matchmaking, no uploads. Play online with BlueSpark's own Start Here.");
+}
+
 void HelpTab()
 {
     ImGui::TextColored(Accent, "Keys in the game");
@@ -680,6 +797,10 @@ void DrawUi(double now)
         }
         if (ImGui::BeginTabItem("Replays")) {
             ReplaysTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("TTT2")) {
+            Ttt2Tab();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Help")) {

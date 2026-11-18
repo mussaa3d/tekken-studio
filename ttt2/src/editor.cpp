@@ -278,8 +278,13 @@ void TimeTab()
 {
     TimeControl& t = Time();
     Section("Time");
+    if (ReplayPlaying()) {
+        ImGui::TextWrapped("In a replay, BlueSpark's own controls do this: A pauses it and LB goes back 3 seconds. The studio's pause, slow motion and frame steps "
+                           "don't reach a replay yet; they work in Practice and in any other offline fight.");
+        return;
+    }
     if (!CanHold()) {
-        ImGui::TextWrapped("Pause, slow motion and frame steps work in a replay and in Practice. Start one first.");
+        ImGui::TextWrapped("Pause, slow motion and frame steps work in Practice and in an offline fight (Arcade, Versus). Start one first.");
         return;
     }
     ImGui::Checkbox("Paused (Space)", &t.Paused);
@@ -459,7 +464,7 @@ void PlaybackBar(ImVec2 position, ImVec2 size, bool studio)
     ImGui::SetNextWindowPos(position);
     ImGui::SetNextWindowSize(size);
     ImGui::Begin("##bar", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing);
-    const bool can = CanHold();
+    const bool can = CanHold() && !ReplayPlaying(); // BlueSpark's hold doesn't reach a replay: its own A and LB pause it and go back
     ImGui::BeginDisabled(!can);
     if (ImGui::Button(t.Paused ? "Play" : "Pause", { ImGui::GetFontSize() * 4, 0 }))
         t.Paused = !t.Paused;
@@ -484,9 +489,9 @@ void PlaybackBar(ImVec2 position, ImVec2 size, bool studio)
     ImGui::Text("%d:%05.2f", static_cast<int>(clock) / 60, std::fmod(clock, 60.0));
     ImGui::SameLine();
     if (ReplayPlaying())
-        ImGui::TextColored(Colour(pal::Ok), "replay");
+        ImGui::TextColored(Colour(pal::Ok), "replay   A  pause    LB  back 3 s");
     else if (can)
-        ImGui::TextColored(Colour(pal::Muted), "practice");
+        ImGui::TextColored(Colour(pal::Muted), "fight");
     else
         ImGui::TextColored(Colour(pal::Muted), "start a replay or Practice to use these");
     if (Holding()) {

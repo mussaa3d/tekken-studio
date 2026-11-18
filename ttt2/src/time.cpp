@@ -23,11 +23,18 @@ double g_writesPerFrame = 14.0;   // how many times the game writes its camera f
 double g_ownFrames = 0;           // fight frames that have run, for the clock outside a replay
 constexpr const char* Who = "tekken studio";
 
+// BlueSpark keeps two kinds of hold: one for Practice, which is also where a replay plays, and one for any other offline fight (Arcade,
+// Versus). Each is dropped by BlueSpark itself when its kind of fight isn't up, so the studio asks for both, and asks again when a hold
+// it wants has been dropped.
 void Ask(bool hold)
 {
-    if (hold == g_holdAsked)
+    static int sinceAsked = 0;
+    const bool dropped = hold && g_holdAsked && ++sinceAsked > 20 && GuestBase() && !Ttt2TrainingHoldHolding(GuestBase());
+    if (hold == g_holdAsked && !dropped)
         return;
+    sinceAsked = 0;
     g_holdAsked = hold;
+    Ttt2TrainingHoldRequest(Who, hold);
     Ttt2TrainingHoldRequestOffline(Who, hold);
 }
 } // namespace
@@ -86,7 +93,8 @@ bool CameraMoved()
 
 void TimeTick()
 {
-    if (!CanHold()) {
+    // (A replay runs outside BlueSpark's hold, measured: the studio leaves it alone and its own controls pause it.)
+    if (!CanHold() || Ttt2ReplayPlaying()) {
         Ask(false);
         g_lastFrame = 0;
         return;
@@ -122,8 +130,21 @@ void TimeTick()
     // average.
     if (!g_time.Paused)
         g_budget += elapsed * std::fmax(g_time.Speed, 0.05);
-    else if (CameraMoved())
-        g_budget += elapsed * 0.05; // paused, and the studio's camera moved: the picture only follows it on a frame the fight runs
+    else {
+        // Paused, and the studio's camera moved: the picture only follows it on a frame the fight runs. While it moves the fight
+        // runs one frame in five, and once it has been still for four frames one more frame runs, so the picture ends on the
+        // camera's last place.
+        static bool owed = false;
+        static double still = 0;
+        if (CameraMoved()) {
+            owed = true;
+            still = 0;
+            g_budget += elapsed * 0.2;
+        } else if (owed && (still += elapsed) >= 4) {
+            owed = false;
+            g_budget = std::fmax(g_budget, 1.0);
+        }
+    }
     g_budget += g_steps.exchange(0);
     g_budget -= ran;
     g_budget = std::fmax(-8.0, std::fmin(g_budget, 4.0));

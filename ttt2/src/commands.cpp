@@ -7,6 +7,8 @@
 
 #include <windows.h>
 
+#include <rex/cvar.h>
+
 #include <fstream>
 #include <sstream>
 #include <thread>
@@ -48,6 +50,7 @@ void Run(const std::string& line, std::ostringstream& out)
         snprintf(text, sizeof(text), "counters engine %llu fightsteps %llu testframe %llu inplay %d playingnow %d\n", static_cast<unsigned long long>(Ttt2EngineFrameNow()),
                  static_cast<unsigned long long>(Ttt2TestFightSteps()), static_cast<unsigned long long>(Ttt2TestFrame()), record && Ttt2FightInPlay() ? 1 : 0, record && Ttt2FightPlayingNow() ? 1 : 0);
         out << text;
+        out << "replay_holding " << (Ttt2ReplayHolding() ? 1 : 0) << " hold_holding " << (GuestBase() && record && Ttt2TrainingHoldHolding(GuestBase()) ? 1 : 0) << "\n";
         if (record && camera::Read(view)) {
             snprintf(text, sizeof(text), "camera %08X eye %.1f %.1f %.1f target %.1f %.1f %.1f fov %.2f\n", record, view.Eye.X, view.Eye.Y, view.Eye.Z, view.Target.X,
                      view.Target.Y, view.Target.Z, view.Fov);
@@ -80,6 +83,21 @@ void Run(const std::string& line, std::ostringstream& out)
         int mode = 0;
         in >> mode;
         Editor() = static_cast<EditorMode>(mode);
+    } else if (command == "holdraw") {
+        // holdraw <practice|offline> <0|1>: BlueSpark's hold asked for directly (research)
+        std::string kind;
+        int on = 0;
+        in >> kind >> on;
+        if (kind == "practice")
+            Ttt2TrainingHoldRequest("tekken studio test", on != 0);
+        else
+            Ttt2TrainingHoldRequestOffline("tekken studio test", on != 0);
+        out << "asked\n";
+    } else if (command == "flag") {
+        // flag <name> <value>: one of the game's own switches, set while it runs
+        std::string name, value;
+        in >> name >> value;
+        out << "flag " << name << (rex::cvar::SetFlagByName(name, value) ? " set " : " refused ") << rex::cvar::GetFlagByName(name) << "\n";
     } else if (command == "markers") {
         int on = 0;
         in >> on;

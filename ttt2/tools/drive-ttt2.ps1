@@ -4,7 +4,7 @@
 #   drive-ttt2.ps1 hold -Keys u -HoldMs 3000   keys held together
 #   drive-ttt2.ps1 cmd -Text "peek 82DE69A0 16"   a command for the studio's test channel; prints its answer
 param([Parameter(Mandatory)][string]$Action, [string]$Out = "", [string[]]$Keys = @(), [int]$HoldMs = 120, [int]$GapMs = 350, [string]$Text = "",
-      [string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest")
+      [string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest", [string]$Process = "ttt2-studio")
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -Name U -Namespace T2D -MemberDefinition @'
@@ -22,7 +22,7 @@ public struct POINT { public int X, Y; }
 [T2D.U]::SetProcessDPIAware() | Out-Null
 $data = Join-Path $Playtest 'rex\out\build\tekken-studio\studio'
 
-function Game { Get-Process ttt2-studio -ErrorAction SilentlyContinue | Select-Object -First 1 }
+function Game { Get-Process $Process -ErrorAction SilentlyContinue | Select-Object -First 1 }
 function Front {
     $p = Game
     if (-not $p) { throw "the studio isn't running" }
@@ -35,7 +35,7 @@ function Front {
     $p
 }
 $names = @{ insert = 0x2D; up = 0x26; down = 0x28; left = 0x25; right = 0x27; space = 0x20; esc = 0x1B; return = 0x0D; tab = 0x09; semicolon = 0xBA;
-            f1 = 0x70; f2 = 0x71; f3 = 0x72; f4 = 0x73; f5 = 0x74; f6 = 0x75; f7 = 0x76; f8 = 0x77; f9 = 0x78; f10 = 0x79; home = 0x24; end = 0x23; shift = 0x10; ctrl = 0x11 }
+            np0 = 0x60; np1 = 0x61; np2 = 0x62; np3 = 0x63; np4 = 0x64; np5 = 0x65; np6 = 0x66; np7 = 0x67; np8 = 0x68; np9 = 0x69; f1 = 0x70; f2 = 0x71; f3 = 0x72; f4 = 0x73; f5 = 0x74; f6 = 0x75; f7 = 0x76; f8 = 0x77; f9 = 0x78; f10 = 0x79; home = 0x24; end = 0x23; shift = 0x10; ctrl = 0x11 }
 function Vk([string]$key) { if ($names.ContainsKey($key)) { $names[$key] } else { [int][char]$key.ToUpper() } }
 function Down([string]$key) { $vk = Vk $key; $ext = if (@('insert', 'home', 'end', 'up', 'down', 'left', 'right') -contains $key) { 1 } else { 0 }
     [T2D.U]::keybd_event([byte]$vk, [byte][T2D.U]::MapVirtualKeyW($vk, 0), [uint32]$ext, [System.UIntPtr]::Zero) }

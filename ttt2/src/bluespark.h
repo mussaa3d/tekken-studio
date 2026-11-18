@@ -10,6 +10,8 @@
 // pages on (--ttt2_bluespark), which is how the studio starts the game.
 void Ttt2TrainingHoldRequestOffline(const char* who, bool hold);
 bool Ttt2TrainingHoldHolding(uint8_t* base);
+void Ttt2TrainingHoldRequest(const char* who, bool hold); // the same, for Practice only
+bool Ttt2ReplayHolding();
 
 // The keyboard layer that plays the game from the keys: captured, the keys stop reaching the fight (as for its Controller Setup page).
 void Ttt2KeyboardCapture(bool on);

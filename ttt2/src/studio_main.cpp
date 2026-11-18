@@ -70,6 +70,15 @@ namespace {
 void Boot()
 {
     Log("Tekken Studio for TTT2 starting");
+    // The launcher says how to start: "studio" opens the editor, anything else leaves the simple bar.
+    {
+        char mode[32] = "";
+        if (FILE* file = _wfopen((DataDir() / "start-mode.txt").c_str(), L"r")) {
+            fgets(mode, sizeof(mode), file);
+            fclose(file);
+        }
+        Editor() = strncmp(mode, "studio", 6) == 0 ? EditorMode::Studio : EditorMode::Simple;
+    }
     for (int tries = 0; tries < 6000; ++tries) {
         rex::Runtime* runtime = rex::Runtime::instance();
         if (runtime && runtime->imgui_drawer() && runtime->display_window()) {

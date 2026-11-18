@@ -144,6 +144,25 @@ In the editor's Replays tab, press **Export this replay** while a replay plays, 
 
 The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by Tekken Studio and no save file is edited.
 
+## Tekken Tag Tournament 2 (BlueSpark)
+The launcher's **TTT2** tab puts the studio into Tekken Tag Tournament 2 running on [BlueSpark](https://github.com/avim2/BlueSpark), the fan-made native PC port of the Xbox 360 game. You need BlueSpark's play test installed and built once with its own Start Here, and your own copy of the game, as BlueSpark asks. This part is new and rougher than the Tekken 8 side.
+
+1. Paste your BlueSpark play test folder into the TTT2 tab. It must be BlueSpark release 23 (4.7.4): the studio names things inside BlueSpark's prebuilt library, and those move between releases.
+2. Press **Install the studio**. A window builds `ttt2-studio.exe` in `rex\out\build\tekken-studio`, with the compiler BlueSpark's own install already downloaded. It takes under a minute. BlueSpark's own `ttt2.exe` and its files are not changed. After a BlueSpark update, install again.
+3. **Watch replays (simple)** or **Open the studio** starts that copy of the game. It is offline only: the studio's copy starts without BlueSpark's sign-in, matchmaking, uploads and update check. Play online with BlueSpark's own Start Here.
+
+**Replays.** BlueSpark already records every offline Versus match and every online match as a `.ttt2replay` in `rex\userdata\replays`, so Tekken Studio doesn't record its own: it uses those. Matches you play online in BlueSpark show up in the studio's copy, since both read the same folder. BlueSpark's **REPLAYS** tab lists them and A watches one; the studio's Replays tab lists the same files.
+
+**Simple mode** is BlueSpark's replay viewer with the studio's bar at the bottom. **Studio mode** is the editor, with the look of the Tekken 8 one: a free camera (F5, right mouse button to look, WASD and Q/E to move, the wheel for field of view), camera keys on a timeline with a path through them (K adds a key, F6 plays the path), the path drawn in the picture with arrows to drag each key, and pause, slow motion down to 0.05x and frame steps (Space and the full stop). **Insert** switches between the two and **Home** hides the bar.
+
+What doesn't work yet:
+- **Pause, slow motion and frame steps work in Practice and offline fights, not while a replay plays.** In a replay, time is BlueSpark's own: A pauses and LB goes back 3 seconds. The studio's cameras do work in a replay.
+- **Recording to video isn't in.** Record the window with OBS or the like.
+- The timeline holds camera keys but can't jump to a point in the fight.
+- While the fight is fully paused the picture only redraws when a frame runs, so the studio lets the fight creep at 0.05x while you move the camera.
+- The path drawn in the picture isn't measured against the game's picture yet and can sit a little off.
+- The Look and Scene tabs (lighting, actors, skins) are Tekken 8 only.
+
 ## Good to know
 - **An actor's jacket and straps hang still.** The game moves those with its own cloth solver, which an actor doesn't have. Hair and anything else moved by bones plays as it was recorded.
 - **A take needs the same body.** It plays on a fighter with the same bones as the one it was recorded from: the same character in the same outfit. On anyone else the actor says so and doesn't appear.
@@ -200,6 +219,7 @@ Tekken Studio was written from scratch, but it stands on other people's work. Th
 - [CoDMVM](https://codmvm.com), [HLAE](https://github.com/advancedfx/advancedfx) and [IWXMVM](https://github.com/reallyluckyy/IWXMVM): the movie-making tools for other games this one follows. The CoDMVM path style and HLAE's CamIO camera format come from them, and the way the dolly path is shown and edited in the picture (a camera at each key, arrows to move it and rings to turn it, the key before and after) follows IWXMVM's dollycam.
 - [Tekken Overlay rebuild](https://github.com/parsaes80/tekken-overlay-rebuild), based on KulaGGin's Tekken Overlay: engine notes, memory patterns and the method for smooth motion.
 - [TekkenOverlay](https://github.com/TekkenOverlay/TekkenOverlay): its display settings and simplified stages, rebuilt here as the Look tab's lighting, quality, stage and frame options.
+- [BlueSpark](https://github.com/avim2/BlueSpark) by avim2: the native port of Tekken Tag Tournament 2 the TTT2 studio runs on, with its replay recorder and viewer and the frame hold the studio's pause and slow motion ask for. None of BlueSpark's code is in this repo: the studio is linked against the library its play test ships.
 - OpenDojo's research notes: help with the game's subsystems, and the `dinput8.dll` slot other Tekken 8 mods use.
 - [Iris Studio](https://github.com/yerbisonline/IrisStudio) for Call of Duty: Black Ops (GPL-3.0): the actors, the Scene tab, ReShade keys and the editor's look (its Mono colours and the way it lays out tabs, rows and bars).
 

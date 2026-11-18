@@ -8,10 +8,13 @@
 param(
     [Parameter(Mandatory)][string]$Playtest,
     [switch]$Windowed,
+    [ValidateSet('simple', 'studio')][string]$Mode = 'simple',   # simple: the playback bar only; studio: the editor open
     [switch]$NoBlueSpark,   # the game's own main menu, without BlueSpark's pages over it
     [string[]]$Extra = @()
 )
 $ErrorActionPreference = 'Stop'
+# (Started with powershell -File, a list of switches arrives as one string with commas: taken apart again here.)
+$Extra = @($Extra | ForEach-Object { $_ -split ',(?=--)' } | Where-Object { $_ })
 $rex = Join-Path $Playtest 'rex'
 $exe = Join-Path $rex 'out\build\tekken-studio\ttt2-studio.exe'
 if (-not (Test-Path -LiteralPath $exe)) { throw "The studio isn't built yet ($exe). Run build-studio.ps1 first." }
@@ -42,5 +45,8 @@ $arguments = @(
 ) + $switches + $Extra
 $quoted = $arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
 Set-Content -LiteralPath (Join-Path (Split-Path $exe) 'studio-launch.txt') -Value ($quoted -join "`r`n") -Encoding ascii
+$studioData = Join-Path (Split-Path $exe) 'studio'
+New-Item -ItemType Directory -Force $studioData | Out-Null
+Set-Content -LiteralPath (Join-Path $studioData 'start-mode.txt') -Value $Mode -Encoding ascii -NoNewline
 $process = Start-Process -FilePath $exe -ArgumentList $quoted -WorkingDirectory (Split-Path $exe) -PassThru
 "studio process $($process.Id)"
