@@ -336,7 +336,8 @@ void ReadLook(const Ini& ini, bool whole = true)
     sc.NoCameraShake = ini.GetBool("scene.no_camera_shake", sc.NoCameraShake);
     sc.Frame = static_cast<scene::Frame>(static_cast<int>(ini.GetNumber("scene.frame", static_cast<int>(sc.Frame))));
     sc.AspectRatio = std::clamp(static_cast<float>(ini.GetNumber("scene.aspect_ratio", sc.AspectRatio)), 0.3f, 5.0f);
-    sc.KeepFighters = ini.GetBool("scene.keep_fighters", sc.KeepFighters);
+    // A look saved before this choice existed keeps the framing it was made with: the shape as a crop.
+    sc.KeepFighters = ini.GetBool("scene.keep_fighters", false);
     sc.Fit = std::clamp(static_cast<float>(ini.GetNumber("scene.fit", sc.Fit)), 0.0f, 1.0f);
     e.NoHitEffects = ini.GetBool("fx.no_hit", e.NoHitEffects);
     e.FogHidesMist = ini.GetBool("fx.fog_hides_mist", e.FogHidesMist);

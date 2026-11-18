@@ -201,6 +201,17 @@ std::string NameIn(const std::filesystem::path& folder, const Slot& slot)
     return unique;
 }
 
+// The versions a replay had before it was marked with the newest one so the game plays it (UnlockOlderReplays, Import), by fight,
+// so a file written from it says the version it was really played on. Under g_mutex.
+using Fight = std::tuple<uint64_t, std::string, std::string>;
+std::map<Fight, std::pair<uint32_t, uint32_t>> g_realVersions;
+
+Fight FightOf(const uint8_t* slot)
+{
+    const Slot info = Read(-1, slot);
+    return { info.Played, info.Player1, info.Player2 };
+}
+
 // Writes one slot to `path`. The caller holds g_mutex and has found the block.
 bool WriteSlot(int index, const std::filesystem::path& path, std::string& error)
 {
@@ -216,9 +227,20 @@ bool WriteSlot(int index, const std::filesystem::path& path, std::string& error)
     header.RecordSize = g_slotSize;
     header.GameVersion = ReadU32(slot + HeaderGameVersion);
     header.Stored = used;
+    // The slot's start, with the version it was really played on if it was marked newer to play here.
+    uint8_t start[HeaderPlayVersion + 4];
+    std::memcpy(start, slot, sizeof(start));
+    const auto real = g_realVersions.find(FightOf(slot));
+    if (real != g_realVersions.end()) {
+        header.GameVersion = real->second.first;
+        std::memcpy(start + HeaderGameVersion, &real->second.first, 4);
+        std::memcpy(start + HeaderPlayVersion, &real->second.second, 4);
+    }
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     file.write(reinterpret_cast<const char*>(&header), sizeof(header));
-    file.write(reinterpret_cast<const char*>(slot), static_cast<std::streamsize>(used));
+    file.write(reinterpret_cast<const char*>(start), static_cast<std::streamsize>(std::min(used, sizeof(start))));
+    if (used > sizeof(start))
+        file.write(reinterpret_cast<const char*>(slot + sizeof(start)), static_cast<std::streamsize>(used - sizeof(start)));
     if (!file) {
         error = "Couldn't write the file";
         return false;
@@ -409,6 +431,7 @@ int UnlockOlderReplays()
         const uint32_t version = ReadU32(slot + HeaderGameVersion);
         if (version >= newest || version < 10000)
             continue;
+        g_realVersions.emplace(FightOf(slot), std::make_pair(version, ReadU32(slot + HeaderPlayVersion)));
         // The version is in the slot twice; the game checks the second one before it plays.
         std::memcpy(slot + HeaderGameVersion, &newest, sizeof(newest));
         const uint32_t second = ReadU32(slot + HeaderPlayVersion);
@@ -657,6 +680,7 @@ bool Import(const std::string& fileName, std::string& error, bool* alreadyThere)
         std::memcpy(data.data() + HeaderDownloaded, &now, sizeof(now));
     }
     if (newest != 0 && header.GameVersion < newest) {
+        g_realVersions.emplace(FightOf(data.data()), std::make_pair(header.GameVersion, ReadU32(data.data() + HeaderPlayVersion)));
         std::memcpy(data.data() + HeaderGameVersion, &newest, sizeof(newest));
         const uint32_t second = ReadU32(data.data() + HeaderPlayVersion);
         if (second >= 10000 && second < 100000)
@@ -693,7 +717,6 @@ void AutoExportTick()
     // names), so nothing is written twice, across sessions too. A match that ends while the game runs is written within seconds of
     // the game putting it in its list; one played online, without the mod, is written the next time a session starts and the game
     // has loaded its replays.
-    using Fight = std::tuple<uint64_t, std::string, std::string>;
     static std::set<Fight> known;
     static bool scanned = false;
     static int lastCount = -1, steady = 0;
