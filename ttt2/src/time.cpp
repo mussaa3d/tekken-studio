@@ -1,0 +1,133 @@
+// Time control. BlueSpark has "the outside hold": anyone can ask for an offline fight (Practice, a replay) to be frozen, sound and
+// all, and the fight carries on from the same state when the hold is let go, which is what its own pause and rewind are built on.
+// The studio holds the fight to pause it, lets it run one picture in every few for slow motion, and lets one frame through for a
+// step. Nothing in the fight's state is written, so a replay stays in step.
+#include "studio.h"
+
+#include "bluespark.h"
+#include "camera.h"
+
+#include <atomic>
+#include <cmath>
+
+namespace studio {
+
+namespace {
+TimeControl g_time;
+std::atomic<int> g_steps { 0 };   // frames asked for with Step, not yet handed to the budget
+double g_budget = 0;              // fight frames the fight may still run before it's held again
+bool g_holdAsked = false;
+uint64_t g_lastFrame = 0;         // BlueSpark's frame count at the last look
+uint64_t g_lastWrites = 0;        // the game's camera writes at the last look
+double g_writesPerFrame = 14.0;   // how many times the game writes its camera for one fight frame; measured while it runs freely
+double g_ownFrames = 0;           // fight frames that have run, for the clock outside a replay
+constexpr const char* Who = "tekken studio";
+
+void Ask(bool hold)
+{
+    if (hold == g_holdAsked)
+        return;
+    g_holdAsked = hold;
+    Ttt2TrainingHoldRequestOffline(Who, hold);
+}
+} // namespace
+
+TimeControl& Time()
+{
+    return g_time;
+}
+
+void StepOneFrame()
+{
+    g_time.Paused = true;
+    ++g_steps;
+}
+
+bool CanHold()
+{
+    // (The camera's record first: before the game has set itself up, BlueSpark's own question about the fight reads memory that isn't there yet.)
+    return camera::Record() != 0 && Ttt2BlueSparkOn() && Ttt2FightInPlay();
+}
+
+bool Holding()
+{
+    uint8_t* base = GuestBase();
+    return g_holdAsked && base && Ttt2TrainingHoldHolding(base);
+}
+
+bool ReplayPlaying()
+{
+    return Ttt2ReplayPlaying();
+}
+
+double Clock()
+{
+    if (Ttt2ReplayPlaying())
+        return static_cast<double>(Ttt2ReplayFrameNow()) / 60.0;
+    return g_ownFrames / 60.0;
+}
+
+namespace {
+// Whether the studio's camera is somewhere else than at the last look. The game makes the picture's view from its camera only on a
+// frame the fight runs, so a pause can't show a camera move: the fight is let creep at 0.05x for as long as the camera is moving.
+bool CameraMoved()
+{
+    static camera::View last;
+    camera::View now;
+    if (!camera::Wanted(now))
+        return false;
+    const bool moved = std::fabs(now.Eye.X - last.Eye.X) + std::fabs(now.Eye.Y - last.Eye.Y) + std::fabs(now.Eye.Z - last.Eye.Z) > 0.5f
+                       || std::fabs(now.Target.X - last.Target.X) + std::fabs(now.Target.Y - last.Target.Y) + std::fabs(now.Target.Z - last.Target.Z) > 0.5f
+                       || std::fabs(now.Fov - last.Fov) > 0.01f;
+    last = now;
+    return moved;
+}
+} // namespace
+
+void TimeTick()
+{
+    if (!CanHold()) {
+        Ask(false);
+        g_lastFrame = 0;
+        return;
+    }
+    // BlueSpark's frame count goes on while a fight is held, so it tells how much real time (in game frames) has gone by. The game's
+    // own camera writes tell how much of the fight has really run.
+    const uint64_t frame = Ttt2TestFrame(), writes = camera::Writes();
+    if (g_lastFrame == 0 || frame < g_lastFrame) {
+        g_lastFrame = frame;
+        g_lastWrites = writes;
+    }
+    const double elapsed = static_cast<double>(frame - g_lastFrame);
+    const double ran = static_cast<double>(writes - g_lastWrites) / g_writesPerFrame;
+    g_lastFrame = frame;
+    g_lastWrites = writes;
+    g_ownFrames += ran;
+
+    const bool full = !g_time.Paused && g_time.Speed >= 0.999;
+    if (full) {
+        // Running freely: nothing held, and the yardstick is measured for when it's needed.
+        if (elapsed >= 1 && ran > 0) {
+            const double measured = ran * g_writesPerFrame / elapsed;
+            if (measured >= 1 && measured <= 64)
+                g_writesPerFrame += (measured - g_writesPerFrame) * 0.05;
+        }
+        g_budget = 0;
+        Ask(false);
+        return;
+    }
+    // Paused or slow: the fight gets a budget of frames. Time going by adds to it at the chosen speed and each Step adds one; every
+    // frame the fight really runs comes off it. BlueSpark's hold takes a frame or two to let go and to take hold again, so the fight
+    // can overrun a little: the budget then goes below zero and it stays held until that's paid back, which keeps the speed right on
+    // average.
+    if (!g_time.Paused)
+        g_budget += elapsed * std::fmax(g_time.Speed, 0.05);
+    else if (CameraMoved())
+        g_budget += elapsed * 0.05; // paused, and the studio's camera moved: the picture only follows it on a frame the fight runs
+    g_budget += g_steps.exchange(0);
+    g_budget -= ran;
+    g_budget = std::fmax(-8.0, std::fmin(g_budget, 4.0));
+    Ask(g_budget < 1.0);
+}
+
+} // namespace studio

@@ -47,14 +47,34 @@ inline void WriteFloat(uint32_t address, float value)
 // Whether these bytes of the game's memory can be read without a fault.
 bool Readable(uint32_t address, uint32_t size);
 
-void CreateEditor(rex::ui::ImGuiDrawer* drawer);
+// ----- Time (time.cpp): pause, slow motion and frame steps of an offline fight, through BlueSpark's own hold.
+struct TimeControl {
+    bool Paused = false;
+    double Speed = 1.0; // 0.05 to 1
+};
+TimeControl& Time();
+void StepOneFrame();
+// Once for each picture the editor draws: decides whether the fight runs or is held for this one.
+void TimeTick();
+bool Holding(); // the fight is held right now
+bool CanHold(); // a hold would take: BlueSpark's pages are on and an offline fight is up
+// The studio's clock in seconds: the replay's own frame count while a replay plays, else the fight frames the studio has let run.
+double Clock();
+bool ReplayPlaying();
 
-// Research: which code writes a stretch of the game's memory (watch.cpp).
+// ----- The editor (editor.cpp)
+void CreateEditor(rex::ui::ImGuiDrawer* drawer);
+// Simple: only the playback bar, for watching. Studio: the whole editor.
+enum class EditorMode { Hidden, Simple, Studio };
+EditorMode& Editor();
+bool& Markers(); // research: crosses on the fighters, to check the projection
+
+// ----- Research: which code writes or reads a stretch of the game's memory (watch.cpp).
 void WatchStart(uint32_t address, uint32_t size, bool reads = false);
 void WatchStop();
 std::string WatchDump();
 
-// The test channel: commands from studio\commands.txt, answers in studio\state.txt.
+// ----- The test channel: commands from studio\commands.txt, answers in studio\state.txt.
 void StartCommands();
 
 } // namespace studio

@@ -37,7 +37,8 @@ $arguments = @(
     "--profile_data_root=$(Join-Path $data 'profile')",
     "--hid_mappings_file=$(Join-Path $rex 'gamecontrollerdb.txt')",
     "--fullscreen=$(if ($Windowed) { 'false' } else { 'true' })",
-    '--fullscreen_exclusive=false'
+    '--fullscreen_exclusive=false',
+    '--ttt2_update_notice=false'   # the one thing the game would still fetch: BlueSpark's list of releases
 ) + $switches + $Extra
 $quoted = $arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
 Set-Content -LiteralPath (Join-Path (Split-Path $exe) 'studio-launch.txt') -Value ($quoted -join "`r`n") -Encoding ascii

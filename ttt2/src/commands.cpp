@@ -2,6 +2,7 @@
 // "state" writes studio\state.txt. Only for driving the studio from scripts.
 #include "studio.h"
 
+#include "bluespark.h"
 #include "camera.h"
 
 #include <windows.h>
@@ -36,10 +37,17 @@ void Run(const std::string& line, std::ostringstream& out)
     std::string command;
     in >> command;
     if (command == "state") {
-        out << "studio 1\n";
+        char text[256];
         camera::View view;
         const uint32_t record = camera::Record();
-        char text[200];
+        out << "studio 1 editor " << static_cast<int>(Editor()) << "\n";
+        out << "camera_writes " << camera::Writes() << " mode " << static_cast<int>(camera::Config().Mode) << " keys " << camera::Keys().size() << "\n";
+        snprintf(text, sizeof(text), "clock %.3f paused %d speed %.2f holding %d canhold %d replay %d replay_frame %llu bluespark %d\n", Clock(), Time().Paused ? 1 : 0,
+                 Time().Speed, Holding() ? 1 : 0, CanHold() ? 1 : 0, ReplayPlaying() ? 1 : 0, static_cast<unsigned long long>(Ttt2ReplayFrameNow()), Ttt2BlueSparkOn() ? 1 : 0);
+        out << text;
+        snprintf(text, sizeof(text), "counters engine %llu fightsteps %llu testframe %llu inplay %d playingnow %d\n", static_cast<unsigned long long>(Ttt2EngineFrameNow()),
+                 static_cast<unsigned long long>(Ttt2TestFightSteps()), static_cast<unsigned long long>(Ttt2TestFrame()), record && Ttt2FightInPlay() ? 1 : 0, record && Ttt2FightPlayingNow() ? 1 : 0);
+        out << text;
         if (record && camera::Read(view)) {
             snprintf(text, sizeof(text), "camera %08X eye %.1f %.1f %.1f target %.1f %.1f %.1f fov %.2f\n", record, view.Eye.X, view.Eye.Y, view.Eye.Z, view.Target.X,
                      view.Target.Y, view.Target.Z, view.Fov);
@@ -67,22 +75,52 @@ void Run(const std::string& line, std::ostringstream& out)
         in >> std::hex >> address >> std::dec >> value;
         if (Readable(address, 4))
             WriteFloat(address, value);
-    } else if (command == "poke") {
-        uint32_t address = 0, value = 0;
-        in >> std::hex >> address >> value;
-        if (Readable(address, 4))
-            WriteU32(address, value);
-    } else if (command == "cam") {
-        // cam <0|1> [eye x y z, target x y z, fov]: the studio's camera on or off, and where it is
+    } else if (command == "editor") {
+        // editor <0 hidden|1 simple|2 studio>
+        int mode = 0;
+        in >> mode;
+        Editor() = static_cast<EditorMode>(mode);
+    } else if (command == "markers") {
         int on = 0;
         in >> on;
-        camera::View& v = camera::Studio();
-        if (!(in >> v.Eye.X >> v.Eye.Y >> v.Eye.Z >> v.Target.X >> v.Target.Y >> v.Target.Z >> v.Fov) && on)
-            camera::Read(v); // no numbers: start from the game's own view
-        camera::Override() = on != 0;
+        Markers() = on != 0;
+    } else if (command == "mode") {
+        // mode <game|free|dolly>
+        std::string name;
+        in >> name;
+        camera::SetMode(name == "free" ? camera::Mode::Free : name == "dolly" ? camera::Mode::Dolly : camera::Mode::Game);
+    } else if (command == "pose") {
+        // pose x y z yaw pitch fov: the free camera there
+        camera::Pose& p = camera::Config().Free;
+        in >> p.Eye.X >> p.Eye.Y >> p.Eye.Z >> p.Yaw >> p.Pitch >> p.Fov;
+        camera::Config().Mode = camera::Mode::Free;
+    } else if (command == "addkey") {
+        camera::AddKeyAtView(Clock());
+    } else if (command == "clearkeys") {
+        camera::Keys().clear();
+    } else if (command == "pause") {
+        int on = 0;
+        in >> on;
+        Time().Paused = on != 0;
+    } else if (command == "speed") {
+        in >> Time().Speed;
+    } else if (command == "step") {
+        StepOneFrame();
+    } else if (command == "replay") {
+        // replay <file name in the replays folder>: BlueSpark's own way of starting one
+        std::string name;
+        std::getline(in >> std::ws, name);
+        const std::filesystem::path file = Ttt2ReplaysFolder() / name;
+        out << "replay " << (GuestBase() && Ttt2ReplayChoose(GuestBase(), file.string()) ? "chosen" : "refused") << "\n";
+    } else if (command == "replays") {
+        std::error_code ignored;
+        const std::filesystem::path folder = Ttt2ReplaysFolder();
+        out << "folder " << folder.string() << "\n";
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(folder, ignored))
+            if (entry.is_regular_file())
+                out << "file " << std::filesystem::relative(entry.path(), folder, ignored).string() << " " << entry.file_size() << "\n";
     } else if (command == "watch") {
-        // watch <hex address> <bytes>: count the code that writes there
-        // watch <hex address> <bytes> [r]: with r, reads are counted too
+        // watch <hex address> <bytes> [r]: count the code that writes there; with r, reads too
         uint32_t address = 0, size = 4;
         std::string mode;
         in >> std::hex >> address >> std::dec >> size >> mode;
@@ -101,6 +139,11 @@ void Run(const std::string& line, std::ostringstream& out)
 void Loop()
 {
     const std::filesystem::path commands = DataDir() / "commands.txt", state = DataDir() / "state.txt";
+    // A command left from a run before would be run before the game has set itself up.
+    {
+        std::error_code ignored;
+        std::filesystem::remove(commands, ignored);
+    }
     for (;;) {
         Sleep(30);
         std::ifstream file(commands);

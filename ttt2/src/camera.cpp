@@ -5,9 +5,19 @@
 //   [manager + 340 + slot * 4] -> the slot's block; +16 = the record: eye xyz (+0), target xyz (+16), field of view in degrees (+56)
 //
 // Read from the game's own getters (sub_82565678, sub_825468D0, sub_82542618, sub_825426C0, sub_825427C8), on BlueSpark release 23.
+// The game writes the record for each fight frame it runs (sub_82541878), and the studio's view goes over it right after. The picture's
+// view is made from the record only on a frame the fight runs: while BlueSpark holds the fight, a changed record changes nothing on
+// screen (measured), which is why the studio lets the fight creep while its camera is moved during a pause (time.cpp).
 #include "camera.h"
 
 #include "studio.h"
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <fstream>
+#include <mutex>
+#include <sstream>
 
 #include <rex/ppc/context.h>
 
@@ -16,6 +26,30 @@ namespace studio::camera {
 namespace {
 constexpr uint32_t GameSystemHolder = 0x82E6B05C;
 constexpr uint32_t CameraObject = 724, Manager = 436, SlotInUse = 316, Slots = 340, SlotCount = 12, RecordInBlock = 16;
+constexpr float Pi = 3.14159265358979f;
+
+Settings g_settings;
+std::vector<Key> g_keys;
+std::mutex g_mutex;      // the keys and the last view, which the editor and the game thread share
+View g_last;             // what went to the picture last
+bool g_haveLast = false;
+std::atomic<uint64_t> g_writes { 0 };
+
+float Radians(float degrees) { return degrees * Pi / 180.0f; }
+float Degrees(float radians) { return radians * 180.0f / Pi; }
+
+std::filesystem::path PathsDir()
+{
+    const std::filesystem::path dir = DataDir() / "paths";
+    std::error_code ignored;
+    std::filesystem::create_directories(dir, ignored);
+    return dir;
+}
+
+bool SafeName(const std::string& name)
+{
+    return !name.empty() && name.size() < 64 && name.find_first_of("\\/:*?\"<>|.") == std::string::npos;
+}
 } // namespace
 
 uint32_t Record()
@@ -48,27 +82,178 @@ bool Read(View& out)
     out.Eye = { ReadFloat(record + 0), ReadFloat(record + 4), ReadFloat(record + 8) };
     out.Target = { ReadFloat(record + 16), ReadFloat(record + 20), ReadFloat(record + 24) };
     out.Fov = ReadFloat(record + 56);
-    return true;
+    // A record the game hasn't filled (a menu's) can hold anything.
+    return std::isfinite(out.Eye.X) && std::isfinite(out.Eye.Y) && std::isfinite(out.Eye.Z) && std::isfinite(out.Target.X) && out.Fov > 1 && out.Fov < 179;
 }
 
-bool& Override()
+uint64_t Writes()
 {
-    static bool on = false;
-    return on;
+    return g_writes.load();
 }
 
-View& Studio()
+View ToView(const Pose& pose)
 {
-    static View view;
+    const float yaw = Radians(pose.Yaw), pitch = Radians(std::clamp(pose.Pitch, -89.0f, 89.0f));
+    const Vec3 direction { std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch) };
+    View view;
+    view.Eye = pose.Eye;
+    // The game keeps the camera's distance to its target for effects, so the target sits where the fight's does: 4.6 m ahead.
+    view.Target = { pose.Eye.X + direction.X * 4600, pose.Eye.Y + direction.Y * 4600, pose.Eye.Z + direction.Z * 4600 };
+    view.Fov = std::clamp(pose.Fov, 5.0f, 150.0f);
     return view;
+}
+
+Pose ToPose(const View& view)
+{
+    const float dx = view.Target.X - view.Eye.X, dy = view.Target.Y - view.Eye.Y, dz = view.Target.Z - view.Eye.Z;
+    const float flat = std::sqrt(dx * dx + dz * dz);
+    Pose pose;
+    pose.Eye = view.Eye;
+    pose.Yaw = Degrees(std::atan2(dx, -dz));
+    pose.Pitch = Degrees(std::atan2(dy, std::max(flat, 0.001f)));
+    pose.Fov = view.Fov;
+    return pose;
+}
+
+Settings& Config()
+{
+    return g_settings;
+}
+
+void SetMode(Mode mode)
+{
+    if (mode == Mode::Free && g_settings.Mode != Mode::Free) {
+        // The free camera starts from where the picture is now.
+        View now;
+        if (Current(now))
+            g_settings.Free = ToPose(now);
+    }
+    g_settings.Mode = mode;
+}
+
+bool Current(View& out)
+{
+    {
+        std::lock_guard lock(g_mutex);
+        if (g_haveLast && g_settings.Mode != Mode::Game) {
+            out = g_last;
+            return true;
+        }
+    }
+    return Read(out);
+}
+
+std::vector<Key>& Keys()
+{
+    return g_keys;
+}
+
+void AddKeyAtView(double time)
+{
+    View now;
+    if (!Current(now))
+        return;
+    Key key { time, ToPose(now) };
+    std::lock_guard lock(g_mutex);
+    // Yaw is counted on from the key before, so a turn of more than half a circle goes the way it was made.
+    const auto at = std::lower_bound(g_keys.begin(), g_keys.end(), time, [](const Key& k, double t) { return k.Time < t; });
+    if (!g_keys.empty()) {
+        const float neighbour = at != g_keys.begin() ? (at - 1)->Pose.Yaw : at->Pose.Yaw;
+        float turn = std::fmod(key.Pose.Yaw - neighbour, 360.0f);
+        if (turn > 180)
+            turn -= 360;
+        if (turn < -180)
+            turn += 360;
+        key.Pose.Yaw = neighbour + turn;
+    }
+    if (at != g_keys.end() && std::fabs(at->Time - time) < 0.001)
+        *at = key;
+    else
+        g_keys.insert(at, key);
+}
+
+namespace {
+// A time-weighted Catmull-Rom through the keys, as Tekken Studio's Smooth style for Tekken 8.
+float Tangent(float p0, float p1, float p2, double t0, double t1, double t2)
+{
+    const double d0 = (p1 - p0) / std::max(t1 - t0, 1e-6), d1 = (p2 - p1) / std::max(t2 - t1, 1e-6);
+    const double w0 = t2 - t1, w1 = t1 - t0;
+    return static_cast<float>((w0 * d0 + w1 * d1) / std::max(w0 + w1, 1e-6));
+}
+float Hermite(float p0, float m0, float p1, float m1, double h, double u)
+{
+    const double u2 = u * u, u3 = u2 * u;
+    return static_cast<float>((2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * h * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * h * m1);
+}
+} // namespace
+
+Pose Sample(const std::vector<Key>& keys, double time, PathStyle style)
+{
+    if (keys.empty())
+        return {};
+    if (time <= keys.front().Time || keys.size() == 1)
+        return keys.front().Pose;
+    if (time >= keys.back().Time)
+        return keys.back().Pose;
+    size_t i = 1;
+    while (i < keys.size() - 1 && keys[i].Time <= time)
+        ++i;
+    const Key& a = keys[i - 1];
+    const Key& b = keys[i];
+    const double h = std::max(b.Time - a.Time, 1e-6), u = (time - a.Time) / h;
+    if (style == PathStyle::Linear) {
+        const float t = static_cast<float>(u);
+        auto mix = [t](float x, float y) { return x + (y - x) * t; };
+        return { { mix(a.Pose.Eye.X, b.Pose.Eye.X), mix(a.Pose.Eye.Y, b.Pose.Eye.Y), mix(a.Pose.Eye.Z, b.Pose.Eye.Z) }, mix(a.Pose.Yaw, b.Pose.Yaw), mix(a.Pose.Pitch, b.Pose.Pitch),
+                 mix(a.Pose.Fov, b.Pose.Fov) };
+    }
+    const Key& before = i >= 2 ? keys[i - 2] : a;
+    const Key& after = i + 1 < keys.size() ? keys[i + 1] : b;
+    auto channel = [&](float Pose::*field) {
+        const float m0 = i >= 2 ? Tangent(before.Pose.*field, a.Pose.*field, b.Pose.*field, before.Time, a.Time, b.Time) : (b.Pose.*field - a.Pose.*field) / static_cast<float>(h);
+        const float m1 = i + 1 < keys.size() ? Tangent(a.Pose.*field, b.Pose.*field, after.Pose.*field, a.Time, b.Time, after.Time) : (b.Pose.*field - a.Pose.*field) / static_cast<float>(h);
+        return Hermite(a.Pose.*field, m0, b.Pose.*field, m1, h, u);
+    };
+    auto place = [&](float Vec3::*axis) {
+        const float p0 = before.Pose.Eye.*axis, p1 = a.Pose.Eye.*axis, p2 = b.Pose.Eye.*axis, p3 = after.Pose.Eye.*axis;
+        const float m0 = i >= 2 ? Tangent(p0, p1, p2, before.Time, a.Time, b.Time) : (p2 - p1) / static_cast<float>(h);
+        const float m1 = i + 1 < keys.size() ? Tangent(p1, p2, p3, a.Time, b.Time, after.Time) : (p2 - p1) / static_cast<float>(h);
+        return Hermite(p1, m0, p2, m1, h, u);
+    };
+    Pose out;
+    out.Eye = { place(&Vec3::X), place(&Vec3::Y), place(&Vec3::Z) };
+    out.Yaw = channel(&Pose::Yaw);
+    out.Pitch = channel(&Pose::Pitch);
+    out.Fov = channel(&Pose::Fov);
+    return out;
+}
+
+bool Wanted(View& out)
+{
+    const Settings& s = g_settings;
+    if (s.Mode == Mode::Game)
+        return false;
+    if (s.Mode == Mode::Free) {
+        out = ToView(s.Free);
+    } else {
+        std::lock_guard lock(g_mutex);
+        if (g_keys.empty())
+            return false;
+        out = ToView(Sample(g_keys, Clock(), s.Style));
+    }
+    std::lock_guard lock(g_mutex);
+    g_last = out;
+    g_haveLast = true;
+    return true;
 }
 
 void Apply()
 {
     const uint32_t record = Record();
-    if (!record || !Override())
+    View game, v;
+    // Only over a real camera: the fight's, a replay's. Never over a menu's empty record.
+    if (!record || !Read(game) || !Wanted(v))
         return;
-    const View& v = Studio();
     WriteFloat(record + 0, v.Eye.X);
     WriteFloat(record + 4, v.Eye.Y);
     WriteFloat(record + 8, v.Eye.Z);
@@ -78,14 +263,89 @@ void Apply()
     WriteFloat(record + 56, v.Fov);
 }
 
+bool SavePath(const std::string& name)
+{
+    if (!SafeName(name))
+        return false;
+    std::ofstream file(PathsDir() / (name + ".ttt2path"), std::ios::trunc);
+    if (!file)
+        return false;
+    file << "# time x y z yaw pitch fov\n";
+    file.precision(9);
+    std::lock_guard lock(g_mutex);
+    for (const Key& key : g_keys)
+        file << key.Time << ' ' << key.Pose.Eye.X << ' ' << key.Pose.Eye.Y << ' ' << key.Pose.Eye.Z << ' ' << key.Pose.Yaw << ' ' << key.Pose.Pitch << ' ' << key.Pose.Fov << '\n';
+    return true;
+}
+
+bool LoadPath(const std::string& name)
+{
+    if (!SafeName(name))
+        return false;
+    std::ifstream file(PathsDir() / (name + ".ttt2path"));
+    if (!file)
+        return false;
+    std::vector<Key> keys;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+        std::istringstream row(line);
+        Key key;
+        if (row >> key.Time >> key.Pose.Eye.X >> key.Pose.Eye.Y >> key.Pose.Eye.Z >> key.Pose.Yaw >> key.Pose.Pitch >> key.Pose.Fov)
+            keys.push_back(key);
+    }
+    std::sort(keys.begin(), keys.end(), [](const Key& a, const Key& b) { return a.Time < b.Time; });
+    std::lock_guard lock(g_mutex);
+    g_keys = std::move(keys);
+    return true;
+}
+
+std::vector<std::string> SavedPaths()
+{
+    std::vector<std::string> names;
+    std::error_code ignored;
+    for (const auto& entry : std::filesystem::directory_iterator(PathsDir(), ignored))
+        if (entry.path().extension() == ".ttt2path")
+            names.push_back(entry.path().stem().string());
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+bool Project(const View& view, float aspect, Vec3 point, float& x, float& y)
+{
+    // The camera's axes from eye and target, with the world's Y as up.
+    Vec3 f { view.Target.X - view.Eye.X, view.Target.Y - view.Eye.Y, view.Target.Z - view.Eye.Z };
+    const float length = std::sqrt(f.X * f.X + f.Y * f.Y + f.Z * f.Z);
+    if (length < 0.001f)
+        return false;
+    f = { f.X / length, f.Y / length, f.Z / length };
+    Vec3 r { -f.Z, 0, f.X }; // forward x up(0,1,0), so it points to the picture's right
+    const float flat = std::sqrt(r.X * r.X + r.Z * r.Z);
+    if (flat < 0.0001f)
+        return false;
+    r = { r.X / flat, 0, r.Z / flat };
+    const Vec3 u { r.Y * f.Z - r.Z * f.Y, r.Z * f.X - r.X * f.Z, r.X * f.Y - r.Y * f.X };
+    const Vec3 d { point.X - view.Eye.X, point.Y - view.Eye.Y, point.Z - view.Eye.Z };
+    const float ahead = d.X * f.X + d.Y * f.Y + d.Z * f.Z;
+    if (ahead < 1.0f)
+        return false;
+    const float side = d.X * r.X + d.Y * r.Y + d.Z * r.Z, up = d.X * u.X + d.Y * u.Y + d.Z * u.Z;
+    // The game's field of view is the picture's height (measured against the fighters' places, see the mod log).
+    const float half = std::tan(Radians(view.Fov) * 0.5f);
+    x = 0.5f + 0.5f * side / (ahead * half * aspect);
+    y = 0.5f - 0.5f * up / (ahead * half);
+    return std::fabs(x) < 40 && std::fabs(y) < 40;
+}
+
 } // namespace studio::camera
 
-// The game's function that writes the frame's camera into its record, once a frame. BlueSpark doesn't hook it (checked against
-// ttt2_ours.lib of release 23). The original runs first, then the studio's view goes over what it wrote.
+// The game's function that writes the frame's camera into its record. BlueSpark doesn't hook it (checked against ttt2_ours.lib of
+// release 23). The original runs first, then the studio's view goes over what it wrote.
 extern "C" void __imp__sub_82541878(PPCContext& ctx, uint8_t* base);
 extern "C" void sub_82541878(PPCContext& ctx, uint8_t* base)
 {
     __imp__sub_82541878(ctx, base);
+    ++studio::camera::g_writes;
     studio::camera::Apply();
 }
-
