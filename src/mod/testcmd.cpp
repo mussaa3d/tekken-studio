@@ -17,6 +17,7 @@
 #include "mod/effects.h"
 #include "mod/game.h"
 #include "mod/gameui.h"
+#include "mod/hudframe.h"
 #include "mod/guard.h"
 #include "mod/lights.h"
 #include "mod/log.h"
@@ -970,6 +971,8 @@ void Run(const std::string& line)
             sc.KeepFighters = a != 0;
         else if (what == "fit")
             sc.Fit = static_cast<float>(a);
+        else if (what == "hud")
+            sc.HudFrame = static_cast<int>(a);
     } else if (command == "subprop") {
         // subprop <Class> <Property> [float]: reads, and can write, a value on every object of a class
         std::string name, property;
@@ -1066,6 +1069,25 @@ void Run(const std::string& line)
         dvars::ApplyGraphicsPreset(n);
     } else if (command == "owners") {
         effects::LogVisibleOwners();
+    } else if (command == "hudtree") {
+        // hudtree [part of a class name]: the HUD widgets on screen, as trees
+        hudframe::Dump(Rest(in));
+    } else if (command == "widgetvis") {
+        // widgetvis <part of a class name> <0|1>: hides or shows every widget of matching classes
+        std::string part;
+        in >> part >> n;
+        int count = 0;
+        for (void* widget : ue::AllObjectsOf(ue::FindClass("UserWidget")))
+            if (!(ue::Field<uint32_t>(widget, ue::off::ObjectFlags) & ue::off::RF_ClassDefaultObject) && ue::ClassNameOf(widget).find(part) != std::string::npos) {
+                ue::SetWidgetVisibility(widget, n ? ue::SlateVisibility::SelfHitTestInvisible : ue::SlateVisibility::Hidden);
+                ++count;
+            }
+        mod::Log("[test] widgetvis %s %d: %d widgets", part.c_str(), n, count);
+    } else if (command == "hudanchor") {
+        // hudanchor <minX> <minY> <maxX> <maxY>: every widget on screen into that part of the window (0 0 1 1 is the whole window)
+        float x0 = 0, y0 = 0, x1 = 1, y1 = 1;
+        in >> x0 >> y0 >> x1 >> y1;
+        hudframe::Anchor(x0, y0, x1, y1);
     } else if (command == "hudlist") {
         effects::LogVisibleWidgets();
     } else if (command == "hitlabels") {

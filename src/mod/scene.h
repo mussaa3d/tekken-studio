@@ -18,6 +18,8 @@ struct Settings {
     // shows more at the sides, a portrait one is the middle of the 16:9 view. Off, the shape is a crop of the game's picture.
     bool KeepFighters = true;
     float Fit = 0; // 0 keeps the 16:9 view's height, 1 its width (for portrait: everything the 16:9 picture showed, smaller)
+    // The game's HUD with a shape: 0 as the game draws it (over the whole window), 1 in the picture, 2 laid out for the shape.
+    int HudFrame = 1;
 };
 Settings& Config();
 

@@ -24,7 +24,7 @@ add_library(tekken8mvm_mod SHARED
     src/mod/menu.cpp src/mod/savetrace.cpp src/mod/dvars.cpp src/mod/postfx.cpp src/mod/lights.cpp src/mod/audio.cpp
     src/mod/presets.cpp src/mod/replay.cpp src/mod/sharing.cpp src/mod/testcmd.cpp src/mod/pakmods.cpp src/mod/scene.cpp src/mod/inputblock.cpp src/common/version.rc src/common/config.cpp
     src/mod/actors.cpp src/mod/spawner.cpp src/mod/window.cpp src/mod/reshadelink.cpp src/mod/fonts.rc
-    src/mod/events.cpp src/mod/gameui.cpp
+    src/mod/events.cpp src/mod/gameui.cpp src/mod/hudframe.cpp
     ${IMGUI_CORE} ${IMGUI}/backends/imgui_impl_dx12.cpp)
 set_target_properties(tekken8mvm_mod PROPERTIES OUTPUT_NAME dinput8)
 target_include_directories(tekken8mvm_mod PRIVATE src ${IMGUI} ${IMGUI}/backends third_party/reshade/include third_party/fonts)

@@ -1029,6 +1029,9 @@ void VisualsTab()
             ImGui::NewLine();
             ImGui::Checkbox("Keep the fighters where they are", &s.KeepFighters);
             Help("The game's camera, the free camera and the dolly path all keep their 16:9 framing: the field of view follows the shape, so the fighters keep their size and place. 21:9 and 32:9 show more of the stage at the sides, and 9:16 or 10:16 is the middle of the 16:9 picture, for TikTok, Reels and Shorts. Off, the shape is a crop of the game's own picture.");
+            Row("HUD");
+            ImGui::Combo("##HUD frame", &s.HudFrame, "As the game draws it\0In the picture\0Laid out for the shape\0");
+            Help("In the picture puts the game's HUD inside the picture, as small as it comes out in a recording of this shape. Laid out for the shape spreads it to the picture's edges too: in portrait the health bars go to the top and the controls to the bottom, in a wide shape the side parts go to the sides. As the game draws it leaves the HUD over the whole window.");
             if (s.KeepFighters && s.AspectRatio < 16.0f / 9 - 0.01f) {
                 Row("Fit");
                 ImGui::SliderFloat("##Fit", &s.Fit, 0.0f, 1.0f, s.Fit < 0.01f ? "same size" : s.Fit > 0.99f ? "whole 16:9 width" : "%.2f");

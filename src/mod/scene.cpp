@@ -9,6 +9,7 @@
 
 #include "common/cinemath.h"
 #include "mod/effects.h"
+#include "mod/hudframe.h"
 #include "mod/window.h"
 #include "mod/lights.h"
 #include "mod/log.h"
@@ -366,6 +367,14 @@ void OnGameTick()
     lightsWereWanted = lightsWanted;
     UpdateController();
     UpdatePlain();
+
+    // The HUD with the picture's shape.
+    int width = 0, height = 0;
+    window::PictureSize(width, height);
+    const float aspect = g_settings.Frame == Frame::Fixed ? std::max(g_settings.AspectRatio, 0.2f)
+                         : g_settings.Frame == Frame::Fill && height > 0 ? static_cast<float>(width) / height
+                                                                          : 0.0f;
+    hudframe::Apply(g_settings.Frame == Frame::Game ? hudframe::Mode::Game : static_cast<hudframe::Mode>(std::clamp(g_settings.HudFrame, 0, 2)), aspect, width, height);
 }
 
 void BeforeCameraUpdate(void* cameraManager)

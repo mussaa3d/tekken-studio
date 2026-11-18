@@ -137,6 +137,7 @@ void WriteLook(Ini& ini)
     ini.SetNumber("scene.aspect_ratio", sc.AspectRatio);
     ini.SetBool("scene.keep_fighters", sc.KeepFighters);
     ini.SetNumber("scene.fit", sc.Fit);
+    ini.SetNumber("scene.hud_frame", sc.HudFrame);
     ini.SetBool("fx.no_hit", e.NoHitEffects);
     ini.SetBool("fx.fog_hides_mist", e.FogHidesMist);
     ini.SetBool("fx.no_drama", e.NoDramaManager);
@@ -339,6 +340,7 @@ void ReadLook(const Ini& ini, bool whole = true)
     // A look saved before this choice existed keeps the framing it was made with: the shape as a crop.
     sc.KeepFighters = ini.GetBool("scene.keep_fighters", false);
     sc.Fit = std::clamp(static_cast<float>(ini.GetNumber("scene.fit", sc.Fit)), 0.0f, 1.0f);
+    sc.HudFrame = std::clamp(static_cast<int>(ini.GetNumber("scene.hud_frame", 0)), 0, 2); // a look from before: the game's own HUD
     e.NoHitEffects = ini.GetBool("fx.no_hit", e.NoHitEffects);
     e.FogHidesMist = ini.GetBool("fx.fog_hides_mist", e.FogHidesMist);
     e.NoDramaManager = ini.GetBool("fx.no_drama", e.NoDramaManager);
