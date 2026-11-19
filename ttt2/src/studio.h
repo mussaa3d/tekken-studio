@@ -120,6 +120,9 @@ int HudCallerCount();
 void HudHideCaller(int index, bool hide);
 void HudHideNone();
 std::string HudCallersSeen(); // research: the callers that asked since the last look
+// The game's HUD fitted into the picture's shape (hudshape.cpp). On by default.
+bool& HudFollowsShape();
+uint64_t HudPassesSeen();
 void SkipTest(int which, bool hold);
 std::string SkipCounts();
 

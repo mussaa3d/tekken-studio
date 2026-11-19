@@ -217,15 +217,17 @@ void ShapeControls()
                     HudApplyPreset(i);
             ImGui::EndCombo();
         }
-        ImGui::TextWrapped("The game's own health bars, timer, portraits and name tags, in parts or gone. With a portrait shape, Timer only or No HUD "
-                           "keeps the cut clean. BlueSpark's hints and Practice boxes aren't the game's: they're off whenever the editor is open or a "
-                           "recording runs.");
+        ImGui::Checkbox("The HUD follows the shape", &HudFollowsShape());
+        if (HudFollowsShape() && camera::Config().ShapeAspect > 0)
+            ImGui::SliderFloat("HUD size", &camera::Config().HudSize, 1.0f, 3.0f, camera::Config().HudSize < 1.01f ? "whole HUD" : "%.2fx");
+        ImGui::TextWrapped("The game's own health bars, timer, portraits and name tags, in parts or gone. With a shape on, the whole HUD is drawn "
+                           "inside it: as big as fits, along the top. BlueSpark's hints and Practice boxes aren't the game's: they're off whenever "
+                           "the editor is open or a recording runs.");
         Section("About the shape");
     }
     ImGui::TextWrapped("The fighters stay where the 16:9 picture has them: 21:9 and 32:9 show more of the stage at the sides, 9:16 and 10:16 are the middle of "
                        "the picture, for TikTok, Reels and Shorts. Fit widens a portrait view until it holds everything 16:9 did. The bars are only on "
-                       "screen: a recording (F9) is the shape itself. The game's own health bars stay where 16:9 puts them, so a portrait shape cuts "
-                       "their ends off.");
+                       "screen: a recording (F9) is the shape itself.");
 }
 
 void CameraTab()

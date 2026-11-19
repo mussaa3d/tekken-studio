@@ -110,6 +110,33 @@ void Run(const std::string& line, std::ostringstream& out)
         int which = -1, hold = 0;
         in >> which >> hold;
         SkipTest(which, hold != 0);
+    } else if (command == "findf") {
+        // findf <a> <b> [words apart, 1]: every place in the game's memory with float a followed by float b that many words on
+        float a = 0, b = 0;
+        int apart = 1, found = 0;
+        in >> a >> b >> apart;
+        uint8_t* base = GuestBase();
+        MEMORY_BASIC_INFORMATION info {};
+        for (uint64_t at = 0x30000000; base && at < 0x90000000 && VirtualQuery(base + at, &info, sizeof(info));) {
+            const uint64_t start = static_cast<const uint8_t*>(info.BaseAddress) - base, size = info.RegionSize;
+            if (info.State == MEM_COMMIT && !(info.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && info.Protect != 0) {
+                for (uint64_t p = std::max<uint64_t>(start, at) & ~3ull; p + 4ull * apart + 4 <= start + size && found < 200; p += 4) {
+                    if (ReadFloat(static_cast<uint32_t>(p)) == a && ReadFloat(static_cast<uint32_t>(p + 4ull * apart)) == b) {
+                        char text[32];
+                        snprintf(text, sizeof(text), "%08X\n", static_cast<uint32_t>(p));
+                        out << text;
+                        ++found;
+                    }
+                }
+            }
+            at = start + size;
+        }
+        out << "found " << found << "\n";
+    } else if (command == "hudfollow") {
+        int on = 1;
+        in >> on;
+        HudFollowsShape() = on != 0;
+        in >> camera::Config().HudSize;
     } else if (command == "hudpreset") {
         int preset = 0;
         in >> preset;

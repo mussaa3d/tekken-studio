@@ -53,6 +53,8 @@ struct Settings {
     // middle of the picture. Fit, for portrait: 0 keeps the fighters' size, 1 widens the view until the cut holds the whole 16:9 width.
     float ShapeAspect = 0;
     float ShapeFit = 0;
+    // The HUD inside a shape: 1 is the whole HUD as big as fits; more makes it bigger, its outer ends running off the shape's sides.
+    float HudSize = 1;
 };
 Settings& Config();
 
