@@ -161,6 +161,7 @@ The launcher's **TTT2** tab puts the studio into Tekken Tag Tournament 2 running
 - **Time:** pause (Space), slow motion at 0.5x, 0.25x, 0.1x and 0.05x, and frame steps (the full stop), in replays, Practice and offline fights. Slow motion is the game's real frames shown slower.
 - **Camera:** a free camera (F5, right mouse button to look, WASD and Q/E to move, the wheel for field of view), and camera keys on a timeline with a path through them (K adds a key, F6 plays the path). The path and its keys are drawn in the picture, with arrows to drag each key. Paths save to and load from files.
 - **Recording (F9):** a video at 60 frames a second and the window's size, in `Videos\tekken8mvm`. The game is run one frame at a time and each picture taken, so every game frame is in the video exactly once however slow the PC is, and at a slow speed each frame is written several times. While it records the studio draws nothing and BlueSpark's hints are off. It needs ffmpeg: the one Tekken Studio's installer downloads is used, or one on your PATH.
+- **Picture shape** (the Camera tab): 16:9, 21:9, 32:9, 2.39, 9:16 and 10:16. The fighters stay where the 16:9 picture has them: the field of view follows the shape, so 21:9 and 32:9 show more of the stage at the sides, and 9:16 and 10:16 are the middle of the picture, for TikTok, Reels and Shorts. **Fit** widens a portrait view until it holds everything 16:9 did. On screen the rest is covered with bars, and a recording is the shape itself. The game always draws 16:9, so a shape is a cut of that picture: 21:9 from a 1920 x 1080 window is 1920 x 822, and a portrait cut (675 x 1080 for 10:16) is brought up to 1080 wide in the video.
 - **BlueSpark's own overlay** (its button hints, its SELECT pill and its Practice boxes) is taken off while the editor is open over a fight, and comes back when the editor closes.
 
 What it doesn't do:
@@ -168,7 +169,8 @@ What it doesn't do:
 - **Recording takes the picture off the screen,** so the game's window has to stay in front and uncovered, and the video is the size of the window.
 - **The timeline can't jump to a moment.** BlueSpark's own replay keys do that: LB goes back 3 seconds, Select + Left / Right changes round.
 - While the fight is fully paused the picture only redraws when a frame runs, so a camera move in a pause runs a frame: one for a single move, at most one frame in five while you keep moving.
-- **The Tekken 8 Look and Scene tabs aren't here** (lighting, sky, effects, actors, props, skins, ReShade, picture shapes, the HUD's layout): they're built on Unreal Engine, which this game doesn't use.
+- **The game's own HUD doesn't follow a shape.** Its health bars and timer stay where 16:9 puts them, so 21:9 and 32:9 cut them off at the top and a portrait shape cuts the bars' ends off.
+- **The Tekken 8 Look and Scene tabs aren't here** (lighting, sky, effects, actors, props, skins, ReShade, the HUD's layout): they're built on Unreal Engine, which this game doesn't use.
 
 ## Good to know
 - **An actor's jacket and straps hang still.** The game moves those with its own cloth solver, which an actor doesn't have. Hair and anything else moved by bones plays as it was recorded.

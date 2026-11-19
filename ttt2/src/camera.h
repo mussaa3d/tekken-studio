@@ -47,12 +47,24 @@ struct Settings {
     float LookSpeed = 0.15f; // degrees a pixel
     PathStyle Style = PathStyle::Smooth;
     bool ShowPath = true;
+    // The picture's shape, width over height; 0 is the game's own 16:9. The game always draws 16:9, so a shape is that picture cut
+    // to the shape, with the field of view changed first so the fighters stay where 16:9 has them: a wider shape (21:9, 32:9) loses
+    // its top and bottom and gets a wider view, so it shows more at the sides at the same size; a portrait shape (9:16, 10:16) is the
+    // middle of the picture. Fit, for portrait: 0 keeps the fighters' size, 1 widens the view until the cut holds the whole 16:9 width.
+    float ShapeAspect = 0;
+    float ShapeFit = 0;
 };
 Settings& Config();
 
 void SetMode(Mode mode);
-// The view the game drew last: the studio's when it's on, else the game's own.
+// The view the game drew last: the studio's when it's on, else the game's own. Its field of view is the one meant for 16:9.
 bool Current(View& out);
+// The same with the field of view the picture really has (a shape changes it), for drawing over the picture.
+bool Drawn(View& out);
+// The field of view that goes to the game for one meant for 16:9, with the shape that's on.
+float ShapeFov(float fov);
+// The part of a picture of `width` x `height` the shape keeps: its left, top, right and bottom. The whole of it with no shape.
+void ShapeRect(float width, float height, float& left, float& top, float& right, float& bottom);
 // Puts the studio's view in the game's record, if a studio camera is on. Called right after the game writes its own, and from the
 // editor while the fight is held.
 void Apply();

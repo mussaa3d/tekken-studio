@@ -131,6 +131,17 @@ void SetMode(Mode mode)
     g_settings.Mode = mode;
 }
 
+std::atomic<float> g_gameFov { 0 };     // the game's own field of view, as it last wrote it
+std::atomic<float> g_lastWritten { 0 }; // the field of view the studio last put in the record, 0 if none
+
+// The game's function runs many times a frame and doesn't write the field of view every time, so what's in the record can be the
+// studio's own value from a moment ago: only a value that isn't the studio's counts as the game's.
+void WriteFov(uint32_t record, float fov)
+{
+    WriteFloat(record + 56, fov);
+    g_lastWritten.store(fov, std::memory_order_relaxed);
+}
+
 bool Current(View& out)
 {
     {
@@ -140,7 +151,55 @@ bool Current(View& out)
             return true;
         }
     }
-    return Read(out);
+    if (!Read(out))
+        return false;
+    // With a shape on, the record holds the changed field of view: the game's own is the one for 16:9.
+    const float own = g_gameFov.load(std::memory_order_relaxed);
+    if (g_settings.ShapeAspect > 0 && own > 1 && own < 179)
+        out.Fov = own;
+    return true;
+}
+
+bool Drawn(View& out)
+{
+    if (!Current(out))
+        return false;
+    out.Fov = ShapeFov(out.Fov);
+    return true;
+}
+
+float ShapeFov(float fov)
+{
+    constexpr float Wide = 16.0f / 9.0f;
+    const float aspect = g_settings.ShapeAspect;
+    if (!(aspect > 0.1f) || std::fabs(aspect - Wide) < 0.005f || !(fov > 1 && fov < 179))
+        return fov;
+    // The field of view is across the width. Wider than 16:9: the cut keeps the full width and loses height, so the view widens
+    // by the same share and the fighters keep their size against the cut's height. Narrower: the cut is the middle of the picture
+    // as it is; Fit widens the view towards the whole 16:9 width.
+    const float factor = aspect > Wide ? aspect / Wide : std::pow(Wide / aspect, std::clamp(g_settings.ShapeFit, 0.0f, 1.0f));
+    const float half = std::tan(Radians(fov) * 0.5f) * factor;
+    return std::clamp(std::atan(half) * 2.0f * 57.29577951f, 1.0f, 170.0f);
+}
+
+void ShapeRect(float width, float height, float& left, float& top, float& right, float& bottom)
+{
+    left = top = 0;
+    right = width;
+    bottom = height;
+    const float aspect = g_settings.ShapeAspect;
+    if (!(aspect > 0.1f) || width <= 0 || height <= 0)
+        return;
+    const float whole = width / height;
+    if (aspect > whole) {
+        const float keep = width / aspect;
+        top = (height - keep) * 0.5f;
+        bottom = top + keep;
+    } else {
+        const float keep = height * aspect;
+        left = (width - keep) * 0.5f;
+        right = left + keep;
+    }
 }
 
 std::vector<Key>& Keys()
@@ -252,15 +311,41 @@ void Apply()
     const uint32_t record = Record();
     View game, v;
     // Only over a real camera: the fight's, a replay's. Never over a menu's empty record.
-    if (!record || !Read(game) || !Wanted(v))
+    if (!record || !Read(game))
         return;
+    if (!Wanted(v)) {
+        // The game's own camera: only its field of view, for a shape.
+        const float own = g_gameFov.load(std::memory_order_relaxed);
+        if (!(own > 1 && own < 179))
+            return;
+        if (g_settings.ShapeAspect > 0) {
+            WriteFov(record, ShapeFov(own));
+        } else if (g_lastWritten.load(std::memory_order_relaxed) > 0) {
+            // The shape or a studio camera has just gone off: the game's own goes back, once.
+            WriteFloat(record + 56, own);
+            g_lastWritten.store(0, std::memory_order_relaxed);
+        }
+        return;
+    }
     WriteFloat(record + 0, v.Eye.X);
     WriteFloat(record + 4, v.Eye.Y);
     WriteFloat(record + 8, v.Eye.Z);
     WriteFloat(record + 16, v.Target.X);
     WriteFloat(record + 20, v.Target.Y);
     WriteFloat(record + 24, v.Target.Z);
-    WriteFloat(record + 56, v.Fov);
+    WriteFov(record, ShapeFov(v.Fov));
+}
+
+// Right after the game has written its own camera: its field of view is kept before anything of the studio's goes over it.
+void GameWrote()
+{
+    const uint32_t record = Record();
+    if (!record)
+        return;
+    const float fov = ReadFloat(record + 56);
+    const float ours = g_lastWritten.load(std::memory_order_relaxed);
+    if (fov > 1 && fov < 179 && !(ours > 0 && std::fabs(fov - ours) < 0.0005f))
+        g_gameFov.store(fov, std::memory_order_relaxed);
 }
 
 bool SavePath(const std::string& name)
@@ -372,6 +457,7 @@ extern "C" void sub_82541878(PPCContext& ctx, uint8_t* base)
         studio::Log("stack at the camera write: %s", line.c_str());
     }
     __imp__sub_82541878(ctx, base);
+    studio::camera::GameWrote();
     ++studio::camera::g_writes;
     studio::camera::Apply();
 }

@@ -184,9 +184,39 @@ void ReplaysTab()
                        "and Select + LB takes over a fighter.");
 }
 
+// The picture's shape: buttons for the usual ones, and how a portrait one fits.
+void ShapeControls()
+{
+    camera::Settings& s = camera::Config();
+    Section("Picture shape");
+    struct Choice {
+        const char* Name;
+        float Aspect;
+    };
+    static const Choice choices[] = { { "16:9", 0 }, { "21:9", 21.0f / 9 }, { "32:9", 32.0f / 9 }, { "2.39", 2.39f }, { "9:16", 9.0f / 16 }, { "10:16", 10.0f / 16 } };
+    for (const Choice& choice : choices) {
+        const bool on = std::fabs(s.ShapeAspect - choice.Aspect) < 0.002f;
+        if (on)
+            ImGui::PushStyleColor(ImGuiCol_Button, Colour(Mix(pal::Raised, pal::Accent, 0.40f)));
+        if (ImGui::SmallButton(choice.Name))
+            s.ShapeAspect = choice.Aspect;
+        if (on)
+            ImGui::PopStyleColor();
+        ImGui::SameLine();
+    }
+    ImGui::NewLine();
+    if (s.ShapeAspect > 0 && s.ShapeAspect < 16.0f / 9 - 0.01f)
+        ImGui::SliderFloat("Fit", &s.ShapeFit, 0.0f, 1.0f, s.ShapeFit < 0.01f ? "same size" : s.ShapeFit > 0.99f ? "whole 16:9 width" : "%.2f");
+    ImGui::TextWrapped("The fighters stay where the 16:9 picture has them: 21:9 and 32:9 show more of the stage at the sides, 9:16 and 10:16 are the middle of "
+                       "the picture, for TikTok, Reels and Shorts. Fit widens a portrait view until it holds everything 16:9 did. The bars are only on "
+                       "screen: a recording (F9) is the shape itself. The game's own health bars stay where 16:9 puts them, so a portrait shape cuts "
+                       "their ends off.");
+}
+
 void CameraTab()
 {
     camera::Settings& s = camera::Config();
+    ShapeControls();
     Section("Camera");
     const int mode = static_cast<int>(s.Mode);
     if (ImGui::RadioButton("Game", mode == 0))
@@ -336,7 +366,7 @@ void PathInPicture(ImDrawList* draw, ImVec2 size, bool interactive)
     camera::Settings& s = camera::Config();
     std::vector<camera::Key>& keys = camera::Keys();
     camera::View view;
-    if (!s.ShowPath || s.Mode == camera::Mode::Dolly || keys.empty() || !camera::Current(view))
+    if (!s.ShowPath || s.Mode == camera::Mode::Dolly || keys.empty() || !camera::Drawn(view))
         return;
     const float aspect = size.x / std::max(size.y, 1.0f);
     auto project = [&](camera::Vec3 p, ImVec2& out) {
@@ -451,7 +481,7 @@ bool g_markers = false;
 void FighterMarkers(ImDrawList* draw, ImVec2 size)
 {
     camera::View view;
-    if (!g_markers || !camera::Current(view) || !Readable(0x82DE69E0, 64))
+    if (!g_markers || !camera::Drawn(view) || !Readable(0x82DE69E0, 64))
         return;
     for (int i = 0; i < 4; ++i) {
         const camera::Vec3 at { ReadFloat(0x82DE69E0 + i * 16), ReadFloat(0x82DE69E4 + i * 16), ReadFloat(0x82DE69E8 + i * 16) };
@@ -756,6 +786,20 @@ protected:
         ImDrawList* background = ImGui::GetBackgroundDrawList();
         const ImVec2 display = io.DisplaySize;
         const bool fight = CanHold() || ReplayPlaying();
+        // A shape: what's outside it is covered, as a recording leaves it out.
+        if (fight && camera::Config().ShapeAspect > 0) {
+            float left = 0, top = 0, right = 0, bottom = 0;
+            camera::ShapeRect(display.x, display.y, left, top, right, bottom);
+            const ImU32 black = IM_COL32(0, 0, 0, 255);
+            if (top > 0.5f) {
+                background->AddRectFilled({ 0, 0 }, { display.x, top }, black);
+                background->AddRectFilled({ 0, bottom }, { display.x, display.y }, black);
+            }
+            if (left > 0.5f) {
+                background->AddRectFilled({ 0, 0 }, { left, display.y }, black);
+                background->AddRectFilled({ right, 0 }, { display.x, display.y }, black);
+            }
+        }
         if (g_mode == EditorMode::Hidden || (g_mode == EditorMode::Simple && !fight)) {
             const char* label = "Tekken Studio v0.1 beta";
             background->AddText({ display.x - ImGui::CalcTextSize(label).x - 12, 8 }, IM_COL32(255, 255, 255, 110), label);

@@ -110,6 +110,11 @@ void Run(const std::string& line, std::ostringstream& out)
         int which = -1, hold = 0;
         in >> which >> hold;
         SkipTest(which, hold != 0);
+    } else if (command == "shape") {
+        // shape <aspect, 0 for the game's own> [fit 0-1]
+        camera::Settings& s = camera::Config();
+        s.ShapeFit = 0;
+        in >> s.ShapeAspect >> s.ShapeFit;
     } else if (command == "rec") {
         // rec <start|stop>
         std::string what;

@@ -5,6 +5,8 @@
 // overlay is off, so the video is the game's picture alone. There is no sound in it.
 #include "studio.h"
 
+#include "camera.h"
+
 #include <windows.h>
 
 #include <atomic>
@@ -29,7 +31,8 @@ std::atomic<uint64_t> g_written { 0 }, g_gameFrames { 0 };
 
 HANDLE g_pipe = nullptr, g_process = nullptr;
 HWND g_window = nullptr;
-int g_width = 0, g_height = 0;
+int g_width = 0, g_height = 0; // the part of the window that's recorded
+int g_left = 0, g_top = 0;     // its corner in the window
 double g_share = 0; // slow motion: video frames owed for the game frames so far
 std::vector<uint8_t> g_pixels;
 std::wstring g_file;
@@ -116,11 +119,13 @@ bool StartFfmpeg()
         return false;
     SetHandleInformation(write, HANDLE_FLAG_INHERIT, 0);
     g_file = OutputFile();
+    // A portrait cut of a 16:9 window is narrow (607 wide at 1080p): brought up to 1080 wide, which is what phones are sent.
+    const wchar_t* upscale = g_width < g_height && g_width < 1080 ? L"scale=1080:-2:flags=lanczos," : L"";
     wchar_t command[2048];
     swprintf_s(command,
-               L"\"%s\" -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 -s %dx%d -r 60 -i - -vf \"scale=out_color_matrix=bt709:out_range=tv\" "
+               L"\"%s\" -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 -s %dx%d -r 60 -i - -vf \"%sscale=out_color_matrix=bt709:out_range=tv\" "
                L"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v libx264 -preset medium -crf 15 -pix_fmt yuv420p \"%s\"",
-               ffmpeg.c_str(), g_width, g_height, g_file.c_str());
+               ffmpeg.c_str(), g_width, g_height, upscale, g_file.c_str());
     // ffmpeg gets the pipe's reading end and nothing else of this process's: any other open file handed down would stay locked
     // for as long as it runs.
     STARTUPINFOEXW startup {};
@@ -171,7 +176,7 @@ bool Grab()
     bool ok = false;
     if (bitmap && bits) {
         HGDIOBJ old = SelectObject(memory, bitmap);
-        ok = BitBlt(memory, 0, 0, g_width, g_height, screen, corner.x, corner.y, SRCCOPY) != 0;
+        ok = BitBlt(memory, 0, 0, g_width, g_height, screen, corner.x + g_left, corner.y + g_top, SRCCOPY) != 0;
         GdiFlush();
         if (ok)
             memcpy(g_pixels.data(), bits, g_pixels.size());
@@ -240,8 +245,13 @@ void RecorderStart()
         g_error = "The game's window wasn't found.";
         return;
     }
-    g_width = client.right & ~1; // the video format wants even sizes
-    g_height = client.bottom & ~1;
+    // The picture's shape, if one is on: only that part of the window. The video format wants even sizes.
+    float left = 0, top = 0, right = 0, bottom = 0;
+    camera::ShapeRect(static_cast<float>(client.right), static_cast<float>(client.bottom), left, top, right, bottom);
+    g_left = static_cast<int>(left + 0.5f);
+    g_top = static_cast<int>(top + 0.5f);
+    g_width = static_cast<int>(right - left + 0.5f) & ~1;
+    g_height = static_cast<int>(bottom - top + 0.5f) & ~1;
     if (g_width < 16 || g_height < 16)
         return;
     g_pixels.assign(static_cast<size_t>(g_width) * g_height * 4, 0);
