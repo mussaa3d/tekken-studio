@@ -499,6 +499,27 @@ void ReplaysTab()
             saver = files::ReplaySaverInstalled(g_app.Game) ? 1 : 0;
         }
         ImGui::EndDisabled();
+        if (saver == 1) {
+            static int onKey = -1;
+            if (onKey < 0) {
+                settings.Load(ini);
+                onKey = settings.GetBool("saver_on_key", false) ? 1 : 0;
+            }
+            bool keyOnly = onKey == 1;
+            ImGui::Indent();
+            if (ImGui::Checkbox("Only when I press Ctrl+F10 in the game", &keyOnly)) {
+                onKey = keyOnly ? 1 : 0;
+                settings.Load(ini);
+                settings.SetBool("saver_on_key", keyOnly);
+                std::error_code ignored;
+                fs::create_directories(ini.parent_path(), ignored);
+                settings.Save(ini);
+            }
+            ImGui::TextColored(Dim, keyOnly ? "It does nothing until the key is pressed: then your new replays are saved. A high beep is a replay saved, a low one "
+                                              "nothing new. Takes effect the next time the game starts."
+                                            : "Off: each replay is saved a few seconds after the game adds it to its list.");
+            ImGui::Unindent();
+        }
         ImGui::TextWrapped("Puts a small mod (dinput8.dll) in the game folder that stays there, like a pak mod. While you play, ranked included, it saves "
                            "each of your replays into my_replays a few seconds after the game adds it to its list. It only reads the replay list and "
                            "writes files: no hooks, nothing changed in the game.");
