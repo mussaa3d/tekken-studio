@@ -81,6 +81,26 @@ std::string WatchDump();
 void StartCommands();
 
 // Research (skip.cpp): one of the game's frame functions left out while `hold`; calls and skips of each, for the state file.
+// The game's sound to a WAV file (audio.cpp).
+namespace audio {
+bool Start(const std::filesystem::path& file);
+void Stop();
+bool Running();
+std::string LastError();
+} // namespace audio
+
+// The game's HUD in presets (hud.cpp): 0 the game's own, 1 clean (health bars, timer and portraits), 2 health bars and timer,
+// 3 health bars, 4 timer, 5 none.
+constexpr int HudPresetCount = 6;
+const char* HudPresetName(int preset);
+int& HudPreset();
+void HudApplyPreset(int preset);
+
+// Recording with sound runs in real time; without, frame for frame. On by default.
+bool& RecorderWithSound();
+// A recording that paces the game itself, frame by frame (the kind without sound).
+bool RecorderPacesGame();
+
 // Recording to video, frame for frame (recorder.cpp). Start and Stop from the overlay's thread; AllowsFrame is asked by skip.cpp once a
 // game frame while a recording runs; OnPresent once a present.
 bool RecorderActive();
@@ -95,6 +115,11 @@ std::filesystem::path RecorderFolder();
 // BlueSpark's own overlay (hints, pill, pages) taken off the presenter, or put back (overlay.cpp).
 void HideBlueSparkOverlay(bool hide);
 void DumpFrameOnce(); // research: logs the ImGui windows in the next frame
+// The game's HUD (hud.cpp): each place that asks "is the mode 7" can be answered yes, which hides that part of the HUD.
+int HudCallerCount();
+void HudHideCaller(int index, bool hide);
+void HudHideNone();
+std::string HudCallersSeen(); // research: the callers that asked since the last look
 void SkipTest(int which, bool hold);
 std::string SkipCounts();
 

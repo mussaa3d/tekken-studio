@@ -704,7 +704,7 @@ void Ttt2Tab()
     ImGui::Spacing();
     ImGui::TextWrapped("Simple is for watching: BlueSpark's own replay viewer with the studio's playback bar. Studio adds the editor: a free camera, camera paths "
                        "on a timeline, and pause, slow motion and frame steps, in replays as in Practice and offline fights. Insert switches between them at "
-                       "any time, Home hides the bar, and F9 records a video (60 frames a second, every game frame once, no sound).");
+                       "any time, Home hides the bar, and F9 records a video with the game's sound.");
     ImGui::TextColored(Dim, "The studio never goes online: no sign-in, no matchmaking, no uploads. Play online with BlueSpark's own Start Here.");
 }
 

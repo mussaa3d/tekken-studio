@@ -207,6 +207,21 @@ void ShapeControls()
     ImGui::NewLine();
     if (s.ShapeAspect > 0 && s.ShapeAspect < 16.0f / 9 - 0.01f)
         ImGui::SliderFloat("Fit", &s.ShapeFit, 0.0f, 1.0f, s.ShapeFit < 0.01f ? "same size" : s.ShapeFit > 0.99f ? "whole 16:9 width" : "%.2f");
+    {
+        Section("HUD");
+        int preset = HudPreset();
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##hudpreset", HudPresetName(preset))) {
+            for (int i = 0; i < HudPresetCount; ++i)
+                if (ImGui::Selectable(HudPresetName(i), i == preset))
+                    HudApplyPreset(i);
+            ImGui::EndCombo();
+        }
+        ImGui::TextWrapped("The game's own health bars, timer, portraits and name tags, in parts or gone. With a portrait shape, Timer only or No HUD "
+                           "keeps the cut clean. BlueSpark's hints and Practice boxes aren't the game's: they're off whenever the editor is open or a "
+                           "recording runs.");
+        Section("About the shape");
+    }
     ImGui::TextWrapped("The fighters stay where the 16:9 picture has them: 21:9 and 32:9 show more of the stage at the sides, 9:16 and 10:16 are the middle of "
                        "the picture, for TikTok, Reels and Shorts. Fit widens a portrait view until it holds everything 16:9 did. The bars are only on "
                        "screen: a recording (F9) is the shape itself. The game's own health bars stay where 16:9 puts them, so a portrait shape cuts "
@@ -341,6 +356,7 @@ void RecordTab()
     if (ImGui::Button("Record (F9)", { ImGui::GetFontSize() * 10, ImGui::GetFrameHeight() * 1.4f }))
         RecorderStart();
     ImGui::EndDisabled();
+    ImGui::Checkbox("With the game's sound", &RecorderWithSound());
     if (!fight)
         ImGui::TextWrapped("Start a replay, Practice or an offline fight first.");
     const std::string message = RecorderMessage();
@@ -352,11 +368,12 @@ void RecordTab()
         ShellExecuteW(nullptr, L"open", RecorderFolder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
     ImGui::Spacing();
-    ImGui::TextWrapped("F9 starts and stops. The video is 60 frames a second at the window's size, every game frame exactly once: the game runs one frame, the "
-                       "picture is taken, then the next, however long each takes. So it plays slower than real time while it records. At a slow speed "
-                       "each frame is written several times, which is slow motion from the game's real frames. The camera path keeps flying.");
-    ImGui::TextWrapped("While it records the studio draws nothing and BlueSpark's hints are off, so the video is the game's picture alone. Keep the game's "
-                       "window in front and uncovered: the picture is taken off the screen. There's no sound in the video.");
+    ImGui::TextWrapped("F9 starts and stops. With sound, the game plays as it is and is recorded in real time, 60 pictures a second with its own sound "
+                       "(only this game's, nothing else on the PC). What you see and hear is what's saved, pauses and slow motion included.");
+    ImGui::TextWrapped("Without sound, it's frame for frame: the game runs one frame, the picture is taken, then the next, however long each takes, so "
+                       "every game frame is in the video exactly once even on a slow PC, and at a slow speed each frame is written several times.");
+    ImGui::TextWrapped("While it records the studio draws nothing and BlueSpark's hints are off. Keep the game's window in front and uncovered: the "
+                       "picture is taken off the screen. The video is the picture's shape, if one is on.");
 }
 
 // ----- The path in the picture, with handles on the selected key

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <ctime>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace studio {
@@ -23,7 +24,9 @@ namespace {
 // by Windows first.
 constexpr int SettlePresents = 6;
 
-enum class Phase { Off, NeedFrame, Settling };
+enum class Phase { Off, NeedFrame, Settling, RealTime, Saving };
+bool g_withSound = true;
+std::wstring g_videoFile, g_soundFile; // a recording with sound: the two parts, put together into g_file at the end
 std::atomic<Phase> g_phase { Phase::Off };
 std::atomic<int> g_presents { 0 };
 std::atomic<bool> g_stopAsked { false };
@@ -119,13 +122,17 @@ bool StartFfmpeg()
         return false;
     SetHandleInformation(write, HANDLE_FLAG_INHERIT, 0);
     g_file = OutputFile();
+    // With sound the picture and the sound are written apart, then put together.
+    g_videoFile = g_file.substr(0, g_file.size() - 4) + L".video.mp4";
+    g_soundFile = g_file.substr(0, g_file.size() - 4) + L".sound.wav";
+    const std::wstring& target = g_withSound ? g_videoFile : g_file;
     // A portrait cut of a 16:9 window is narrow (607 wide at 1080p): brought up to 1080 wide, which is what phones are sent.
     const wchar_t* upscale = g_width < g_height && g_width < 1080 ? L"scale=1080:-2:flags=lanczos," : L"";
     wchar_t command[2048];
     swprintf_s(command,
                L"\"%s\" -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 -s %dx%d -r 60 -i - -vf \"%sscale=out_color_matrix=bt709:out_range=tv\" "
-               L"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v libx264 -preset medium -crf 15 -pix_fmt yuv420p \"%s\"",
-               ffmpeg.c_str(), g_width, g_height, upscale, g_file.c_str());
+               L"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v libx264 -preset %s -crf 15 -pix_fmt yuv420p \"%s\"",
+               ffmpeg.c_str(), g_width, g_height, upscale, g_withSound ? L"veryfast" : L"medium", target.c_str()); // in real time the encoder has to keep up
     // ffmpeg gets the pipe's reading end and nothing else of this process's: any other open file handed down would stay locked
     // for as long as it runs.
     STARTUPINFOEXW startup {};
@@ -205,7 +212,99 @@ void Finish()
         static_cast<unsigned long long>(g_written.load()));
 }
 
+// A plain run of ffmpeg, waited for.
+bool RunFfmpeg(const std::wstring& arguments)
+{
+    const std::wstring ffmpeg = FindFfmpeg();
+    std::wstring command = L"\"" + ffmpeg + L"\" " + arguments;
+    STARTUPINFOW startup { sizeof(startup) };
+    PROCESS_INFORMATION process {};
+    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process))
+        return false;
+    WaitForSingleObject(process.hProcess, 300000);
+    DWORD code = 1;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return code == 0;
+}
+
+// A recording with sound: the game runs as it is, and 60 times a second its picture is taken off the screen while its sound is
+// captured. A picture that comes late is written twice, so the video keeps the clock's time and stays with the sound.
+void RealTimeThread()
+{
+    Sleep(250); // the studio's own drawing leaves the screen first
+    audio::Start(g_soundFile);
+    LARGE_INTEGER rate, start, now;
+    QueryPerformanceFrequency(&rate);
+    QueryPerformanceCounter(&start);
+    uint64_t due = 0;
+    while (!g_stopAsked) {
+        QueryPerformanceCounter(&now);
+        const uint64_t should = static_cast<uint64_t>((now.QuadPart - start.QuadPart) * 60 / rate.QuadPart) + 1;
+        if (g_written >= should) {
+            Sleep(1);
+            continue;
+        }
+        Grab();
+        for (due = should - g_written; due > 0 && !g_stopAsked; --due) {
+            DWORD done = 0;
+            if (!WriteFile(g_pipe, g_pixels.data(), static_cast<DWORD>(g_pixels.size()), &done, nullptr) || done != g_pixels.size()) {
+                g_error = "ffmpeg stopped taking frames.";
+                g_stopAsked = true;
+                break;
+            }
+            ++g_written;
+        }
+    }
+    g_phase = Phase::Saving;
+    audio::Stop();
+    // If the encoder fell behind, the last picture fills the time that's missing, so the video is as long as the sound.
+    QueryPerformanceCounter(&now);
+    for (uint64_t should = static_cast<uint64_t>((now.QuadPart - start.QuadPart) * 60 / rate.QuadPart); g_written < should && g_pipe; ++g_written) {
+        DWORD done = 0;
+        if (!WriteFile(g_pipe, g_pixels.data(), static_cast<DWORD>(g_pixels.size()), &done, nullptr))
+            break;
+    }
+    for (int waited = 0; audio::Running() && waited < 300; ++waited)
+        Sleep(10);
+    if (g_pipe)
+        CloseHandle(g_pipe);
+    g_pipe = nullptr;
+    if (g_process) {
+        WaitForSingleObject(g_process, 60000);
+        CloseHandle(g_process);
+    }
+    g_process = nullptr;
+    // The picture as it is, the sound as AAC, cut to the shorter of the two.
+    const bool joined = RunFfmpeg(L"-hide_banner -loglevel error -y -i \"" + g_videoFile + L"\" -i \"" + g_soundFile
+                                  + L"\" -c:v copy -c:a aac -b:a 192k -shortest \"" + g_file + L"\"");
+    std::error_code ignored;
+    if (joined) {
+        std::filesystem::remove(g_videoFile, ignored);
+        std::filesystem::remove(g_soundFile, ignored);
+    } else {
+        // The picture is still worth having on its own.
+        std::filesystem::rename(g_videoFile, g_file, ignored);
+        g_error = audio::LastError().empty() ? "The sound couldn't be put in the video: it's saved without." : "No sound: " + audio::LastError();
+    }
+    Log("Recorder: stopped after %llu video frames in real time, sound %s", static_cast<unsigned long long>(g_written.load()), joined ? "in" : "not in");
+    g_stopAsked = false;
+    g_phase = Phase::Off;
+}
+
 } // namespace
+
+bool& RecorderWithSound()
+{
+    return g_withSound;
+}
+
+bool RecorderPacesGame()
+{
+    const Phase phase = g_phase.load(std::memory_order_relaxed);
+    return phase == Phase::NeedFrame || phase == Phase::Settling;
+}
 
 bool RecorderActive()
 {
@@ -224,7 +323,7 @@ std::string RecorderMessage()
     if (g_file.empty())
         return {};
     const std::filesystem::path file = g_file;
-    return (RecorderActive() ? "Recording " : "Saved ") + file.filename().string();
+    return (g_phase.load() == Phase::Saving ? "Saving " : RecorderActive() ? "Recording " : "Saved ") + file.filename().string();
 }
 
 std::filesystem::path RecorderFolder()
@@ -264,8 +363,13 @@ void RecorderStart()
     g_share = 0;
     g_presents = 0;
     g_stopAsked = false;
+    Log("Recorder: %d x %d to %ls%s", g_width, g_height, g_file.c_str(), g_withSound ? ", in real time with sound" : ", frame for frame");
+    if (g_withSound) {
+        g_phase = Phase::RealTime;
+        std::thread(RealTimeThread).detach();
+        return;
+    }
     Time().Paused = false;
-    Log("Recorder: %d x %d to %ls", g_width, g_height, g_file.c_str());
     // The picture on screen now is from before the studio's own drawing stopped: a few presents go by before the first frame runs.
     g_phase = Phase::Settling;
     g_first = true;
@@ -292,7 +396,7 @@ bool RecorderAllowsFrame()
 void RecorderOnPresent()
 {
     const Phase phase = g_phase.load(std::memory_order_relaxed);
-    if (phase == Phase::Off)
+    if (phase == Phase::Off || phase == Phase::RealTime || phase == Phase::Saving)
         return;
     if (phase == Phase::NeedFrame) {
         // Waiting for the game to run a frame. If it never does (a menu came up), a stop still has to end the file.

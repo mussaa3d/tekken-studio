@@ -110,6 +110,27 @@ void Run(const std::string& line, std::ostringstream& out)
         int which = -1, hold = 0;
         in >> which >> hold;
         SkipTest(which, hold != 0);
+    } else if (command == "hudpreset") {
+        int preset = 0;
+        in >> preset;
+        HudApplyPreset(preset);
+    } else if (command == "recsound") {
+        int on = 1;
+        in >> on;
+        RecorderWithSound() = on != 0;
+    } else if (command == "hudhide") {
+        // hudhide <caller index, -1 for none, -2 for all> [0|1]
+        int index = -1, on = 1;
+        in >> index >> on;
+        if (index == -1)
+            HudHideNone();
+        else if (index == -2)
+            for (int k = 0; k < HudCallerCount(); ++k)
+                HudHideCaller(k, on != 0);
+        else
+            HudHideCaller(index, on != 0);
+    } else if (command == "hudseen") {
+        out << "hudseen" << HudCallersSeen() << "\n";
     } else if (command == "shape") {
         // shape <aspect, 0 for the game's own> [fit 0-1]
         camera::Settings& s = camera::Config();
