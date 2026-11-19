@@ -22,6 +22,11 @@ std::atomic<uint64_t> g_frames { 0 }, g_leftOut { 0 };
 std::atomic<int> g_test { 0 }; // research: 1 leaves every frame out, whatever is playing
 } // namespace
 
+uint64_t GameFramesSeen()
+{
+    return g_frames;
+}
+
 void SkipTest(int, bool hold)
 {
     g_test = hold ? 1 : 0;

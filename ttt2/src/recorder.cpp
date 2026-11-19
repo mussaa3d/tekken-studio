@@ -9,6 +9,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <ctime>
@@ -17,6 +18,8 @@
 #include <vector>
 
 namespace studio {
+
+uint64_t GameFramesSeen(); // skip.cpp: the game's frames, counted where each begins
 
 namespace {
 
@@ -109,6 +112,18 @@ std::wstring OutputFile()
     return (folder / name).wstring();
 }
 
+bool RunFfmpeg(const std::wstring& arguments);
+
+// Whether this PC's graphics card can encode (NVIDIA's encoder), tried once. A recording with sound runs beside the game, and
+// the game needs the processor to itself to keep its speed.
+bool CardEncodes()
+{
+    static int known = -1;
+    if (known < 0)
+        known = RunFfmpeg(L"-hide_banner -loglevel error -f lavfi -i color=s=1280x720:r=60 -frames:v 3 -c:v h264_nvenc -f null -") ? 1 : 0;
+    return known == 1;
+}
+
 bool StartFfmpeg()
 {
     const std::wstring ffmpeg = FindFfmpeg();
@@ -128,11 +143,14 @@ bool StartFfmpeg()
     const std::wstring& target = g_withSound ? g_videoFile : g_file;
     // A portrait cut of a 16:9 window is narrow (607 wide at 1080p): brought up to 1080 wide, which is what phones are sent.
     const wchar_t* upscale = g_width < g_height && g_width < 1080 ? L"scale=1080:-2:flags=lanczos," : L"";
+    // Beside a running game the encoder has to keep up and leave the processor alone: the graphics card's, where there is one.
+    const wchar_t* encoder = !g_withSound ? L"-c:v libx264 -preset medium -crf 15"
+                             : CardEncodes() ? L"-c:v h264_nvenc -preset p4 -rc vbr -cq 19 -b:v 0 -maxrate 60M" : L"-c:v libx264 -preset ultrafast -crf 15";
     wchar_t command[2048];
     swprintf_s(command,
                L"\"%s\" -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 -s %dx%d -r 60 -i - -vf \"%sscale=out_color_matrix=bt709:out_range=tv\" "
-               L"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v libx264 -preset %s -crf 15 -pix_fmt yuv420p \"%s\"",
-               ffmpeg.c_str(), g_width, g_height, upscale, g_withSound ? L"veryfast" : L"medium", target.c_str()); // in real time the encoder has to keep up
+               L"-colorspace bt709 -color_primaries bt709 -color_trc bt709 %s -pix_fmt yuv420p \"%s\"",
+               ffmpeg.c_str(), g_width, g_height, upscale, encoder, target.c_str());
     // ffmpeg gets the pipe's reading end and nothing else of this process's: any other open file handed down would stay locked
     // for as long as it runs.
     STARTUPINFOEXW startup {};
@@ -229,8 +247,10 @@ bool RunFfmpeg(const std::wstring& arguments)
     return code == 0;
 }
 
-// A recording with sound: the game runs as it is, and 60 times a second its picture is taken off the screen while its sound is
-// captured. A picture that comes late is written twice, so the video keeps the clock's time and stays with the sound.
+// A recording with sound: the game runs as it is while its sound is captured, and its picture is taken off the screen once for
+// every frame the game runs. So the video is the game at full speed whatever speed this PC managed: a game frame is a video
+// frame. The sound was captured by the clock, so where the game ran slower than 60 a second it's longer than the video, and it's
+// brought to the video's length (its tempo, not its pitch) when the two are put together.
 void RealTimeThread()
 {
     Sleep(250); // the studio's own drawing leaves the screen first
@@ -238,16 +258,18 @@ void RealTimeThread()
     LARGE_INTEGER rate, start, now;
     QueryPerformanceFrequency(&rate);
     QueryPerformanceCounter(&start);
-    uint64_t due = 0;
+    uint64_t last = GameFramesSeen();
     while (!g_stopAsked) {
-        QueryPerformanceCounter(&now);
-        const uint64_t should = static_cast<uint64_t>((now.QuadPart - start.QuadPart) * 60 / rate.QuadPart) + 1;
-        if (g_written >= should) {
+        const uint64_t frames = GameFramesSeen();
+        if (frames == last) {
             Sleep(1);
             continue;
         }
+        // More than one since the last look: the picture was late, and it stands for those frames too.
+        uint64_t due = std::min<uint64_t>(frames - last, 30);
+        last = frames;
         Grab();
-        for (due = should - g_written; due > 0 && !g_stopAsked; --due) {
+        for (; due > 0 && !g_stopAsked; --due) {
             DWORD done = 0;
             if (!WriteFile(g_pipe, g_pixels.data(), static_cast<DWORD>(g_pixels.size()), &done, nullptr) || done != g_pixels.size()) {
                 g_error = "ffmpeg stopped taking frames.";
@@ -259,13 +281,9 @@ void RealTimeThread()
     }
     g_phase = Phase::Saving;
     audio::Stop();
-    // If the encoder fell behind, the last picture fills the time that's missing, so the video is as long as the sound.
     QueryPerformanceCounter(&now);
-    for (uint64_t should = static_cast<uint64_t>((now.QuadPart - start.QuadPart) * 60 / rate.QuadPart); g_written < should && g_pipe; ++g_written) {
-        DWORD done = 0;
-        if (!WriteFile(g_pipe, g_pixels.data(), static_cast<DWORD>(g_pixels.size()), &done, nullptr))
-            break;
-    }
+    const double soundSeconds = static_cast<double>(now.QuadPart - start.QuadPart) / rate.QuadPart, videoSeconds = g_written / 60.0;
+    const double tempo = videoSeconds > 0.5 ? std::clamp(soundSeconds / videoSeconds, 0.5, 4.0) : 1.0;
     for (int waited = 0; audio::Running() && waited < 300; ++waited)
         Sleep(10);
     if (g_pipe)
@@ -278,7 +296,8 @@ void RealTimeThread()
     g_process = nullptr;
     // The picture as it is, the sound as AAC, cut to the shorter of the two.
     const bool joined = RunFfmpeg(L"-hide_banner -loglevel error -y -i \"" + g_videoFile + L"\" -i \"" + g_soundFile
-                                  + L"\" -c:v copy -c:a aac -b:a 192k -shortest \"" + g_file + L"\"");
+                                  + L"\" -c:v copy " + (std::abs(tempo - 1.0) > 0.005 ? L"-filter:a atempo=" + std::to_wstring(tempo) + L" " : L"")
+                                  + L"-c:a aac -b:a 192k -shortest \"" + g_file + L"\"");
     std::error_code ignored;
     if (joined) {
         std::filesystem::remove(g_videoFile, ignored);
@@ -288,7 +307,8 @@ void RealTimeThread()
         std::filesystem::rename(g_videoFile, g_file, ignored);
         g_error = audio::LastError().empty() ? "The sound couldn't be put in the video: it's saved without." : "No sound: " + audio::LastError();
     }
-    Log("Recorder: stopped after %llu video frames in real time, sound %s", static_cast<unsigned long long>(g_written.load()), joined ? "in" : "not in");
+    Log("Recorder: stopped after %llu video frames, one a game frame; the game ran at %.0f%% of full speed; sound %s",
+        static_cast<unsigned long long>(g_written.load()), 100.0 / tempo, joined ? "in" : "not in");
     g_stopAsked = false;
     g_phase = Phase::Off;
 }
