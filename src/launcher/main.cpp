@@ -601,8 +601,7 @@ void ReplaysTab()
 
 // The BlueSpark release this studio is made for: it names things inside BlueSpark's prebuilt library, which move between releases.
 constexpr int Ttt2Release = 23;
-// The TTT2 tab stays out of the launcher until the studio there is ready to hand out.
-constexpr bool ShowTtt2Tab = false;
+constexpr bool ShowTtt2Tab = true;
 
 fs::path Ttt2Scripts()
 {
@@ -705,7 +704,7 @@ void Ttt2Tab()
     ImGui::Spacing();
     ImGui::TextWrapped("Simple is for watching: BlueSpark's own replay viewer with the studio's playback bar. Studio adds the editor: a free camera, camera paths "
                        "on a timeline, and pause, slow motion and frame steps, in replays as in Practice and offline fights. Insert switches between them at "
-                       "any time, and Home hides the bar.");
+                       "any time, Home hides the bar, and F9 records a video (60 frames a second, every game frame once, no sound).");
     ImGui::TextColored(Dim, "The studio never goes online: no sign-in, no matchmaking, no uploads. Play online with BlueSpark's own Start Here.");
 }
 

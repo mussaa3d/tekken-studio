@@ -51,6 +51,7 @@ void Run(const std::string& line, std::ostringstream& out)
                  static_cast<unsigned long long>(Ttt2TestFightSteps()), static_cast<unsigned long long>(Ttt2TestFrame()), record && Ttt2FightInPlay() ? 1 : 0, record && Ttt2FightPlayingNow() ? 1 : 0);
         out << text;
         out << "skip" << SkipCounts() << "\n";
+        out << "recorder " << (RecorderActive() ? 1 : 0) << " frames " << RecorderFrames() << " " << RecorderMessage() << "\n";
         {
             uint64_t a = 0, b = 0;
             Ttt2ReplayForwardFrames(&a, &b);
@@ -109,6 +110,16 @@ void Run(const std::string& line, std::ostringstream& out)
         int which = -1, hold = 0;
         in >> which >> hold;
         SkipTest(which, hold != 0);
+    } else if (command == "rec") {
+        // rec <start|stop>
+        std::string what;
+        in >> what;
+        if (what == "start")
+            RecorderStart();
+        else
+            RecorderStop();
+    } else if (command == "imgui") {
+        DumpFrameOnce();
     } else if (command == "stack") {
         camera::LogStackOnce();
     } else if (command == "markers") {

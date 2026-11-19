@@ -14,7 +14,9 @@
 #include <cmath>
 #include <vector>
 
+#include <atomic>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/imgui_drawer.h>
 
@@ -304,12 +306,27 @@ void TimeTab()
 void RecordTab()
 {
     Section("Record");
-    ImGui::TextWrapped("Recording from inside the studio isn't in this version. To film a shot now, record the window with OBS or the Windows Game Bar "
-                       "(Win + Alt + R) while it plays: with the editor closed (Insert) nothing of the studio is on the picture except the small label, and the camera "
-                       "path keeps flying.");
+    const bool fight = CanHold() || ReplayPlaying();
+    ImGui::BeginDisabled(!fight);
+    if (ImGui::Button("Record (F9)", { ImGui::GetFontSize() * 10, ImGui::GetFrameHeight() * 1.4f }))
+        RecorderStart();
+    ImGui::EndDisabled();
+    if (!fight)
+        ImGui::TextWrapped("Start a replay, Practice or an offline fight first.");
+    const std::string message = RecorderMessage();
+    if (!message.empty())
+        ImGui::TextWrapped("%s", message.c_str());
+    if (ImGui::SmallButton("Open the folder")) {
+        std::error_code ignored;
+        std::filesystem::create_directories(RecorderFolder(), ignored);
+        ShellExecuteW(nullptr, L"open", RecorderFolder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
     ImGui::Spacing();
-    ImGui::TextWrapped("BlueSpark has a frame-exact renderer for online replays, which writes every frame to ffmpeg. Hooking the studio's camera into it is the "
-                       "next step.");
+    ImGui::TextWrapped("F9 starts and stops. The video is 60 frames a second at the window's size, every game frame exactly once: the game runs one frame, the "
+                       "picture is taken, then the next, however long each takes. So it plays slower than real time while it records. At a slow speed "
+                       "each frame is written several times, which is slow motion from the game's real frames. The camera path keeps flying.");
+    ImGui::TextWrapped("While it records the studio draws nothing and BlueSpark's hints are off, so the video is the game's picture alone. Keep the game's "
+                       "window in front and uncovered: the picture is taken off the screen. There's no sound in the video.");
 }
 
 // ----- The path in the picture, with handles on the selected key
@@ -672,6 +689,9 @@ void FreeCameraInput(ImGuiIO& io)
         p.Fov = std::clamp(p.Fov - io.MouseWheel * 2.0f, 5.0f, 130.0f);
 }
 
+std::atomic<bool> g_dumpFrame { false };
+bool g_hideTheirs = true; // BlueSpark's overlay off while the editor is open
+
 class EditorDialog : public rex::ui::ImGuiDialog {
 public:
     explicit EditorDialog(rex::ui::ImGuiDrawer* drawer)
@@ -682,9 +702,28 @@ public:
 protected:
     void OnDraw(ImGuiIO& io) override
     {
+        // Research: what's in the frame before the studio draws (BlueSpark's own windows and what it put on the shared lists).
+        if (g_dumpFrame.exchange(false)) {
+            ImGuiContext* context = ImGui::GetCurrentContext();
+            for (ImGuiWindow* window : context->Windows)
+                if (window->Active || window->WasActive)
+                    Log("imgui window \"%s\" at %.0f %.0f size %.0f %.0f active %d vertices %d", window->Name, window->Pos.x, window->Pos.y, window->Size.x,
+                        window->Size.y, window->Active ? 1 : 0, window->DrawList ? window->DrawList->VtxBuffer.Size : 0);
+            Log("imgui background list %d vertices, foreground list %d", ImGui::GetBackgroundDrawList()->VtxBuffer.Size, ImGui::GetForegroundDrawList()->VtxBuffer.Size);
+        }
         DWORD owner = 0;
         GetWindowThreadProcessId(GetForegroundWindow(), &owner);
         const bool front = owner == GetCurrentProcessId(); // the game's window is the one in front
+        // A recording: nothing of the studio or of BlueSpark on the picture, and F9 stops it.
+        RecorderOnPresent();
+        if (RecorderActive()) {
+            HideBlueSparkOverlay(true);
+            if (front && Pressed(VK_F9))
+                RecorderStop();
+            return;
+        }
+        if (front && Pressed(VK_F9) && (CanHold() || ReplayPlaying()))
+            RecorderStart();
         if (front) {
             if (Pressed(VK_INSERT))
                 g_mode = g_mode == EditorMode::Studio ? EditorMode::Simple : EditorMode::Studio;
@@ -692,6 +731,8 @@ protected:
                 g_mode = g_mode == EditorMode::Simple ? EditorMode::Hidden : EditorMode::Simple;
         }
         const bool studio = g_mode == EditorMode::Studio;
+        // BlueSpark's own hints and pill would sit on top of the editor: off while it's open over a fight, back when it closes.
+        HideBlueSparkOverlay(studio && g_hideTheirs && (CanHold() || ReplayPlaying()));
         // The studio has the keyboard while it's open, so W A S D fly the camera instead of walking a fighter.
         if (studio != g_keysCaptured) {
             g_keysCaptured = studio;
@@ -763,6 +804,11 @@ EditorMode& Editor()
 void CreateEditor(rex::ui::ImGuiDrawer* drawer)
 {
     new EditorDialog(drawer); // the drawer keeps it for the life of the game
+}
+
+void DumpFrameOnce()
+{
+    g_dumpFrame = true;
 }
 
 } // namespace studio

@@ -139,8 +139,8 @@ bool ReplayFrameAllowed()
 
 void TimeTick()
 {
-    // (A replay runs outside BlueSpark's hold, measured: the studio leaves it alone and its own controls pause it.)
-    if (!CanHold() || Ttt2ReplayPlaying()) {
+    // (A replay runs outside BlueSpark's hold, measured: skip.cpp holds it. A recording paces the game itself, frame by frame.)
+    if (!CanHold() || Ttt2ReplayPlaying() || RecorderActive()) {
         Ask(false);
         g_lastFrame = 0;
         return;

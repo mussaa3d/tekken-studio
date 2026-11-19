@@ -88,7 +88,7 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 ## Install
 Download `tekken-studio-0.1-setup.exe` from this repo's [Releases](../../releases) and run it. It installs over an older version. It installs for your Windows account only, so it doesn't ask for administrator rights, in `%LOCALAPPDATA%\Programs\tekken-studio`, with a Start menu shortcut. Its one dependency is [ffmpeg](https://ffmpeg.org), for recording. The installer downloads ffmpeg 9.0.2 (about 110 MB) from the [GyanD builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) on GitHub and checks its SHA-256 before using it. Untick that to use an ffmpeg already on your PATH. Nothing else is needed: the tool carries its own runtime, and DirectX 12 comes with Windows.
 
-Or take `tekken-studio-0.1-portable.zip` from the same page: the tool on its own, with no installer. Unzip it anywhere and run `tekken-studio.exe`. It keeps its settings, skins and replay vault in its own folder. For recording it needs ffmpeg on your PATH, or an `ffmpeg` folder next to it with `binfmpeg.exe` inside.
+Or take `tekken-studio-0.1-portable.zip` from the same page: the tool on its own, with no installer. Unzip it anywhere and run `tekken-studio.exe`. It keeps its settings, skins and replay vault in its own folder. For recording it needs ffmpeg on your PATH, or an `ffmpeg` folder next to it with `bin\ffmpeg.exe` inside.
 
 The installer isn't signed, so Windows SmartScreen may say it's from an unknown publisher (More info > Run anyway). Uninstalling (Windows Settings > Apps) takes the mod out of the game folder first, and leaves your recordings, skins and saved replays.
 
@@ -149,24 +149,26 @@ In the editor's Replays tab, press **Export this replay** while a replay plays, 
 The game keeps every replay decoded in fixed slots in memory, so sharing copies a slot. Nothing is decrypted by Tekken Studio and no save file is edited.
 
 ## Tekken Tag Tournament 2 (BlueSpark)
-Work in progress, and not in the launcher or the installer for now: the scripts in this repo's `ttt2` folder build and start it. This puts the studio into Tekken Tag Tournament 2 running on [BlueSpark](https://github.com/avim2/BlueSpark), the fan-made native PC port of the Xbox 360 game. You need BlueSpark's play test installed and built once with its own Start Here, and your own copy of the game, as BlueSpark asks. This part is new and rougher than the Tekken 8 side.
+The launcher's **TTT2** tab puts the studio into Tekken Tag Tournament 2 running on [BlueSpark](https://github.com/avim2/BlueSpark), the fan-made native PC port of the Xbox 360 game. You need BlueSpark's play test installed and built once with its own Start Here, and your own copy of the game, as BlueSpark asks. This part is newer and rougher than the Tekken 8 side.
 
-1. You need BlueSpark release 23 (4.7.4): the studio names things inside BlueSpark's prebuilt library, and those move between releases.
-2. `powershell -ExecutionPolicy Bypass -File ttt2\build-studio.ps1 -Playtest <your play test folder>` builds `ttt2-studio.exe` in `rex\out\build\tekken-studio`, with the compiler BlueSpark's own install already downloaded. It takes under a minute. BlueSpark's own `ttt2.exe` and its files are not changed. After a BlueSpark update, build again.
-3. `ttt2\run-studio.ps1 -Playtest <folder> -Mode simple` (or `-Mode studio`) starts that copy of the game. It is offline only: the studio's copy starts without BlueSpark's sign-in, matchmaking, uploads and update check. Play online with BlueSpark's own Start Here.
+1. Paste your BlueSpark play test folder into the TTT2 tab. It must be BlueSpark release 23 (4.7.4): the studio names things inside BlueSpark's prebuilt library and in the game's code, and those move between releases.
+2. Press **Install the studio**. A window builds `ttt2-studio.exe` in `rex\out\build\tekken-studio`, with the compiler BlueSpark's own install already downloaded. It takes under a minute. BlueSpark's own `ttt2.exe` and its files are not changed. After a BlueSpark update, install again.
+3. **Watch replays (simple)** or **Open the studio** starts that copy of the game. It is offline only: the studio's copy starts without BlueSpark's sign-in, matchmaking, uploads and update check. Play online with BlueSpark's own Start Here.
 
 **Replays.** BlueSpark already records every offline Versus match and every online match as a `.ttt2replay` in `rex\userdata\replays`, so Tekken Studio doesn't record its own: it uses those. Matches you play online in BlueSpark show up in the studio's copy, since both read the same folder. BlueSpark's **REPLAYS** tab lists them and A watches one; the studio's Replays tab lists the same files.
 
-**Simple mode** is BlueSpark's replay viewer with the studio's bar at the bottom. **Studio mode** is the editor, with the look of the Tekken 8 one: a free camera (F5, right mouse button to look, WASD and Q/E to move, the wheel for field of view), camera keys on a timeline with a path through them (K adds a key, F6 plays the path), the path drawn in the picture with arrows to drag each key, and pause, slow motion down to 0.05x and frame steps (Space and the full stop). **Insert** switches between the two and **Home** hides the bar.
+**Simple mode** is BlueSpark's replay viewer with the studio's bar at the bottom. **Studio mode** is the editor, with the look of the Tekken 8 one. **Insert** switches between the two and **Home** hides the bar. What the studio does there:
+- **Time:** pause (Space), slow motion at 0.5x, 0.25x, 0.1x and 0.05x, and frame steps (the full stop), in replays, Practice and offline fights. Slow motion is the game's real frames shown slower.
+- **Camera:** a free camera (F5, right mouse button to look, WASD and Q/E to move, the wheel for field of view), and camera keys on a timeline with a path through them (K adds a key, F6 plays the path). The path and its keys are drawn in the picture, with arrows to drag each key. Paths save to and load from files.
+- **Recording (F9):** a video at 60 frames a second and the window's size, in `Videos\tekken8mvm`. The game is run one frame at a time and each picture taken, so every game frame is in the video exactly once however slow the PC is, and at a slow speed each frame is written several times. While it records the studio draws nothing and BlueSpark's hints are off. It needs ffmpeg: the one Tekken Studio's installer downloads is used, or one on your PATH.
+- **BlueSpark's own overlay** (its button hints, its SELECT pill and its Practice boxes) is taken off while the editor is open over a fight, and comes back when the editor closes.
 
-What doesn't work yet:
-- **Pause, slow motion and frame steps work in replays too,** as well as in Practice and offline fights: measured in a replay at 1x, 0.5x, 0.25x, 0.1x and 0.05x, with one step one frame. BlueSpark's own LB (back 3 seconds) and round keys still work there.
-- **Recording to video isn't in.** Record the window with OBS or the like.
-- The timeline holds camera keys but can't jump to a point in the fight.
+What it doesn't do:
+- **No sound in the videos.** Record the sound separately if you need it.
+- **Recording takes the picture off the screen,** so the game's window has to stay in front and uncovered, and the video is the size of the window.
+- **The timeline can't jump to a moment.** BlueSpark's own replay keys do that: LB goes back 3 seconds, Select + Left / Right changes round.
 - While the fight is fully paused the picture only redraws when a frame runs, so a camera move in a pause runs a frame: one for a single move, at most one frame in five while you keep moving.
-- BlueSpark's own bar of button hints draws over the bottom of the studio's timeline.
-- The path drawn in the picture isn't measured against the game's picture yet and can sit a little off.
-- The Look and Scene tabs (lighting, actors, skins) are Tekken 8 only.
+- **The Tekken 8 Look and Scene tabs aren't here** (lighting, sky, effects, actors, props, skins, ReShade, picture shapes, the HUD's layout): they're built on Unreal Engine, which this game doesn't use.
 
 ## Good to know
 - **An actor's jacket and straps hang still.** The game moves those with its own cloth solver, which an actor doesn't have. Hair and anything else moved by bones plays as it was recorded.

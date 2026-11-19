@@ -81,6 +81,20 @@ std::string WatchDump();
 void StartCommands();
 
 // Research (skip.cpp): one of the game's frame functions left out while `hold`; calls and skips of each, for the state file.
+// Recording to video, frame for frame (recorder.cpp). Start and Stop from the overlay's thread; AllowsFrame is asked by skip.cpp once a
+// game frame while a recording runs; OnPresent once a present.
+bool RecorderActive();
+void RecorderStart();
+void RecorderStop();
+bool RecorderAllowsFrame();
+void RecorderOnPresent();
+uint64_t RecorderFrames();
+std::string RecorderMessage(); // "Recording x.mp4", "Saved x.mp4", or what went wrong
+std::filesystem::path RecorderFolder();
+
+// BlueSpark's own overlay (hints, pill, pages) taken off the presenter, or put back (overlay.cpp).
+void HideBlueSparkOverlay(bool hide);
+void DumpFrameOnce(); // research: logs the ImGui windows in the next frame
 void SkipTest(int which, bool hold);
 std::string SkipCounts();
 

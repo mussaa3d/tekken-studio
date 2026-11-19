@@ -331,10 +331,10 @@ bool Project(const View& view, float aspect, Vec3 point, float& x, float& y)
     if (ahead < 1.0f)
         return false;
     const float side = d.X * r.X + d.Y * r.Y + d.Z * r.Z, up = d.X * u.X + d.Y * u.Y + d.Z * u.Z;
-    // The game's field of view is the picture's height (measured against the fighters' places, see the mod log).
+    // The game's field of view is across the picture's width (measured against the fighters' feet, see the mod log).
     const float half = std::tan(Radians(view.Fov) * 0.5f);
-    x = 0.5f + 0.5f * side / (ahead * half * aspect);
-    y = 0.5f - 0.5f * up / (ahead * half);
+    x = 0.5f + 0.5f * side / (ahead * half);
+    y = 0.5f - 0.5f * up * aspect / (ahead * half);
     return std::fabs(x) < 40 && std::fabs(y) < 40;
 }
 

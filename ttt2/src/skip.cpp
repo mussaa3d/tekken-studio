@@ -38,7 +38,9 @@ extern "C" void __imp__sub_825DCE80(PPCContext& ctx, uint8_t* base);
 extern "C" void sub_825DCE80(PPCContext& ctx, uint8_t* base)
 {
     ++studio::g_frames;
-    if (studio::g_test.load(std::memory_order_relaxed) || !studio::ReplayFrameAllowed()) {
+    // A recording runs the game one frame at a time, in a replay or any other fight. Otherwise only a replay is held here.
+    const bool run = studio::RecorderActive() ? studio::RecorderAllowsFrame() : (!studio::g_test.load(std::memory_order_relaxed) && studio::ReplayFrameAllowed());
+    if (!run) {
         ++studio::g_leftOut;
         return;
     }
