@@ -29,7 +29,8 @@ constexpr float ScreenWidth = 1280, ScreenHeight = 720; // the game's own pictur
 std::atomic<uint64_t> g_passes { 0 };
 bool g_follow = true;
 
-// Where the HUD goes: the whole 16:9 HUD, as big as fits the shape, along the top of it and centred. False with no shape.
+// Where the HUD goes: the whole 16:9 HUD, as big as fits the shape, centred across it and, by default, in the middle of its
+// height (a 16:9 picture's HUD laid over the middle of a portrait one). False with no shape.
 bool HudRect(float& x, float& y, float& width, float& height)
 {
     if (!g_follow || !(camera::Config().ShapeAspect > 0))
@@ -44,7 +45,7 @@ bool HudRect(float& x, float& y, float& width, float& height)
     width = ScreenWidth * scale;
     height = ScreenHeight * scale;
     x = left + ((right - left) - width) * 0.5f;
-    y = top;
+    y = top + ((bottom - top) - height) * std::clamp(camera::Config().HudPlace, 0.0f, 1.0f);
     return true;
 }
 } // namespace

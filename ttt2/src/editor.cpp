@@ -220,8 +220,13 @@ void ShapeControls()
         ImGui::Checkbox("The HUD follows the shape", &HudFollowsShape());
         if (HudFollowsShape() && camera::Config().ShapeAspect > 0)
             ImGui::SliderFloat("HUD size", &camera::Config().HudSize, 1.0f, 3.0f, camera::Config().HudSize < 1.01f ? "whole HUD" : "%.2fx");
+        if (HudFollowsShape() && camera::Config().ShapeAspect > 0) {
+            const float place = camera::Config().HudPlace;
+            ImGui::SliderFloat("HUD place", &camera::Config().HudPlace, 0.0f, 1.0f, place < 0.02f ? "top" : place > 0.98f ? "bottom" : place > 0.48f && place < 0.52f ? "middle" : "%.2f");
+        }
         ImGui::TextWrapped("The game's own health bars, timer, portraits and name tags, in parts or gone. With a shape on, the whole HUD is drawn "
-                           "inside it: as big as fits, along the top. BlueSpark's hints and Practice boxes aren't the game's: they're off whenever "
+                           "inside it, as big as fits: in a portrait shape that's a 16:9 HUD across the middle, and HUD place moves it up or "
+                           "down. BlueSpark's hints and Practice boxes aren't the game's: they're off whenever "
                            "the editor is open or a recording runs.");
         Section("About the shape");
     }

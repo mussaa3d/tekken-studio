@@ -136,7 +136,7 @@ void Run(const std::string& line, std::ostringstream& out)
         int on = 1;
         in >> on;
         HudFollowsShape() = on != 0;
-        in >> camera::Config().HudSize;
+        in >> camera::Config().HudSize >> camera::Config().HudPlace;
     } else if (command == "hudpreset") {
         int preset = 0;
         in >> preset;

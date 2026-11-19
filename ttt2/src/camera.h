@@ -55,6 +55,8 @@ struct Settings {
     float ShapeFit = 0;
     // The HUD inside a shape: 1 is the whole HUD as big as fits; more makes it bigger, its outer ends running off the shape's sides.
     float HudSize = 1;
+    // Where the HUD's 16:9 block sits in the shape's height: 0 along the top, 0.5 in the middle (as Tekken 8 does it), 1 along the bottom.
+    float HudPlace = 0.5f;
 };
 Settings& Config();
 
