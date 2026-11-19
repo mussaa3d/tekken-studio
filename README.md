@@ -160,10 +160,11 @@ Work in progress, and not in the launcher or the installer for now: the scripts 
 **Simple mode** is BlueSpark's replay viewer with the studio's bar at the bottom. **Studio mode** is the editor, with the look of the Tekken 8 one: a free camera (F5, right mouse button to look, WASD and Q/E to move, the wheel for field of view), camera keys on a timeline with a path through them (K adds a key, F6 plays the path), the path drawn in the picture with arrows to drag each key, and pause, slow motion down to 0.05x and frame steps (Space and the full stop). **Insert** switches between the two and **Home** hides the bar.
 
 What doesn't work yet:
-- **Pause, slow motion and frame steps work in Practice and offline fights, not while a replay plays.** In a replay, time is BlueSpark's own: A pauses and LB goes back 3 seconds. The studio's cameras do work in a replay.
+- **Pause, slow motion and frame steps work in replays too,** as well as in Practice and offline fights: measured in a replay at 1x, 0.5x, 0.25x, 0.1x and 0.05x, with one step one frame. BlueSpark's own LB (back 3 seconds) and round keys still work there.
 - **Recording to video isn't in.** Record the window with OBS or the like.
 - The timeline holds camera keys but can't jump to a point in the fight.
-- While the fight is fully paused the picture only redraws when a frame runs, so the studio lets the fight creep at 0.05x while you move the camera.
+- While the fight is fully paused the picture only redraws when a frame runs, so a camera move in a pause runs a frame: one for a single move, at most one frame in five while you keep moving.
+- BlueSpark's own bar of button hints draws over the bottom of the studio's timeline.
 - The path drawn in the picture isn't measured against the game's picture yet and can sit a little off.
 - The Look and Scene tabs (lighting, actors, skins) are Tekken 8 only.
 

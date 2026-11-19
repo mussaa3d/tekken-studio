@@ -26,5 +26,8 @@ uint64_t Ttt2TestFrame();
 // Replays: BlueSpark records every offline Versus match and every online match, and plays them back in Practice.
 bool Ttt2ReplayPlaying();
 uint64_t Ttt2ReplayFrameNow();
+// Research: the two counts of a replay being run forward (where it is, where it's going), and whether it's running fast now.
+void Ttt2ReplayForwardFrames(uint64_t* a, uint64_t* b);
+bool Ttt2ReplayForwardFast(uint8_t* base);
 std::filesystem::path Ttt2ReplaysFolder();
 bool Ttt2ReplayChoose(uint8_t* base, const std::string& file);

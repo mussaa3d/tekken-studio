@@ -704,8 +704,8 @@ void Ttt2Tab()
         ImGui::TextColored(Dim, "TTT2 is running. Close it before starting the studio: they share your saves.");
     ImGui::Spacing();
     ImGui::TextWrapped("Simple is for watching: BlueSpark's own replay viewer with the studio's playback bar. Studio adds the editor: a free camera, camera paths "
-                       "on a timeline, and pause, slow motion and frame steps in Practice and offline fights. Inside a replay the camera works, and time is "
-                       "BlueSpark's own: A pauses, LB goes back 3 seconds. Insert switches between them at any time, and Home hides the bar.");
+                       "on a timeline, and pause, slow motion and frame steps, in replays as in Practice and offline fights. Insert switches between them at "
+                       "any time, and Home hides the bar.");
     ImGui::TextColored(Dim, "The studio never goes online: no sign-in, no matchmaking, no uploads. Play online with BlueSpark's own Start Here.");
 }
 

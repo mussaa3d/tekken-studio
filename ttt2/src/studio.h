@@ -56,6 +56,9 @@ TimeControl& Time();
 void StepOneFrame();
 // Once for each picture the editor draws: decides whether the fight runs or is held for this one.
 void TimeTick();
+// While a BlueSpark replay plays, whether the game may run this frame (skip.cpp asks once a frame, on the game's thread): BlueSpark's
+// hold doesn't reach a replay, so the studio leaves the game's frame out instead. Always true outside a replay.
+bool ReplayFrameAllowed();
 bool Holding(); // the fight is held right now
 bool CanHold(); // a hold would take: BlueSpark's pages are on and an offline fight is up
 // The studio's clock in seconds: the replay's own frame count while a replay plays, else the fight frames the studio has let run.
@@ -76,5 +79,9 @@ std::string WatchDump();
 
 // ----- The test channel: commands from studio\commands.txt, answers in studio\state.txt.
 void StartCommands();
+
+// Research (skip.cpp): one of the game's frame functions left out while `hold`; calls and skips of each, for the state file.
+void SkipTest(int which, bool hold);
+std::string SkipCounts();
 
 } // namespace studio

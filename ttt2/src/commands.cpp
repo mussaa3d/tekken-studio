@@ -50,6 +50,12 @@ void Run(const std::string& line, std::ostringstream& out)
         snprintf(text, sizeof(text), "counters engine %llu fightsteps %llu testframe %llu inplay %d playingnow %d\n", static_cast<unsigned long long>(Ttt2EngineFrameNow()),
                  static_cast<unsigned long long>(Ttt2TestFightSteps()), static_cast<unsigned long long>(Ttt2TestFrame()), record && Ttt2FightInPlay() ? 1 : 0, record && Ttt2FightPlayingNow() ? 1 : 0);
         out << text;
+        out << "skip" << SkipCounts() << "\n";
+        {
+            uint64_t a = 0, b = 0;
+            Ttt2ReplayForwardFrames(&a, &b);
+            out << "forward " << a << " " << b << "\n";
+        }
         out << "replay_holding " << (Ttt2ReplayHolding() ? 1 : 0) << " hold_holding " << (GuestBase() && record && Ttt2TrainingHoldHolding(GuestBase()) ? 1 : 0) << "\n";
         if (record && camera::Read(view)) {
             snprintf(text, sizeof(text), "camera %08X eye %.1f %.1f %.1f target %.1f %.1f %.1f fov %.2f\n", record, view.Eye.X, view.Eye.Y, view.Eye.Z, view.Target.X,
@@ -98,6 +104,13 @@ void Run(const std::string& line, std::ostringstream& out)
         std::string name, value;
         in >> name >> value;
         out << "flag " << name << (rex::cvar::SetFlagByName(name, value) ? " set " : " refused ") << rex::cvar::GetFlagByName(name) << "\n";
+    } else if (command == "skip") {
+        // skip <which 0-5, -1 none> <0|1>: research, one of the game's frame functions left out while 1
+        int which = -1, hold = 0;
+        in >> which >> hold;
+        SkipTest(which, hold != 0);
+    } else if (command == "stack") {
+        camera::LogStackOnce();
     } else if (command == "markers") {
         int on = 0;
         in >> on;

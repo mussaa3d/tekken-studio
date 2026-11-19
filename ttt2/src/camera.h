@@ -21,6 +21,7 @@ struct View {
 uint32_t Record();
 bool Read(View& out);
 uint64_t Writes(); // how many times the game has written its camera
+void LogStackOnce(); // research: the game's call stack at the next camera write, into the log
 
 enum class Mode { Game, Free, Dolly };
 

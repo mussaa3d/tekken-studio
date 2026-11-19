@@ -56,8 +56,12 @@ bool CanHold()
     return camera::Record() != 0 && Ttt2BlueSparkOn() && Ttt2FightInPlay();
 }
 
+std::atomic<bool> g_replayHeld { false }; // the last replay frame was left out
+
 bool Holding()
 {
+    if (Ttt2ReplayPlaying())
+        return g_replayHeld.load(std::memory_order_relaxed);
     uint8_t* base = GuestBase();
     return g_holdAsked && base && Ttt2TrainingHoldHolding(base);
 }
@@ -90,6 +94,48 @@ bool CameraMoved()
     return moved;
 }
 } // namespace
+
+bool ReplayFrameAllowed()
+{
+    static double share = 0;   // slow motion: the part of a frame owed so far
+    static int sinceRun = 100; // frames since one last ran, to space out the frames a camera move asks for
+    static bool owed = false;  // paused, and the camera has moved since the picture was last made
+    // Only with the replay's fight up: its loading and its covers run on these frames too, and must never be held.
+    if (!Ttt2ReplayPlaying() || camera::Record() == 0 || !Ttt2FightInPlay()) {
+        share = 0;
+        owed = false;
+        g_replayHeld = false;
+        return true;
+    }
+    bool run;
+    if (g_time.Paused) {
+        // A step runs one frame. A camera move runs one too (the picture is only made on a frame that runs), at most one in five,
+        // and one more once the camera has stopped, so the picture ends on its last place.
+        if (CameraMoved())
+            owed = true;
+        int steps = g_steps.load();
+        if (steps > 0 && g_steps.compare_exchange_strong(steps, steps - 1)) {
+            run = true;
+        } else if (owed && sinceRun >= 5) {
+            run = true;
+            owed = false;
+        } else {
+            run = false;
+        }
+        share = 0;
+    } else if (g_time.Speed >= 0.999) {
+        run = true;
+        share = 0;
+    } else {
+        share += std::fmax(g_time.Speed, 0.05);
+        run = share >= 1.0;
+        if (run)
+            share -= 1.0;
+    }
+    sinceRun = run ? 0 : sinceRun + 1;
+    g_replayHeld = !run;
+    return run;
+}
 
 void TimeTick()
 {

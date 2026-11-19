@@ -343,8 +343,34 @@ bool Project(const View& view, float aspect, Vec3 point, float& x, float& y)
 // The game's function that writes the frame's camera into its record. BlueSpark doesn't hook it (checked against ttt2_ours.lib of
 // release 23). The original runs first, then the studio's view goes over what it wrote.
 extern "C" void __imp__sub_82541878(PPCContext& ctx, uint8_t* base);
+namespace studio::camera {
+std::atomic<int> g_stackWanted { 0 };
+void LogStackOnce()
+{
+    g_stackWanted = 1;
+}
+} // namespace studio::camera
+
 extern "C" void sub_82541878(PPCContext& ctx, uint8_t* base)
 {
+    // Research: the game's own call stack here, once. Each frame keeps the stack pointer of the one above at its start, and that
+    // one's return address 8 bytes under it (the Xbox 360's rule).
+    if (studio::camera::g_stackWanted.exchange(0)) {
+        std::string line;
+        char text[32];
+        snprintf(text, sizeof(text), "%08X", static_cast<uint32_t>(ctx.lr));
+        line = text;
+        uint32_t sp = ctx.r1.u32;
+        for (int depth = 0; depth < 40 && sp && studio::Readable(sp, 4); ++depth) {
+            const uint32_t above = studio::ReadU32(sp);
+            if (above <= sp || !studio::Readable(above - 8, 4))
+                break;
+            snprintf(text, sizeof(text), " %08X", studio::ReadU32(above - 8));
+            line += text;
+            sp = above;
+        }
+        studio::Log("stack at the camera write: %s", line.c_str());
+    }
     __imp__sub_82541878(ctx, base);
     ++studio::camera::g_writes;
     studio::camera::Apply();
