@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace rex::ui {
 class ImGuiDrawer;
@@ -95,6 +96,20 @@ constexpr int HudPresetCount = 6;
 const char* HudPresetName(int preset);
 int& HudPreset();
 void HudApplyPreset(int preset);
+
+// Replays kept and passed round (replays.cpp). A copy of every replay BlueSpark writes goes to Videos\tekken8mvm\ttt2_replays
+// while KeepsReplays (on by default, remembered); a replay file from anywhere is copied into BlueSpark's folder to be watched.
+void StartReplayKeeper();
+const std::filesystem::path& SavedReplaysFolder();
+bool KeepsReplays();
+void KeepReplays(bool on);
+int ReplaysKept();
+int ReplaysBroughtIn();
+bool SaveReplayCopy(const std::filesystem::path& file);
+bool ReplayIsSaved(const std::filesystem::path& file);
+std::filesystem::path BringReplayIn(const std::filesystem::path& file);
+std::vector<std::filesystem::path> SavedReplaysNotIn();
+void PickReplaysToBringIn();
 
 // Recording with sound runs in real time; without, frame for frame. On by default.
 bool& RecorderWithSound();

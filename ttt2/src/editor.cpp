@@ -93,11 +93,13 @@ double g_noticeUntil = 0;
 
 struct ReplayFile {
     std::filesystem::path Path;
+    bool Saved = false;
     std::string Name, When;
     uintmax_t Size = 0;
     std::filesystem::file_time_type Written;
 };
 std::vector<ReplayFile> g_replays;
+std::vector<std::filesystem::path> g_savedOnly; // kept copies that aren't in BlueSpark's folder
 
 void Notice(const std::string& text)
 {
@@ -118,8 +120,10 @@ void RefreshReplays()
         file.Name = std::filesystem::relative(entry.path(), folder, ignored).string();
         file.Size = entry.file_size(ignored);
         file.Written = entry.last_write_time(ignored);
+        file.Saved = ReplayIsSaved(file.Path);
         g_replays.push_back(std::move(file));
     }
+    g_savedOnly = SavedReplaysNotIn();
     std::sort(g_replays.begin(), g_replays.end(), [](const ReplayFile& a, const ReplayFile& b) { return a.Written > b.Written; });
 }
 
@@ -154,12 +158,31 @@ void ReplaysTab()
         loaded = true;
         RefreshReplays();
     }
+    // The list follows what the keeper and the file window do in the background.
+    static int seen = 0;
+    static double looked = 0;
+    if (seen != ReplaysKept() + ReplaysBroughtIn() || ImGui::GetTime() - looked > 5.0) {
+        seen = ReplaysKept() + ReplaysBroughtIn();
+        looked = ImGui::GetTime();
+        RefreshReplays();
+    }
     ImGui::TextWrapped("BlueSpark records every offline Versus match and every online match by itself. They're listed here, newest first.");
+    bool keep = KeepsReplays();
+    if (ImGui::Checkbox("Keep a copy of every replay", &keep))
+        KeepReplays(keep);
+    Help("BlueSpark's replays live inside the play test's folder and go when it's replaced. With this on, each one is also copied to "
+         "Videos\\tekken8mvm\\ttt2_replays as soon as it's written, online matches included (those are copied the next time the studio "
+         "is open). The copies are plain files: send one to someone, and they add it with Add replay files.");
+    if (ImGui::SmallButton("Add replay files..."))
+        PickReplaysToBringIn();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("My saved replays"))
+        ShellExecuteW(nullptr, L"open", SavedReplaysFolder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (ImGui::SmallButton("BlueSpark's folder"))
+        ShellExecuteW(nullptr, L"open", Ttt2ReplaysFolder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ImGui::SameLine();
     if (ImGui::SmallButton("Refresh"))
         RefreshReplays();
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Open the folder"))
-        ShellExecuteW(nullptr, L"open", Ttt2ReplaysFolder().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     ImGui::Text("%d replays", static_cast<int>(g_replays.size()));
     if (ImGui::BeginChild("replays", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.55f), ImGuiChildFlags_Borders)) {
         for (size_t i = 0; i < g_replays.size(); ++i) {
@@ -173,7 +196,30 @@ void ReplaysTab()
                     Notice("BlueSpark wouldn't start it from here. Open it from its own REPLAYS tab.");
             }
             ImGui::SameLine();
+            if (file.Saved) {
+                ImGui::TextColored(Colour(pal::Ok), "saved");
+            } else if (ImGui::SmallButton("Save")) {
+                Notice(SaveReplayCopy(file.Path) ? "Saved a copy of " + file.Name : "Couldn't save a copy of " + file.Name);
+                RefreshReplays();
+                ImGui::PopID();
+                break;
+            }
+            ImGui::SameLine();
             ImGui::Text("%s  (%d KB)", file.Name.c_str(), static_cast<int>(file.Size / 1024));
+            ImGui::PopID();
+        }
+        // Kept copies that BlueSpark's folder doesn't have (a new play test, or files put in the saved folder by hand).
+        for (size_t i = 0; i < g_savedOnly.size(); ++i) {
+            ImGui::PushID(static_cast<int>(100000 + i));
+            if (ImGui::SmallButton("Bring back")) {
+                const std::filesystem::path in = BringReplayIn(g_savedOnly[i]);
+                Notice(in.empty() ? "Couldn't copy it into BlueSpark's folder." : "Back in the list: " + in.filename().string());
+                RefreshReplays();
+                ImGui::PopID();
+                break;
+            }
+            ImGui::SameLine();
+            ImGui::TextColored(Colour(pal::Muted), "%s  (saved copy only)", g_savedOnly[i].filename().string().c_str());
             ImGui::PopID();
         }
         if (g_replays.empty())

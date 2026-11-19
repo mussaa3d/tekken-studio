@@ -88,6 +88,7 @@ void Boot()
                 Log("Editor ready. Insert opens it.");
             });
             StartCommands();
+            StartReplayKeeper();
             return;
         }
         Sleep(50);

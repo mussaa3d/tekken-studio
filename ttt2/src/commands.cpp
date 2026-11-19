@@ -207,6 +207,20 @@ void Run(const std::string& line, std::ostringstream& out)
         std::getline(in >> std::ws, name);
         const std::filesystem::path file = Ttt2ReplaysFolder() / name;
         out << "replay " << (GuestBase() && Ttt2ReplayChoose(GuestBase(), file.string()) ? "chosen" : "refused") << "\n";
+    } else if (command == "replaykeep") {
+        // replaykeep [0|1]: copies of BlueSpark's replays kept in the Videos folder; answers with the counts
+        int on = -1;
+        in >> on;
+        if (on >= 0)
+            KeepReplays(on != 0);
+        out << "keeps " << (KeepsReplays() ? 1 : 0) << " kept " << ReplaysKept() << " brought_in " << ReplaysBroughtIn() << " not_in " << SavedReplaysNotIn().size() << "\n";
+        out << "folder " << SavedReplaysFolder().string() << "\n";
+    } else if (command == "replayin") {
+        // replayin <path>: a replay file from anywhere copied into BlueSpark's folder, and started
+        std::string name;
+        std::getline(in >> std::ws, name);
+        const std::filesystem::path file = BringReplayIn(name);
+        out << "replayin " << (file.empty() ? "refused" : file.string()) << " " << (!file.empty() && GuestBase() && Ttt2ReplayChoose(GuestBase(), file.string()) ? "chosen" : "not started") << "\n";
     } else if (command == "replays") {
         std::error_code ignored;
         const std::filesystem::path folder = Ttt2ReplaysFolder();
