@@ -4,7 +4,7 @@
 #   drive-ttt2.ps1 hold -Keys u -HoldMs 3000   keys held together
 #   drive-ttt2.ps1 cmd -Text "peek 82DE69A0 16"   a command for the studio's test channel; prints its answer
 param([Parameter(Mandatory)][string]$Action, [string]$Out = "", [string[]]$Keys = @(), [int]$HoldMs = 120, [int]$GapMs = 350, [string]$Text = "",
-      [string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest", [string]$Process = "ttt2-studio")
+      [string]$Playtest = "$env:USERPROFILE\Downloads\Compressed\ttt2-playtest", [string]$Process = "ttt2-studio")
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -Name U -Namespace T2D -MemberDefinition @'

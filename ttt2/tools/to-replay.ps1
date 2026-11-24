@@ -1,6 +1,6 @@
 # Test helper: starts the studio's copy of TTT2 in a window and has BlueSpark play the newest replay in its replays folder, through
 # the studio's own "replay" command (the same call its Replays tab makes). Waits until the replay's fight is up.
-param([string[]]$Extra = @(), [string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest")
+param([string[]]$Extra = @(), [string]$Playtest = "$env:USERPROFILE\Downloads\Compressed\ttt2-playtest")
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $drive = Join-Path $here 'drive-ttt2.ps1'
 $replay = Get-ChildItem (Join-Path $Playtest 'rex\userdata\replays') -Filter '*.ttt2replay' -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1

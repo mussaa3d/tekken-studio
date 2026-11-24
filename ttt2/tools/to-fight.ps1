@@ -2,7 +2,7 @@
 # Practice fight with the keyboard: B closes BlueSpark's page, then OFFLINE MODE, PRACTICE, the fighters and the stage. It keeps
 # pressing A until the studio reports the fight's camera (level, 50 degrees, 3 to 8 m back), so it doesn't depend on timing.
 #   to-fight.ps1 [-Extra '--switch=1',...]
-param([string[]]$Extra = @(), [string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest")
+param([string[]]$Extra = @(), [string]$Playtest = "$env:USERPROFILE\Downloads\Compressed\ttt2-playtest")
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $drive = Join-Path $here 'drive-ttt2.ps1'
 function Keys([string]$keys, [int]$gap = 700, [int]$hold = 120) { & $drive key -Keys $keys -GapMs $gap -HoldMs $hold -Playtest $Playtest | Out-Null }

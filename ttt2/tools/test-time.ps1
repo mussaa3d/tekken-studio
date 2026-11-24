@@ -1,7 +1,7 @@
 # Test: in a fight, measures how much of the game runs at each speed, and that a step is one frame. The game writes its camera
 # several times for each fight frame it runs (BlueSpark runs frames ahead), so "camera writes a game frame" at 1x is the yardstick,
 # and at 0.25x it should be a quarter of that.
-param([string]$Playtest = "C:\Users\ms3ody\Downloads\Compressed\ttt2-playtest")
+param([string]$Playtest = "$env:USERPROFILE\Downloads\Compressed\ttt2-playtest")
 $drive = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'drive-ttt2.ps1'
 function Cmd([string]$text) { & $drive cmd -Text $text -Playtest $Playtest }
 function Num {
