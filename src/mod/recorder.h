@@ -53,8 +53,9 @@ struct Settings {
     Look Preview = Look::Picture; // the look on screen while not recording
     bool BlueKey = false;     // the keyed look is blue instead of green
     // What a Greenscreen stream is saved as: 0 = the key colour, in the format chosen for the recording; 1 = ProRes 4444 with
-    // transparency; 2 = PNG pictures with transparency. The last two have nothing to key.
-    int KeyFile = 0;
+    // transparency; 2 = PNG pictures with transparency. The last two have nothing to key, and the first of them is what you get
+    // unless you ask for a colour.
+    int KeyFile = 1;
     int GreenDarkness = 16;  // how dark, out of 255, the empty background can be for the keyed look when the depth buffer can't be read
     float DepthNear = 0, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
     bool UseRange = false;    // start and stop by themselves at the timeline's range

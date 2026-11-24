@@ -1618,7 +1618,8 @@ void RecordTab()
     Row("Greenscreen file");
     ImGui::Combo("##Greenscreen file", &s.KeyFile, "Green or blue screen\0Transparent: ProRes 4444 (.mov)\0Transparent: PNG pictures\0");
     Help("What a Greenscreen stream is saved as. The transparent ones have a real alpha channel, so there's nothing to key: put the file on a track above "
-         "your background. They ignore the format chosen for the recording, and while they record the fighters show on black.");
+         "your background. They ignore the format chosen for the recording, and while they record the fighters show on black. "
+         "Choose Green or blue screen for a video with the colour behind the fighters.");
     Row("Depth near");
     ImGui::SliderFloat("##Depth near", &s.DepthNear, 0.0f, 2000.0f, "%.0f cm");
     Help("How close to the camera the depth look is pure white. Anything closer is white too.");

@@ -68,7 +68,7 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 - **Record shot:** the same, recording from the first key's exact frame to the last key's.
 - **Round buttons:** R1, R2, R3 and so on beside the timescale jump straight to a round of the replay.
 - **Streams:** several files at once that line up frame for frame: picture, greenscreen (green or blue), stage only, fighters on black, depth, effects on black. Every look also shows on screen, so you can see it before recording.
-  - **The greenscreen can be saved with real transparency instead:** a ProRes 4444 `.mov` or a folder of PNG pictures, each with an alpha channel, so there is nothing to key. Choose it under Greenscreen file in the Record tab. The other streams keep the format you chose.
+  - **The greenscreen stream is saved with real transparency:** a ProRes 4444 `.mov` with an alpha channel, so there is nothing to key. Under Greenscreen file in the Record tab you can have a folder of PNG pictures with alpha instead, or the plain green or blue video. The other streams keep the format you chose.
 - **Depth:** the game's real depth buffer as a smooth grey picture with clean silhouettes, near things white and far things dark. Near, far and curve sliders set how it falls off.
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
