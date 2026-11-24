@@ -6,9 +6,9 @@ Cinematic and movie-making tools for **Tekken 8** on PC, in the spirit of CoDMVM
 
 > **This is an early-access beta, version 0.1.** Most of it is tested in the real game, but expect rough edges and things that break after a game patch. Please report what goes wrong in [Issues](../../issues).
 
-[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white&style=for-the-badge)](https://paypal.me/freemussaa3d)
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white&style=for-the-badge)](https://paypal.me/freemussaa3d) [![Join the Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/X7qVABqK4h)
 
-Tekken Studio is free. If you want to support it: [PayPal](https://paypal.me/freemussaa3d), or [creators.sa](https://creators.sa/mussaa3d) in the Middle East.
+Tekken Studio is free. If you want to support it: [PayPal](https://paypal.me/freemussaa3d), or [creators.sa](https://creators.sa/mussaa3d) in the Middle East. Questions and problems: the [Discord server](https://discord.gg/X7qVABqK4h).
 
 ## Credits
 Parts of Tekken Studio were ported or rebuilt from other people's work. Thank you to all of them:
