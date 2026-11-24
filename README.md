@@ -6,6 +6,24 @@ Cinematic and movie-making tools for **Tekken 8** on PC, in the spirit of CoDMVM
 
 > **This is an early-access beta, version 0.1.** Most of it is tested in the real game, but expect rough edges and things that break after a game patch. Please report what goes wrong in [Issues](../../issues).
 
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white&style=for-the-badge)](https://paypal.me/freemussaa3d)
+
+Tekken Studio is free. If you want to support it: [PayPal](https://paypal.me/freemussaa3d), or [creators.sa](https://creators.sa/mussaa3d) in the Middle East.
+
+## Credits
+Parts of Tekken Studio were ported or rebuilt from other people's work. Thank you to all of them:
+- **[Iris Studio](https://github.com/yerbisonline/IrisStudio)** by yerbisonline (GPL-3.0): the actors, the Scene tab, ReShade keys and the editor's look.
+- **[IWXMVM](https://github.com/reallyluckyy/IWXMVM)** by reallyluckyy: the dolly path shown and edited in the picture.
+- **[CoDMVM](https://codmvm.com)**: the CoDMVM camera path style.
+- **[HLAE](https://github.com/advancedfx/advancedfx)** by advancedfx: the CamIO camera export format.
+- **[TekkenOverlay](https://github.com/TekkenOverlay/TekkenOverlay)**: its display settings and simplified stages, rebuilt as the Look tab's lighting, quality, stage and frame options.
+- **[Tekken Overlay rebuild](https://github.com/parsaes80/tekken-overlay-rebuild)** by parsaes80, based on KulaGGin's Tekken Overlay: engine notes, memory patterns and the method for smooth motion.
+- **[BlueSpark](https://github.com/avim2/BlueSpark)** by avim2: the PC port of Tekken Tag Tournament 2 the TTT2 studio runs on, with its replays and frame hold.
+- **OpenDojo**: research notes on the game's subsystems.
+- **[Dear ImGui](https://github.com/ocornut/imgui)** by Omar Cornut, **[MinHook](https://github.com/TsudaKageyu/minhook)** by Tsuda Kageyu and **[ReShade](https://github.com/crosire/reshade)** by Patrick Mours: code built in.
+
+The full list, with what each one gave and its licence, is in [Where it comes from](#where-it-comes-from).
+
 ## Legal
 Tekken Studio (tekken8mvm) is an unofficial fan-made tool. It isn't made, endorsed or supported by Bandai Namco Entertainment, and TEKKEN is their trademark. It contains no game files and no game code: you need your own copy of Tekken 8 on Steam. Mods for the game may be against its terms of use, and Bandai Namco lists unauthorized mods among its ban reasons, so use it at your own risk and only offline (see [Bans and anti-cheat](#bans-and-anti-cheat)). It's free software under the GNU GPL v3, with no warranty of any kind (see [LICENSE](LICENSE)).
 
