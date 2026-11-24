@@ -181,6 +181,10 @@ DWORD WINAPI HarnessThread(void*)
             r.Streams[i].Look = static_cast<recorder::Look>(text[i] - L'0');
         }
     }
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_KEYFILE", text, 32) > 0)
+        r.KeyFile = std::clamp(_wtoi(text), 0, 2);
+    if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_KEYCUT", text, 32) > 0)
+        r.GreenDarkness = std::clamp(_wtoi(text), 0, 255);
     if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_SETTLE", text, 32) > 0)
         r.SettleFrames = _wtoi(text);
     if (GetEnvironmentVariableW(L"TEKKEN8MVM_HARNESS_SAMPLES", text, 32) > 0)

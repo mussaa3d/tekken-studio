@@ -72,6 +72,7 @@ struct Pipeline {
     ID3D12RootSignature* Root = nullptr;
     ID3D12PipelineState* DepthState = nullptr;
     ID3D12PipelineState* KeyState = nullptr;
+    ID3D12PipelineState* AlphaState = nullptr;
     ID3D12DescriptorHeap* Heap = nullptr;
     ID3D12GraphicsCommandList* List = nullptr;
     ID3D12Fence* Fence = nullptr;
@@ -113,6 +114,9 @@ float4 KeyPS(float4 position : SV_Position) : SV_Target {
     if (Read(position) > 0)
         discard;
     return float4(KeyR, KeyG, KeyB, 1);
+}
+float4 AlphaPS(float4 position : SV_Position) : SV_Target {
+    return float4(0, 0, 0, Read(position) > 0 ? 1 : 0);
 }
 )";
 
@@ -167,6 +171,7 @@ bool CreatePipeline(ID3D12Device* device, DXGI_FORMAT format)
     ID3DBlob* vs = Compile(compile, "VS", "vs_5_0");
     ID3DBlob* depthPs = Compile(compile, "DepthPS", "ps_5_0");
     ID3DBlob* keyPs = Compile(compile, "KeyPS", "ps_5_0");
+    ID3DBlob* alphaPs = Compile(compile, "AlphaPS", "ps_5_0");
     if (!vs || !depthPs || !keyPs)
         return false;
 
@@ -187,6 +192,23 @@ bool CreatePipeline(ID3D12Device* device, DXGI_FORMAT format)
     state.PS = { keyPs->GetBufferPointer(), keyPs->GetBufferSize() };
     if (FAILED(device->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&g_pipe.KeyState))))
         return false;
+    // The game's own alpha means nothing, so this writes all of it: the picture's colour times the new alpha (black where nothing was
+    // rendered, untouched elsewhere), and the new alpha itself.
+    // Without it the other looks still work, and a transparent recording falls back on the dark background.
+    if (alphaPs)
+        state.PS = { alphaPs->GetBufferPointer(), alphaPs->GetBufferSize() };
+    D3D12_RENDER_TARGET_BLEND_DESC& blend = state.BlendState.RenderTarget[0];
+    blend.BlendEnable = TRUE;
+    blend.SrcBlend = D3D12_BLEND_ZERO;
+    blend.DestBlend = D3D12_BLEND_SRC_ALPHA;
+    blend.BlendOp = D3D12_BLEND_OP_ADD;
+    blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.DestBlendAlpha = D3D12_BLEND_ZERO;
+    blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    if (!alphaPs || FAILED(device->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&g_pipe.AlphaState)))) {
+        g_pipe.AlphaState = nullptr;
+        mod::Log("Depth: no transparency drawing");
+    }
 
     D3D12_DESCRIPTOR_HEAP_DESC heap = { D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, Slots, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
     if (FAILED(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&g_pipe.Heap))))
@@ -281,6 +303,8 @@ bool Apply(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* back
         }
     }
 
+    if (options.Kind == Draw::Alpha && !g_pipe.AlphaState)
+        return false;
     const D3D12_RESOURCE_DESC screen = backBuffer->GetDesc();
     ID3D12Resource* buffer = TakeBusiestBuffer(static_cast<UINT>(screen.Width), screen.Height);
     if (!buffer)
@@ -315,7 +339,7 @@ bool Apply(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* back
 
     slot.Allocator->Reset();
     ID3D12GraphicsCommandList* list = g_pipe.List;
-    list->Reset(slot.Allocator, options.Kind == Draw::Depth ? g_pipe.DepthState : g_pipe.KeyState);
+    list->Reset(slot.Allocator, options.Kind == Draw::Depth ? g_pipe.DepthState : options.Kind == Draw::Alpha ? g_pipe.AlphaState : g_pipe.KeyState);
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = backBuffer;

@@ -5,7 +5,8 @@
 
 namespace depth {
 
-enum class Draw { Depth, Key };
+// Alpha is the key with no colour: nothing rendered turns black and see-through, and everything else is made fully there.
+enum class Draw { Depth, Key, Alpha };
 
 struct Options {
     Draw Kind = Draw::Depth;

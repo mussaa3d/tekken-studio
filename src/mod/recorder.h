@@ -52,7 +52,10 @@ struct Settings {
     float ShutterDegrees = 180; // how much of each frame's time the shutter is open
     Look Preview = Look::Picture; // the look on screen while not recording
     bool BlueKey = false;     // the keyed look is blue instead of green
-    int GreenDarkness = 16;   // how dark, out of 255, the empty background can be for the keyed look when the depth buffer can't be read
+    // What a Greenscreen stream is saved as: 0 = the key colour, in the format chosen for the recording; 1 = ProRes 4444 with
+    // transparency; 2 = PNG pictures with transparency. The last two have nothing to key.
+    int KeyFile = 0;
+    int GreenDarkness = 16;  // how dark, out of 255, the empty background can be for the keyed look when the depth buffer can't be read
     float DepthNear = 0, DepthFar = 2000, DepthCurve = 1.0f; // centimetres that are white and black, and the grey in between
     bool UseRange = false;    // start and stop by themselves at the timeline's range
     double RangeIn = 0, RangeOut = 10; // seconds on the fight clock
@@ -79,6 +82,8 @@ bool TakeAdvance();
 bool WaitingForFirstFrame();
 Pass ActivePass();
 int EnabledStreams();
+// The recording under way saves its Greenscreen streams with transparency, so that pass wants an alpha and no key colour.
+bool TransparentKey();
 
 // The size the next recording's video will be, given the picture's size now. For the menu.
 void VideoSize(int pictureWidth, int pictureHeight, int& width, int& height);

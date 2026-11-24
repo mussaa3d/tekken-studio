@@ -259,6 +259,7 @@ void WriteLook(Ini& ini)
     ini.SetNumber("rec.output_width", r.OutputWidth);
     ini.SetNumber("rec.output_height", r.OutputHeight);
     ini.SetBool("rec.blue_key", r.BlueKey);
+    ini.SetNumber("rec.key_file", r.KeyFile);
     for (int i = 0; i < recorder::MaxStreams; ++i) {
         ini.SetBool(Key("stream", i, "on"), r.Streams[i].Enabled);
         ini.SetNumber(Key("stream", i, "look"), static_cast<int>(r.Streams[i].Look));
@@ -464,6 +465,7 @@ void ReadLook(const Ini& ini, bool whole = true)
     r.OutputWidth = std::clamp(static_cast<int>(ini.GetNumber("rec.output_width", r.OutputWidth)), 0, 16384);
     r.OutputHeight = std::clamp(static_cast<int>(ini.GetNumber("rec.output_height", r.OutputHeight)), 0, 16384);
     r.BlueKey = ini.GetBool("rec.blue_key", r.BlueKey);
+    r.KeyFile = std::clamp(static_cast<int>(ini.GetNumber("rec.key_file", r.KeyFile)), 0, 2);
     for (int i = 0; i < recorder::MaxStreams; ++i) {
         r.Streams[i].Enabled = ini.GetBool(Key("stream", i, "on"), r.Streams[i].Enabled);
         r.Streams[i].Look = static_cast<recorder::Look>(static_cast<int>(ini.GetNumber(Key("stream", i, "look"), static_cast<int>(r.Streams[i].Look))));
@@ -869,6 +871,7 @@ void ResetAll()
     r.ShutterDegrees = fresh.ShutterDegrees;
     r.Preview = fresh.Preview;
     r.BlueKey = fresh.BlueKey;
+    r.KeyFile = fresh.KeyFile;
     r.GreenDarkness = fresh.GreenDarkness;
     r.DepthNear = fresh.DepthNear;
     r.DepthFar = fresh.DepthFar;

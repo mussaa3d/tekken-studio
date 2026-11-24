@@ -8,7 +8,8 @@
 
 namespace framemath {
 
-enum class PixelFormat { Bgra8, Rgba8, X2Bgr10, RgbaF16 };
+// Rgba16 is the recorder's own: 16 bits a channel, what a 10-bit picture is widened to when its alpha matters (two bits of it can't be blended).
+enum class PixelFormat { Bgra8, Rgba8, X2Bgr10, RgbaF16, Rgba16 };
 
 // How many of a frame's samples fall inside the shutter. A 180 degree shutter is open for half the frame.
 inline int BlendedSampleCount(int samplesPerFrame, float shutterDegrees)
@@ -29,6 +30,10 @@ inline void AddSample(const uint8_t* image, size_t pixels, PixelFormat format, u
             sum[i * 4 + 2] += (source[i] >> 20) & 1023;
             sum[i * 4 + 3] += source[i] >> 30;
         }
+    } else if (format == PixelFormat::Rgba16) {
+        const auto* source = reinterpret_cast<const uint16_t*>(image);
+        for (size_t i = 0; i < pixels * 4; ++i)
+            sum[i] += source[i];
     } else if (format != PixelFormat::RgbaF16) {
         for (size_t i = 0; i < pixels * 4; ++i)
             sum[i] += image[i];
@@ -48,9 +53,81 @@ inline void Average(const uint32_t* sum, size_t pixels, PixelFormat format, int 
             const uint32_t d = (sum[i * 4 + 3] + half) / samples;
             out[i] = a | (b << 10) | (c << 20) | (d << 30);
         }
+    } else if (format == PixelFormat::Rgba16) {
+        auto* out = reinterpret_cast<uint16_t*>(image);
+        for (size_t i = 0; i < pixels * 4; ++i)
+            out[i] = static_cast<uint16_t>((sum[i] + half) / samples);
     } else if (format != PixelFormat::RgbaF16) {
         for (size_t i = 0; i < pixels * 4; ++i)
             image[i] = static_cast<uint8_t>((sum[i] + half) / samples);
+    }
+}
+
+// A 10-bit picture as 16 bits a channel, red first, with its two alpha bits spread over the sixteen.
+inline void ExpandToRgba16(const uint8_t* image, size_t pixels, uint8_t* wide)
+{
+    const auto* source = reinterpret_cast<const uint32_t*>(image);
+    auto* out = reinterpret_cast<uint16_t*>(wide);
+    const auto widen = [](uint32_t ten) { return static_cast<uint16_t>((ten << 6) | (ten >> 4)); };
+    for (size_t i = 0; i < pixels; ++i) {
+        const uint32_t p = source[i];
+        out[i * 4] = widen(p & 1023);
+        out[i * 4 + 1] = widen((p >> 10) & 1023);
+        out[i * 4 + 2] = widen((p >> 20) & 1023);
+        out[i * 4 + 3] = static_cast<uint16_t>((p >> 30) * 21845);
+    }
+}
+
+// Every pixel fully there. For a picture whose alpha was never meant to be read.
+inline void MakeOpaque(uint8_t* image, size_t pixels, PixelFormat format)
+{
+    if (format == PixelFormat::RgbaF16 || format == PixelFormat::Rgba16) {
+        auto* px = reinterpret_cast<uint16_t*>(image);
+        const uint16_t one = format == PixelFormat::RgbaF16 ? 0x3C00 : 0xFFFF; // 1.0 as a half float
+        for (size_t i = 0; i < pixels; ++i)
+            px[i * 4 + 3] = one;
+        return;
+    }
+    auto* px = reinterpret_cast<uint32_t*>(image);
+    const uint32_t alpha = format == PixelFormat::X2Bgr10 ? 0xC0000000u : 0xFF000000u;
+    for (size_t i = 0; i < pixels; ++i)
+        px[i] |= alpha;
+}
+
+// After PaintBackgroundKey: everything it painted becomes see-through black. The formats it doesn't paint are left alone.
+inline void KeyToAlpha(uint8_t* image, size_t pixels, PixelFormat format, bool blue)
+{
+    if (format == PixelFormat::RgbaF16 || format == PixelFormat::Rgba16)
+        return;
+    auto* px = reinterpret_cast<uint32_t*>(image);
+    const uint32_t key = format == PixelFormat::X2Bgr10 ? (blue ? 1023u << 20 : 1023u << 10) : (!blue ? 0x0000FF00u : (format == PixelFormat::Bgra8 ? 0x000000FFu : 0x00FF0000u));
+    const uint32_t colour = format == PixelFormat::X2Bgr10 ? 0x3FFFFFFFu : 0x00FFFFFFu;
+    for (size_t i = 0; i < pixels; ++i)
+        if ((px[i] & colour) == key)
+            px[i] = 0;
+}
+
+// Blended samples come out with the colour already multiplied by the alpha (a fighter that was there for half the samples is half as
+// bright). Video and PNG files want the colour whole and the alpha beside it, so the colour is divided back.
+inline void Unpremultiply(uint8_t* image, size_t pixels, PixelFormat format)
+{
+    if (format == PixelFormat::Rgba16) {
+        auto* px = reinterpret_cast<uint16_t*>(image);
+        for (size_t i = 0; i < pixels; ++i) {
+            const uint32_t alpha = px[i * 4 + 3];
+            if (alpha == 0 || alpha == 65535)
+                continue;
+            for (int c = 0; c < 3; ++c)
+                px[i * 4 + c] = static_cast<uint16_t>(std::min<uint32_t>((px[i * 4 + c] * 65535u + alpha / 2) / alpha, 65535u));
+        }
+    } else if (format == PixelFormat::Bgra8 || format == PixelFormat::Rgba8) {
+        for (size_t i = 0; i < pixels; ++i) {
+            const uint32_t alpha = image[i * 4 + 3];
+            if (alpha == 0 || alpha == 255)
+                continue;
+            for (int c = 0; c < 3; ++c)
+                image[i * 4 + c] = static_cast<uint8_t>(std::min<uint32_t>((image[i * 4 + c] * 255u + alpha / 2) / alpha, 255u));
+        }
     }
 }
 

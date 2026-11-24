@@ -72,6 +72,8 @@ struct Output {
     std::shared_ptr<Encoder> Encoder;
     std::vector<uint32_t> Sum;
     int Samples = 0;
+    bool Alpha = false;                                         // its file has transparency
+    framemath::PixelFormat Pixels = framemath::PixelFormat::Bgra8; // what's sent to its ffmpeg
 };
 
 // The passes that make up one sample, in render order.
@@ -91,6 +93,32 @@ int g_sampleIndex = 0;
 int g_samplesPerFrame = 1;
 int g_blendedSamples = 1;
 framemath::PixelFormat g_pixels = framemath::PixelFormat::Bgra8;
+std::atomic<bool> g_transparentKey { false };
+
+// The files a Greenscreen stream is saved as when it's asked for with transparency, whatever format the recording is in.
+const Codec& AlphaCodec(int keyFile)
+{
+    static const Codec prores = { "ProRes 4444 with transparency", ".mov", "scale=out_color_matrix=bt709:out_range=tv",
+                                  "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le" };
+    static const Codec png = { "PNG pictures with transparency", ".png", "", "-c:v png -pix_fmt rgba" };
+    return keyFile == 2 ? png : prores;
+}
+
+bool IsPng(const Codec& codec)
+{
+    return std::string(codec.Extension) == ".png";
+}
+
+// Video formats halve the colour, so they want even sizes. Every stream is the same size, so one such file decides for all of them.
+bool NeedsEven()
+{
+    if (!IsPng(Codecs()[std::clamp(g_settings.CodecIndex, 0, static_cast<int>(Codecs().size()) - 1)]))
+        return true;
+    for (const Stream& stream : g_settings.Streams)
+        if (stream.Enabled && stream.Look == Look::Greenscreen && g_settings.KeyFile == 1)
+            return true;
+    return false;
+}
 
 void SetError(const std::string& text)
 {
@@ -269,9 +297,10 @@ void WriterLoop(std::shared_ptr<Encoder> encoder)
     --g_writers;
 }
 
-std::shared_ptr<Encoder> StartEncoder(UINT width, UINT height, DXGI_FORMAT format, const std::filesystem::path& output, const Codec& codec, int index)
+std::shared_ptr<Encoder> StartEncoder(UINT width, UINT height, DXGI_FORMAT format, const std::filesystem::path& output, const Codec& codec, int index, bool wide)
 {
-    const char* pixelFormat = FfmpegPixelFormat(format);
+    // A 10-bit picture whose alpha matters arrives widened to 16 bits a channel.
+    const char* pixelFormat = wide ? "rgba64le" : FfmpegPixelFormat(format);
     if (!pixelFormat) {
         SetError("the game's back buffer format isn't supported: " + std::to_string(format));
         return nullptr;
@@ -285,7 +314,7 @@ std::shared_ptr<Encoder> StartEncoder(UINT width, UINT height, DXGI_FORMAT forma
         if (!filter.empty())
             filters += (filters.empty() ? "" : ",") + filter;
     };
-    const bool needsEven = std::string(codec.Extension) != ".png";
+    const bool needsEven = NeedsEven();
     if (g_settings.OutputWidth > 0 && g_settings.OutputHeight > 0 && (outWidth != static_cast<int>(width) || outHeight != static_cast<int>(height)))
         addFilter("scale=" + std::to_string(outWidth) + ":" + std::to_string(outHeight) + ":flags=lanczos");
     else if (needsEven && ((width | height) & 1))
@@ -367,9 +396,11 @@ std::vector<int> EnabledStreamIndices()
 bool StartEncoders(UINT width, UINT height, DXGI_FORMAT format)
 {
     const Settings& s = g_settings;
-    const Codec& codec = Codecs()[std::clamp(s.CodecIndex, 0, static_cast<int>(Codecs().size()) - 1)];
+    const Codec& chosen = Codecs()[std::clamp(s.CodecIndex, 0, static_cast<int>(Codecs().size()) - 1)];
+    const int keyFile = std::clamp(s.KeyFile, 0, 2);
     std::error_code ignored;
     std::filesystem::create_directories(s.OutputDir, ignored);
+    bool anyAlpha = false;
 
     std::vector<int> enabled = EnabledStreamIndices();
     if (enabled.empty())
@@ -384,15 +415,20 @@ bool StartEncoders(UINT width, UINT height, DXGI_FORMAT format)
         std::string name = stem;
         if (enabled.size() > 1)
             name += std::string("_") + (stream.Name[0] ? stream.Name : LookName(stream.Look));
+        const bool alpha = stream.Look == Look::Greenscreen && keyFile != 0;
+        const Codec& codec = alpha ? AlphaCodec(keyFile) : chosen;
         std::filesystem::path path = s.OutputDir / (name + codec.Extension);
-        if (std::string(codec.Extension) == ".png") {
+        if (IsPng(codec)) {
             std::filesystem::create_directories(s.OutputDir / name, ignored);
             path = s.OutputDir / name / "frame_%06d.png";
         }
         Output output;
-        output.Encoder = StartEncoder(width, height, format, path, codec, static_cast<int>(g_outputs.size()));
+        output.Alpha = alpha;
+        output.Pixels = alpha && g_pixels == framemath::PixelFormat::X2Bgr10 ? framemath::PixelFormat::Rgba16 : g_pixels;
+        output.Encoder = StartEncoder(width, height, format, path, codec, static_cast<int>(g_outputs.size()), output.Pixels == framemath::PixelFormat::Rgba16);
         if (!output.Encoder)
             return false;
+        anyAlpha = anyAlpha || alpha;
         if (firstFile.empty())
             firstFile = path.string();
         const int outputIndex = static_cast<int>(g_outputs.size());
@@ -400,6 +436,7 @@ bool StartEncoders(UINT width, UINT height, DXGI_FORMAT format)
         g_plan.push_back({ PassForLook(stream.Look), outputIndex });
     }
 
+    g_transparentKey = anyAlpha;
     std::lock_guard lock(g_textMutex);
     g_lastFile = firstFile;
     g_lastError.clear();
@@ -476,8 +513,16 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
     const size_t bytes = pixels * bytesPerPixel;
     Output& output = g_outputs[pass.Output];
 
-    std::vector<uint8_t> image = TakeBuffer(*output.Encoder, bytes);
-    if (!CopyRows(footprint, bytesPerPixel, image.data())) {
+    // A widened picture is read as it is first, then widened into the buffer that goes to ffmpeg.
+    const bool wide = output.Pixels == framemath::PixelFormat::Rgba16;
+    static std::vector<uint8_t> narrow;
+    std::vector<uint8_t> image = TakeBuffer(*output.Encoder, wide ? pixels * 8 : bytes);
+    uint8_t* read = image.data();
+    if (wide) {
+        narrow.resize(bytes);
+        read = narrow.data();
+    }
+    if (!CopyRows(footprint, bytesPerPixel, read)) {
         // A black frame would go in the video without a word: stop and say so instead.
         SetError("couldn't read the frame back from the graphics card");
         g_stopRequested = true;
@@ -487,8 +532,15 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
     // With the depth buffer the key is already on the frame, and exact.
     if (pass.Pass == Pass::Greenscreen && !depth::Working()) {
         static std::vector<int> stack;
-        framemath::PaintBackgroundKey(image.data(), footprint.Footprint.Width, footprint.Footprint.Height, g_pixels, g_settings.GreenDarkness, g_settings.BlueKey, stack);
+        // For a file with transparency, what would have been painted the key colour is made see-through instead.
+        if (output.Alpha)
+            framemath::MakeOpaque(read, pixels, g_pixels);
+        framemath::PaintBackgroundKey(read, footprint.Footprint.Width, footprint.Footprint.Height, g_pixels, g_settings.GreenDarkness, g_settings.BlueKey, stack);
+        if (output.Alpha)
+            framemath::KeyToAlpha(read, pixels, g_pixels, g_settings.BlueKey);
     }
+    if (wide)
+        framemath::ExpandToRgba16(read, pixels, image.data());
 
     if (g_blendedSamples <= 1) {
         Enqueue(*output.Encoder, std::move(image));
@@ -497,10 +549,12 @@ void CapturePass(const PlannedPass& pass, ID3D12Device* device, ID3D12CommandQue
 
     if (output.Sum.size() != pixels * 4)
         output.Sum.assign(pixels * 4, 0);
-    framemath::AddSample(image.data(), pixels, g_pixels, output.Sum.data());
+    framemath::AddSample(image.data(), pixels, output.Pixels, output.Sum.data());
     ++output.Samples;
     if (output.Samples >= g_blendedSamples) {
-        framemath::Average(output.Sum.data(), pixels, g_pixels, output.Samples, image.data());
+        framemath::Average(output.Sum.data(), pixels, output.Pixels, output.Samples, image.data());
+        if (output.Alpha)
+            framemath::Unpremultiply(image.data(), pixels, output.Pixels);
         std::fill(output.Sum.begin(), output.Sum.end(), 0);
         output.Samples = 0;
         Enqueue(*output.Encoder, std::move(image));
@@ -604,8 +658,7 @@ void VideoSize(int pictureWidth, int pictureHeight, int& width, int& height)
         width = s.OutputWidth;
         height = s.OutputHeight;
     }
-    const bool needsEven = std::string(Codecs()[std::clamp(s.CodecIndex, 0, static_cast<int>(Codecs().size()) - 1)].Extension) != ".png";
-    if (needsEven) {
+    if (NeedsEven()) {
         width &= ~1;
         height &= ~1;
     }
@@ -678,6 +731,11 @@ Pass ActivePass()
     if (g_active || g_startRequested)
         return g_activePass;
     return PassForLook(g_settings.Preview);
+}
+
+bool TransparentKey()
+{
+    return g_active && g_transparentKey;
 }
 
 int EnabledStreams()

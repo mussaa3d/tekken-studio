@@ -323,6 +323,42 @@ static void TestFrameMath()
         CHECK(blue8[0] == 0xFF0000FFu);
     }
 
+    // A greenscreen saved with transparency. A 10-bit picture widens to 16 bits, its two alpha bits to all or nothing.
+    {
+        const uint32_t ten[2] = { pack(1023, 0, 512, 3), pack(1, 2, 3, 0) };
+        uint16_t wide[8] = {};
+        ExpandToRgba16(reinterpret_cast<const uint8_t*>(ten), 2, reinterpret_cast<uint8_t*>(wide));
+        CHECK(wide[0] == 65535 && wide[1] == 0 && wide[2] == ((512 << 6) | (512 >> 4)) && wide[3] == 65535);
+        CHECK(wide[4] == 64 && wide[7] == 0);
+
+        // Without the depth buffer: all of it there, the background painted, and what was painted made see-through.
+        std::vector<int> stack;
+        uint32_t image[3] = { 0x00050A0Bu, 0x008090A0u, 0x00050A0Bu };
+        MakeOpaque(reinterpret_cast<uint8_t*>(image), 3, PixelFormat::Bgra8);
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(image), 3, 1, PixelFormat::Bgra8, 20, false, stack);
+        KeyToAlpha(reinterpret_cast<uint8_t*>(image), 3, PixelFormat::Bgra8, false);
+        CHECK(image[0] == 0 && image[2] == 0 && image[1] == 0xFF8090A0u);
+        uint32_t image10[2] = { pack(20, 40, 44, 0), pack(500, 500, 500, 0) };
+        MakeOpaque(reinterpret_cast<uint8_t*>(image10), 2, PixelFormat::X2Bgr10);
+        PaintBackgroundKey(reinterpret_cast<uint8_t*>(image10), 2, 1, PixelFormat::X2Bgr10, 20, true, stack);
+        KeyToAlpha(reinterpret_cast<uint8_t*>(image10), 2, PixelFormat::X2Bgr10, true);
+        CHECK(image10[0] == 0 && image10[1] == pack(500, 500, 500, 3));
+
+        // Motion blur: a fighter there for one sample of two is half see-through, and keeps its own colour.
+        const uint16_t there[4] = { 40000, 20000, 10000, 65535 }, gone[4] = { 0, 0, 0, 0 };
+        uint32_t sum16[4] = {};
+        AddSample(reinterpret_cast<const uint8_t*>(there), 1, PixelFormat::Rgba16, sum16);
+        AddSample(reinterpret_cast<const uint8_t*>(gone), 1, PixelFormat::Rgba16, sum16);
+        uint16_t out16[4];
+        Average(sum16, 1, PixelFormat::Rgba16, 2, reinterpret_cast<uint8_t*>(out16));
+        CHECK(out16[0] == 20000 && out16[3] == 32768);
+        Unpremultiply(reinterpret_cast<uint8_t*>(out16), 1, PixelFormat::Rgba16);
+        CHECK(out16[0] >= 39998 && out16[0] <= 40000 && out16[1] >= 19999 && out16[1] <= 20000 && out16[3] == 32768);
+        uint8_t half8[4] = { 50, 100, 25, 128 };
+        Unpremultiply(half8, 1, PixelFormat::Rgba8);
+        CHECK(half8[0] == 100 && half8[1] == 199 && half8[2] == 50 && half8[3] == 128);
+    }
+
 }
 
 static void TestScanner()

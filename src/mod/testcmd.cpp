@@ -819,6 +819,9 @@ void Run(const std::string& line)
     } else if (command == "keycolour") {
         in >> n;
         r.BlueKey = n != 0;
+    } else if (command == "keyfile") {
+        in >> n;
+        r.KeyFile = std::clamp(n, 0, 2);
     } else if (command == "pathstyle") {
         in >> n;
         camera::Config().PathStyle = static_cast<cine::PathStyle>(std::clamp(n, 0, 2));

@@ -68,6 +68,7 @@ The editor (Insert) is laid out like Iris Studio's: the game picture on the left
 - **Record shot:** the same, recording from the first key's exact frame to the last key's.
 - **Round buttons:** R1, R2, R3 and so on beside the timescale jump straight to a round of the replay.
 - **Streams:** several files at once that line up frame for frame: picture, greenscreen (green or blue), stage only, fighters on black, depth, effects on black. Every look also shows on screen, so you can see it before recording.
+  - **The greenscreen can be saved with real transparency instead:** a ProRes 4444 `.mov` or a folder of PNG pictures, each with an alpha channel, so there is nothing to key. Choose it under Greenscreen file in the Record tab. The other streams keep the format you chose.
 - **Depth:** the game's real depth buffer as a smooth grey picture with clean silhouettes, near things white and far things dark. Near, far and curve sliders set how it falls off.
 - **Speed ramps:** ease between timescales by dragging keys on the curve.
 - **Free camera:** fly, look, roll and zoom, while the fight runs or is paused.
@@ -204,7 +205,7 @@ What it doesn't do:
 - **The game's tips stop a replay** until they're set to Hide (step 5 under Use). A take or a recording that runs into one stops there.
 - **Rewinding needs a replay.** Practice mode has no saved points, so the ruler only goes forward there.
 - **Windows Volume Mixer:** the audio pass captures the game after its slider. If the game is at zero there, the recording is silent, and the editor tells you.
-- **The greenscreen and depth come from the game's depth buffer.** Anything that doesn't write depth, like sparks and glows, is painted over in the greenscreen and doesn't show in the depth. If the buffer can't be read, the editor says so, and the greenscreen video falls back on keying the dark background.
+- **The greenscreen and depth come from the game's depth buffer.** Anything that doesn't write depth, like sparks and glows, is painted over in the greenscreen and doesn't show in the depth. If the buffer can't be read, the editor says so, and the greenscreen video falls back on keying the dark background (a transparent file does the same, and makes that background see-through).
 - **Rewinding changes the picture slightly compared to the first playthrough:** by less than 3 cm on a fighter's position, right after a jump. It's the same every time.
 - **Fights run at 60 fps** at 1x and slower, because cloth only comes out the same with every frame the same length. Above 1x the frame rate is free again.
 - **Your game settings are kept apart.** Graphics and resolution set during a cinematic session stay with cinematic sessions, and normal play keeps its own. The launcher swaps them, so the first session starts from what you already had. If you start the game from Steam, you get your normal settings.

@@ -3,6 +3,8 @@ param(
     [int]$Frames = 60,
     [int]$RecordFrames = 120,
     [string]$Looks = "",        # one digit per stream: 0 picture, 1 green, 2 stage, 3 fighters on black, 4 depth
+    [int]$KeyFile = 0,          # what a green stream is saved as: 1 ProRes 4444 with transparency, 2 PNG pictures with transparency
+    [int]$KeyCut = 0,           # how dark counts as background for the key (the stand-in's background is 115 out of 255)
     [int]$Settle = -1,
     [int]$Samples = 0,
     [int]$Shutter = 0,
@@ -29,7 +31,7 @@ Remove-Item -Force "build\harness_shot_*" -ErrorAction SilentlyContinue
 Remove-Item -Force "$data\harness_audio.wav" -ErrorAction SilentlyContinue
 Set-Content -Path "$data\tekken8mvm.ini" -Value "output_dir = $out`nrecord_fps = 60`n" -Encoding ascii
 
-foreach ($name in "REC", "SHOT", "LOOKS", "SETTLE", "SAMPLES", "SHUTTER", "AUDIO", "UITEST", "PREVIEW", "SPEED", "RAMP", "DOLLY", "RESHADE", "CAPSIZE", "OUTSIZE") { Remove-Item "Env:\TEKKEN8MVM_HARNESS_$name" -ErrorAction SilentlyContinue }
+foreach ($name in "REC", "SHOT", "LOOKS", "SETTLE", "SAMPLES", "SHUTTER", "AUDIO", "UITEST", "PREVIEW", "SPEED", "RAMP", "DOLLY", "RESHADE", "CAPSIZE", "OUTSIZE", "KEYFILE", "KEYCUT") { Remove-Item "Env:\TEKKEN8MVM_HARNESS_$name" -ErrorAction SilentlyContinue }
 $env:TEKKEN8MVM_HARNESS_REC = "$RecordFrames"
 if ($UiTest) { $env:TEKKEN8MVM_HARNESS_UITEST = "1" }
 if ($Live) { $env:TEKKEN8MVM_HARNESS_PREVIEW = "1" }
@@ -41,6 +43,8 @@ if ($CaptureSize) { $env:TEKKEN8MVM_HARNESS_CAPSIZE = $CaptureSize }
 if ($OutputSize) { $env:TEKKEN8MVM_HARNESS_OUTSIZE = $OutputSize }
 if ($Screenshots) { $env:TEKKEN8MVM_HARNESS_SHOT = "$root\build\harness_shot" }
 if ($Looks) { $env:TEKKEN8MVM_HARNESS_LOOKS = $Looks }
+if ($KeyFile) { $env:TEKKEN8MVM_HARNESS_KEYFILE = "$KeyFile" }
+if ($KeyCut) { $env:TEKKEN8MVM_HARNESS_KEYCUT = "$KeyCut" }
 if ($Settle -ge 0) { $env:TEKKEN8MVM_HARNESS_SETTLE = "$Settle" }
 if ($Samples) { $env:TEKKEN8MVM_HARNESS_SAMPLES = "$Samples" }
 if ($Shutter) { $env:TEKKEN8MVM_HARNESS_SHUTTER = "$Shutter" }

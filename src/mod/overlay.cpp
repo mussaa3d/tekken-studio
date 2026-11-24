@@ -504,6 +504,9 @@ void OnPresent(IDXGISwapChain3* swapChain)
         const recorder::Settings& look = recorder::Config();
         depth::Options options;
         options.Kind = pass == recorder::Pass::Depth ? depth::Draw::Depth : depth::Draw::Key;
+        // A greenscreen stream being saved with transparency: no colour behind the fighters, a real alpha instead.
+        if (pass == recorder::Pass::Greenscreen && recorder::TransparentKey())
+            options.Kind = depth::Draw::Alpha;
         options.Near = look.DepthNear;
         options.Far = look.DepthFar;
         options.Curve = look.DepthCurve;
