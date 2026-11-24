@@ -120,7 +120,7 @@ void Run(const std::string& line, std::ostringstream& out)
         for (uint64_t at = 0x30000000; base && at < 0x90000000 && VirtualQuery(base + at, &info, sizeof(info));) {
             const uint64_t start = static_cast<const uint8_t*>(info.BaseAddress) - base, size = info.RegionSize;
             if (info.State == MEM_COMMIT && !(info.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && info.Protect != 0) {
-                for (uint64_t p = std::max<uint64_t>(start, at) & ~3ull; p + 4ull * apart + 4 <= start + size && found < 200; p += 4) {
+                for (uint64_t p = std::max<uint64_t>(start, at) & ~3ull; apart > 0 && p + 4ull * apart + 4 <= start + size && found < 200; p += 4) {
                     if (ReadFloat(static_cast<uint32_t>(p)) == a && ReadFloat(static_cast<uint32_t>(p + 4ull * apart)) == b) {
                         char text[32];
                         snprintf(text, sizeof(text), "%08X\n", static_cast<uint32_t>(p));
@@ -206,7 +206,7 @@ void Run(const std::string& line, std::ostringstream& out)
         std::string name;
         std::getline(in >> std::ws, name);
         const std::filesystem::path file = Ttt2ReplaysFolder() / name;
-        out << "replay " << (GuestBase() && Ttt2ReplayChoose(GuestBase(), file.string()) ? "chosen" : "refused") << "\n";
+        out << "replay " << (GuestBase() && Ttt2ReplayChoose(GuestBase(), Narrow(file)) ? "chosen" : "refused") << "\n";
     } else if (command == "replaykeep") {
         // replaykeep [0|1]: copies of BlueSpark's replays kept in the Videos folder; answers with the counts
         int on = -1;
@@ -214,20 +214,20 @@ void Run(const std::string& line, std::ostringstream& out)
         if (on >= 0)
             KeepReplays(on != 0);
         out << "keeps " << (KeepsReplays() ? 1 : 0) << " kept " << ReplaysKept() << " brought_in " << ReplaysBroughtIn() << " not_in " << SavedReplaysNotIn().size() << "\n";
-        out << "folder " << SavedReplaysFolder().string() << "\n";
+        out << "folder " << Utf8(SavedReplaysFolder()) << "\n";
     } else if (command == "replayin") {
         // replayin <path>: a replay file from anywhere copied into BlueSpark's folder, and started
         std::string name;
         std::getline(in >> std::ws, name);
         const std::filesystem::path file = BringReplayIn(name);
-        out << "replayin " << (file.empty() ? "refused" : file.string()) << " " << (!file.empty() && GuestBase() && Ttt2ReplayChoose(GuestBase(), file.string()) ? "chosen" : "not started") << "\n";
+        out << "replayin " << (file.empty() ? "refused" : Utf8(file)) << " " << (!file.empty() && GuestBase() && Ttt2ReplayChoose(GuestBase(), Narrow(file)) ? "chosen" : "not started") << "\n";
     } else if (command == "replays") {
         std::error_code ignored;
         const std::filesystem::path folder = Ttt2ReplaysFolder();
-        out << "folder " << folder.string() << "\n";
+        out << "folder " << Utf8(folder) << "\n";
         for (const auto& entry : std::filesystem::recursive_directory_iterator(folder, ignored))
             if (entry.is_regular_file())
-                out << "file " << std::filesystem::relative(entry.path(), folder, ignored).string() << " " << entry.file_size() << "\n";
+                out << "file " << Utf8(std::filesystem::relative(entry.path(), folder, ignored)) << " " << entry.file_size(ignored) << "\n";
     } else if (command == "watch") {
         // watch <hex address> <bytes> [r]: count the code that writes there; with r, reads too
         uint32_t address = 0, size = 4;

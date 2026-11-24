@@ -392,7 +392,7 @@ std::vector<std::string> SavedPaths()
     std::error_code ignored;
     for (const auto& entry : std::filesystem::directory_iterator(PathsDir(), ignored))
         if (entry.path().extension() == ".ttt2path")
-            names.push_back(entry.path().stem().string());
+            names.push_back(Narrow(entry.path().stem()));
     std::sort(names.begin(), names.end());
     return names;
 }

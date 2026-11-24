@@ -404,3 +404,14 @@ Presets, shots, camera paths, actor takes and `.t8replay` files can be passed be
 - `ttt2/tools/callers.py` lists who calls a recompiled function from the generated sources (it stops where the calls go through pointers, three levels up from the camera write); the `stack` command logs the game's stack at the next camera write.
 - Launcher: a TTT2 tab (folder in `launcher.ini` as `ttt2_playtest`, release check, Install, Simple, Studio). Clicking **Open the studio** started `ttt2-studio.exe` with `start-mode.txt` = studio. The installer and the portable zip carry `ttt2\build-studio.ps1`, `run-studio.ps1` and `src`.
 - Test tools: `ttt2/tools/drive-ttt2.ps1` (picture, keys, the studio's command file), `to-fight.ps1`, `to-replay.ps1`, `test-time.ps1`, `whois.py`.
+
+## 0.1 beta: after the first code review (24 November)
+Found by reading the newest code, not by a crash. Checked: the unit tests (279), the TTT2 studio in a replay (the replays list, a recording with sound, a frame-for-frame one, the No HUD preset at 16:9 and 9:16). Not run in Tekken 8: the saver and sharing changes.
+- **Names outside the PC's code page.** `path::string()` throws for a folder or file name the code page doesn't have (a profile folder in Arabic on an English Windows), on threads with nothing to catch it, so the game would end. The saver now reads `output_dir` as UTF-8 and logs the folder as UTF-8; the TTT2 studio uses `Utf8()` for the log and the editor and `Narrow()` for the names BlueSpark takes (`studio.h`).
+- **A replay whose name can't be a file name** (a player's name cut in the middle of a character) is saved under its date instead of stopping the saver, and a failed write (full disk, locked folder) is tried again on the next look, three times at most, where it used to be skipped for the session.
+- **The TTT2 replay keeper and the Replays tab** give up a look at BlueSpark's folder if it goes while being read (a play test being replaced) instead of ending the game.
+- **TTT2 recording:** a failed join no longer hides the first error or leaves the `.sound.wav` behind, and a pipe that won't open or a window too small to record says so.
+- **TTT2 No HUD** also takes the mode's label ("VS BATTLE") off: it isn't one of the HUD's callers, so its projection (register 128) is moved off the screen while that preset is on.
+- **Installer:** the TTT2 sources of the version before are removed first, so a source a new version dropped can't break the build on the user's PC.
+- **`tools\publish_release.ps1`** no longer stops when the release isn't there yet (gh's "release not found" on stderr under `Stop`).
+- Left as they are: **Update now** in the portable copy installs the full tool beside it instead of updating the zip's copy; the recorder's error text is written on one thread and read on another without a lock; the checksum is in the same release as the installer, so it catches a bad download, not a replaced release.

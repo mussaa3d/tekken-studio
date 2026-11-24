@@ -42,6 +42,11 @@ CloseApplications=yes
 Name: "ffmpeg"; Description: "Download ffmpeg {#FfmpegVersion} for recording (about 110 MB)"
 Name: "desktopicon"; Description: "Desktop shortcut"; Flags: unchecked
 
+[InstallDelete]
+; The TTT2 studio is built from every source in this folder: one a new version dropped mustn't stay.
+Type: files; Name: "{app}\ttt2\src\*.cpp"
+Type: files; Name: "{app}\ttt2\src\*.h"
+
 [Files]
 Source: "..\dist\{#FileName}.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\mod\dinput8.dll"; DestDir: "{app}\mod"; Flags: ignoreversion

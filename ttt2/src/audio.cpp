@@ -214,7 +214,7 @@ void Capture(std::filesystem::path path)
     client->Release();
     CloseHandle(ready);
     CoUninitialize();
-    Log("Audio: wrote %.2f s to %s", samples / static_cast<double>(SampleRate), path.string().c_str());
+    Log("Audio: wrote %.2f s to %s", samples / static_cast<double>(SampleRate), reinterpret_cast<const char*>(path.u8string().c_str()));
     g_running = false;
 }
 
@@ -230,7 +230,8 @@ bool Start(const std::filesystem::path& file)
     g_running = true;
     {
         std::lock_guard lock(g_textMutex);
-        g_lastFile = file.string();
+        const std::u8string name = file.u8string();
+        g_lastFile.assign(name.begin(), name.end());
         g_lastError.clear();
     }
     std::thread(Capture, file).detach();

@@ -25,8 +25,12 @@ $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
 $sumFile = "$setup.sha256"
 Set-Content -Path $sumFile -Value "$hash  tekken-studio-$version-setup.exe" -Encoding ascii -NoNewline
 
-gh release view "v$version" --repo "$owner/$repo" *> $null
-if ($LASTEXITCODE -eq 0) {
+# gh writes "release not found" to stderr, which Windows PowerShell turns into an error under Stop: asked with Continue.
+$ErrorActionPreference = "Continue"
+gh release view "v$version" --repo "$owner/$repo" 2>&1 | Out-Null
+$exists = $LASTEXITCODE -eq 0
+$ErrorActionPreference = "Stop"
+if ($exists) {
     gh release upload "v$version" $setup $sumFile $portable --clobber --repo "$owner/$repo"
 } else {
     if (-not $Notes) { $Notes = "Tekken Studio v$version beta. Expect rough edges, and please report what breaks. Open the tool and press Update now, or install this over the old version. The portable zip is the tool on its own: unzip it anywhere and run tekken-studio.exe." }

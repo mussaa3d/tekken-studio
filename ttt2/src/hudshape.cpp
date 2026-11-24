@@ -68,6 +68,13 @@ extern "C" void sub_82732970(PPCContext& ctx, uint8_t* base)
     const uint32_t first = ctx.r4.u32, data = ctx.r5.u32, count = ctx.r6.u32;
     const bool projection = count == 4 && (first == 4 || first == 128) && Readable(data, 64) && ReadFloat(data) == 0.0015625f && ReadFloat(data + 20) == -0.0027777778f
                             && ReadFloat(data + 48) == -1.0f && ReadFloat(data + 52) == 1.0f;
+    if (projection && first == 128 && HudPreset() == HudPresetCount - 1) {
+        // "No HUD": the mode's label ("VS BATTLE") isn't one of the HUD's callers, so it's drawn off the screen instead.
+        WriteFloat(data + 48, 5.0f);
+        __imp__sub_82732970(ctx, base);
+        WriteFloat(data + 48, -1.0f);
+        return;
+    }
     float x = 0, y = 0, width = 0, height = 0;
     if (!projection || !HudRect(x, y, width, height)) {
         __imp__sub_82732970(ctx, base);

@@ -6,6 +6,22 @@
 #include <string>
 #include <vector>
 
+// A path as UTF-8 text, for the log and the editor. (path::string() throws for a name the PC's code page doesn't have.)
+inline std::string Utf8(const std::filesystem::path& path)
+{
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+// A path as BlueSpark takes one: the code page's text, or UTF-8 where the code page can't say it.
+inline std::string Narrow(const std::filesystem::path& path)
+{
+    try {
+        return path.string();
+    } catch (const std::exception&) {
+        return Utf8(path);
+    }
+}
+
 namespace rex::ui {
 class ImGuiDrawer;
 }

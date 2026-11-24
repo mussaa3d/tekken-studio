@@ -112,12 +112,14 @@ void RefreshReplays()
     g_replays.clear();
     std::error_code ignored;
     const std::filesystem::path folder = Ttt2ReplaysFolder();
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(folder, ignored)) {
+    // The folder can go while it's being read (a play test being replaced): stepping by hand, with no exception.
+    for (std::filesystem::recursive_directory_iterator it(folder, ignored), end; !ignored && it != end; it.increment(ignored)) {
+        const std::filesystem::directory_entry& entry = *it;
         if (!entry.is_regular_file(ignored) || entry.path().extension() != ".ttt2replay")
             continue;
         ReplayFile file;
         file.Path = entry.path();
-        file.Name = std::filesystem::relative(entry.path(), folder, ignored).string();
+        file.Name = Utf8(std::filesystem::relative(entry.path(), folder, ignored));
         file.Size = entry.file_size(ignored);
         file.Written = entry.last_write_time(ignored);
         file.Saved = ReplayIsSaved(file.Path);
@@ -190,7 +192,7 @@ void ReplaysTab()
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::SmallButton("Watch")) {
                 uint8_t* base = GuestBase();
-                if (base && Ttt2ReplayChoose(base, file.Path.string()))
+                if (base && Ttt2ReplayChoose(base, Narrow(file.Path)))
                     Notice("Starting " + file.Name);
                 else
                     Notice("BlueSpark wouldn't start it from here. Open it from its own REPLAYS tab.");
@@ -213,13 +215,13 @@ void ReplaysTab()
             ImGui::PushID(static_cast<int>(100000 + i));
             if (ImGui::SmallButton("Bring back")) {
                 const std::filesystem::path in = BringReplayIn(g_savedOnly[i]);
-                Notice(in.empty() ? "Couldn't copy it into BlueSpark's folder." : "Back in the list: " + in.filename().string());
+                Notice(in.empty() ? "Couldn't copy it into BlueSpark's folder." : "Back in the list: " + Utf8(in.filename()));
                 RefreshReplays();
                 ImGui::PopID();
                 break;
             }
             ImGui::SameLine();
-            ImGui::TextColored(Colour(pal::Muted), "%s  (saved copy only)", g_savedOnly[i].filename().string().c_str());
+            ImGui::TextColored(Colour(pal::Muted), "%s  (saved copy only)", Utf8(g_savedOnly[i].filename()).c_str());
             ImGui::PopID();
         }
         if (g_replays.empty())

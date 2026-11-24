@@ -123,16 +123,24 @@ DWORD WINAPI SaverThread(void*)
     Ini ini;
     ini.Load(mod::DataDir() / "tekken8mvm.ini");
     const std::string output = ini.Get("output_dir");
+    bool fromIni = false;
     if (!output.empty()) {
-        g_outputDir = output;
-    } else {
+        // The ini is UTF-8, as the launcher writes it. A folder that isn't valid text falls back to Videos.
+        try {
+            g_outputDir = std::filesystem::path(std::u8string(output.begin(), output.end()));
+            fromIni = true;
+        } catch (const std::exception&) {
+        }
+    }
+    if (!fromIni) {
         wchar_t profile[MAX_PATH] = L".";
         GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
         g_outputDir = std::filesystem::path(profile) / "Videos" / "tekken8mvm";
     }
     sharing::SetOutputDirSource(OutputDir);
     const bool onKey = ini.GetBool("saver_on_key", false);
-    mod::Log("Tekken Studio replay saver: saving your replays to %s, %s", (g_outputDir / "my_replays").string().c_str(),
+    const std::u8string where = (g_outputDir / "my_replays").u8string();
+    mod::Log("Tekken Studio replay saver: saving your replays to %s, %s", reinterpret_cast<const char*>(where.c_str()),
              onKey ? "when Ctrl+F10 is pressed" : "as the game adds them");
     for (bool down = false;;) {
         bool fine = true;

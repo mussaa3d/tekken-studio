@@ -83,14 +83,18 @@ void Keeper()
         if (g_keep) {
             std::error_code ignored;
             const auto now = std::filesystem::file_time_type::clock::now();
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(Ttt2ReplaysFolder(), ignored)) {
-                // One that's still being written (the match has only just ended) waits for the next look.
-                if (!entry.is_regular_file(ignored) || !IsReplay(entry.path()) || now - entry.last_write_time(ignored) < std::chrono::seconds(4))
-                    continue;
-                if (CopyTo(SavedReplaysFolder(), entry.path())) {
-                    ++g_kept;
-                    Log("Replays: kept a copy of %s", entry.path().filename().string().c_str());
+            // The folder can go while it's being read (a play test being replaced): that look is given up, the next one starts over.
+            try {
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(Ttt2ReplaysFolder(), ignored)) {
+                    // One that's still being written (the match has only just ended) waits for the next look.
+                    if (!entry.is_regular_file(ignored) || !IsReplay(entry.path()) || now - entry.last_write_time(ignored) < std::chrono::seconds(4))
+                        continue;
+                    if (CopyTo(SavedReplaysFolder(), entry.path())) {
+                        ++g_kept;
+                        Log("Replays: kept a copy of %s", Utf8(entry.path().filename()).c_str());
+                    }
                 }
+            } catch (const std::exception&) {
             }
         }
         Sleep(3000);

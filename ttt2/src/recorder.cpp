@@ -133,8 +133,10 @@ bool StartFfmpeg()
     }
     SECURITY_ATTRIBUTES inherit { sizeof(inherit), nullptr, TRUE };
     HANDLE read = nullptr, write = nullptr;
-    if (!CreatePipe(&read, &write, &inherit, 64 << 20))
+    if (!CreatePipe(&read, &write, &inherit, 64 << 20)) {
+        g_error = "Couldn't open a pipe to ffmpeg.";
         return false;
+    }
     SetHandleInformation(write, HANDLE_FLAG_INHERIT, 0);
     g_file = OutputFile();
     // With sound the picture and the sound are written apart, then put together.
@@ -305,7 +307,12 @@ void RealTimeThread()
     } else {
         // The picture is still worth having on its own.
         std::filesystem::rename(g_videoFile, g_file, ignored);
-        g_error = audio::LastError().empty() ? "The sound couldn't be put in the video: it's saved without." : "No sound: " + audio::LastError();
+        const bool kept = !ignored;
+        std::filesystem::remove(g_soundFile, ignored);
+        // An error from the recording itself (ffmpeg gone) says more than the missing sound.
+        if (g_error.empty())
+            g_error = !kept ? "The recording couldn't be saved."
+                      : audio::LastError().empty() ? "The sound couldn't be put in the video: it's saved without." : "No sound: " + audio::LastError();
     }
     Log("Recorder: stopped after %llu video frames, one a game frame; the game ran at %.0f%% of full speed; sound %s",
         static_cast<unsigned long long>(g_written.load()), 100.0 / tempo, joined ? "in" : "not in");
@@ -343,7 +350,7 @@ std::string RecorderMessage()
     if (g_file.empty())
         return {};
     const std::filesystem::path file = g_file;
-    return (g_phase.load() == Phase::Saving ? "Saving " : RecorderActive() ? "Recording " : "Saved ") + file.filename().string();
+    return (g_phase.load() == Phase::Saving ? "Saving " : RecorderActive() ? "Recording " : "Saved ") + Utf8(file.filename());
 }
 
 std::filesystem::path RecorderFolder()
@@ -371,8 +378,10 @@ void RecorderStart()
     g_top = static_cast<int>(top + 0.5f);
     g_width = static_cast<int>(right - left + 0.5f) & ~1;
     g_height = static_cast<int>(bottom - top + 0.5f) & ~1;
-    if (g_width < 16 || g_height < 16)
+    if (g_width < 16 || g_height < 16) {
+        g_error = "The game's window is too small to record.";
         return;
+    }
     g_pixels.assign(static_cast<size_t>(g_width) * g_height * 4, 0);
     if (!StartFfmpeg()) {
         Log("Recorder: %s", g_error.c_str());

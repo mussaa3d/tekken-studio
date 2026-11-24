@@ -774,10 +774,26 @@ void AutoExportTick()
             continue;
         }
         std::string error;
-        if (WriteSlot(slot.Index, folder / Utf8Path(NameIn(folder, slot) + ".t8replay"), error))
+        bool written = false;
+        try {
+            written = WriteSlot(slot.Index, folder / Utf8Path(NameIn(folder, slot) + ".t8replay"), error);
+        } catch (const std::exception&) {
+            // A player's name cut in the middle of a character can't be a file name: the date alone can.
+            try {
+                written = WriteSlot(slot.Index, folder / Utf8Path("replay " + std::to_string(slot.Played) + ".t8replay"), error);
+            } catch (const std::exception&) {
+                error = "its name can't be a file name";
+            }
+        }
+        if (written) {
             ++g_autoExported;
-        else
+        } else {
+            // A full disk or a locked folder passes: tried again on the next look, three times at most.
+            static std::map<Fight, int> failed;
+            if (++failed[fight] < 3)
+                known.erase(fight);
             mod::Log("Sharing: couldn't export slot %d on its own: %s", slot.Index, error.c_str());
+        }
     }
 }
 
